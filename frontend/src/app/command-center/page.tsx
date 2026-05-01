@@ -13,7 +13,7 @@ export default function CommandCenterPage() {
   }, []);
 
   return (
-    <div className="min-h-screen bg-[#f8fbf9] p-6 lg:p-10">
+    <div className="min-h-screen bg-slate-500  lg:p-5">
       <div className="max-w-7xl mx-auto">
         <PageHeader
           eyebrow="small-account cockpit"
@@ -28,28 +28,31 @@ export default function CommandCenterPage() {
         )}
 
         {!data ? (
-          <div className="text-slate-500">Loading dashboard...</div>
+          <div className="text-slate-500 py-12 text-center">Loading dashboard...</div>
         ) : (
-          <div className="space-y-8">
-            {/* Metrics */}
-            <div className="grid grid-cols-2 md:grid-cols-4 gap-4">
-              <MetricCard label="Buying Power" value={`$${data.account_profile.buying_power.toLocaleString()}`} accent />
-              <MetricCard label="Account Equity" value={`$${data.account_profile.account_equity.toLocaleString()}`} />
-              <MetricCard label="Risk / Trade" value={`${data.account_profile.max_risk_per_trade_percent}%`} />
-              <MetricCard label="Min Reward/Risk" value={`${data.account_profile.min_reward_risk_ratio}R`} />
+          <div className="space-y-2">
+            {/* Portfolio Snapshot Card */}
+            <div className="rounded-2xl border border-emerald-600 bg-slate-950 p-4 shadow-sm">
+              <h2 className="mb-6 text-xl font-semibold text-emerald-500">Portfolio Snapshot</h2>
+              <div className="grid grid-cols-2 md:grid-cols-4 gap-6">
+                <MetricCard label="Buying Power" value={`$${data.account_profile.buying_power.toLocaleString()}`} accent />
+                <MetricCard label="Account Equity" value={`$${data.account_profile.account_equity.toLocaleString()}`} />
+                <MetricCard label="Risk / Trade" value={`${data.account_profile.max_risk_per_trade_percent}%`} />
+                <MetricCard label="Min Reward/Risk" value={`${data.account_profile.min_reward_risk_ratio}R`} />
+              </div>
             </div>
 
-            {/* Urgent Alerts */}
-            <section>
-              <h2 className="mb-4 text-2xl font-semibold text-slate-900">Urgent Edge Alerts</h2>
+            {/* Urgent Edge Alerts */}
+            <div className="rounded-2xl border border-emerald-900 bg-slate-950 p-4 shadow-sm">
+              <h2 className="mb-6 text-xl font-semibold text-emerald-500">Urgent Edge Alerts</h2>
               <EdgeSignalGrid signals={data.urgent_edge_alerts} />
-            </section>
+            </div>
 
             {/* Top Recommendations */}
-            <section>
-              <h2 className="mb-4 text-2xl font-semibold text-slate-900">Top Recommendations</h2>
+            <div className="rounded-2xl border border-slate-700 bg-slate-950 p-4 shadow-sm">
+              <h2 className="mb-6 text-2xl font-semibold text-emerald-500">Top Recommendations</h2>
               <RecommendationTable recommendations={data.top_recommendations} />
-            </section>
+            </div>
           </div>
         )}
       </div>
