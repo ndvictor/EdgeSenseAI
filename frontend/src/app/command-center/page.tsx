@@ -13,31 +13,46 @@ export default function CommandCenterPage() {
   }, []);
 
   return (
-    <div className="p-6">
-      <PageHeader
-        eyebrow="small-account cockpit"
-        title="Command Center"
-        description="Final recommendations and urgent edge alerts for stocks, options, and Bitcoin/Crypto. Agents monitor; models rank; the account-risk layer validates."
-      />
-      {error && <div className="rounded-2xl border border-amber-500/30 bg-amber-500/10 p-4 text-amber-200">{error}</div>}
-      {!data ? <div className="text-slate-400">Loading...</div> : (
-        <div className="space-y-6">
-          <div className="grid grid-cols-1 gap-4 xl:grid-cols-4">
-            <MetricCard label="Buying Power" value={`$${data.account_profile.buying_power.toLocaleString()}`} accent />
-            <MetricCard label="Account Equity" value={`$${data.account_profile.account_equity.toLocaleString()}`} />
-            <MetricCard label="Risk / Trade" value={`${data.account_profile.max_risk_per_trade_percent}%`} />
-            <MetricCard label="Min Reward/Risk" value={`${data.account_profile.min_reward_risk_ratio}R`} />
+    <div className="min-h-screen bg-[#f8fbf9] p-6 lg:p-10">
+      <div className="max-w-7xl mx-auto">
+        <PageHeader
+          eyebrow="small-account cockpit"
+          title="Command Center"
+          description="Final recommendations and urgent edge alerts for stocks, options, and Bitcoin/Crypto. Agents monitor; models rank; the account-risk layer validates."
+        />
+
+        {error && (
+          <div className="mb-6 rounded-2xl border border-amber-300 bg-amber-50 p-4 text-amber-700">
+            {error}
           </div>
-          <section>
-            <h2 className="mb-3 text-xl font-black text-white">Urgent Edge Alerts</h2>
-            <EdgeSignalGrid signals={data.urgent_edge_alerts} />
-          </section>
-          <section>
-            <h2 className="mb-3 text-xl font-black text-white">Top Recommendations</h2>
-            <RecommendationTable recommendations={data.top_recommendations} />
-          </section>
-        </div>
-      )}
+        )}
+
+        {!data ? (
+          <div className="text-slate-500">Loading dashboard...</div>
+        ) : (
+          <div className="space-y-8">
+            {/* Metrics */}
+            <div className="grid grid-cols-2 md:grid-cols-4 gap-4">
+              <MetricCard label="Buying Power" value={`$${data.account_profile.buying_power.toLocaleString()}`} accent />
+              <MetricCard label="Account Equity" value={`$${data.account_profile.account_equity.toLocaleString()}`} />
+              <MetricCard label="Risk / Trade" value={`${data.account_profile.max_risk_per_trade_percent}%`} />
+              <MetricCard label="Min Reward/Risk" value={`${data.account_profile.min_reward_risk_ratio}R`} />
+            </div>
+
+            {/* Urgent Alerts */}
+            <section>
+              <h2 className="mb-4 text-2xl font-semibold text-slate-900">Urgent Edge Alerts</h2>
+              <EdgeSignalGrid signals={data.urgent_edge_alerts} />
+            </section>
+
+            {/* Top Recommendations */}
+            <section>
+              <h2 className="mb-4 text-2xl font-semibold text-slate-900">Top Recommendations</h2>
+              <RecommendationTable recommendations={data.top_recommendations} />
+            </section>
+          </div>
+        )}
+      </div>
     </div>
   );
 }

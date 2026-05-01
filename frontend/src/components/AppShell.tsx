@@ -8,13 +8,14 @@ export function AppShell({ children }: { children: React.ReactNode }) {
   const isHome = pathname === "/";
 
   if (isHome) {
-    return <main className="min-h-screen bg-slate-950 text-slate-100">{children}</main>;
+    return <main className="min-h-screen bg-white flex items-center justify-center">{children}</main>;
   }
 
+  // Changed to white / very light green-white
   return (
-    <div className="flex min-h-screen bg-slate-950 text-slate-100">
+    <div className="min-h-screen bg-white flex items-center justify-center">
       <Sidebar />
-      <main className="min-w-0 flex-1">{children}</main>
+      <main className="min-w-0 flex-1 p-8">{children}</main>
     </div>
   );
 }
