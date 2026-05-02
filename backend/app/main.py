@@ -30,7 +30,7 @@ from app.services.recommendation_engine_service import (
 )
 from app.services.risk_engine_service import RiskCheckResult, evaluate_trade_risk
 
-app = FastAPI(title="EdgeSenseAI Backend", version="0.6.0")
+app = FastAPI(title="EdgeSenseAI Backend", version="0.6.1")
 
 app.add_middleware(
     CORSMiddleware,
@@ -46,7 +46,7 @@ _ACCOUNT_PROFILE = AccountRiskProfile()
 def agents() -> list[AgentStatus]:
     return [
         AgentStatus(name="Data Quality Agent", role="data_quality", status="ok", status_label="Checking"),
-        AgentStatus(name="Edge Signal Agent", role="edge_signals", status="live", status_label="Scanning"),
+        AgentStatus(name="Edge Signal Agent", role="edge_signals", status="prototype", status_label="Prototype scan"),
         AgentStatus(name="Feature Agent", role="feature_engineering", status="ready", status_label="Building features"),
         AgentStatus(name="Risk Agent", role="account_risk", status="checked", status_label="Account checked"),
         AgentStatus(name="Recommendation Engine", role="recommendation_engine", status="prototype", status_label="Ranking candidates"),
@@ -55,7 +55,7 @@ def agents() -> list[AgentStatus]:
 
 @app.get("/health", response_model=HealthResponse)
 def health():
-    return HealthResponse(status="ok", service="edgesenseai-backend", version="0.6.0")
+    return HealthResponse(status="ok", service="edgesenseai-backend", version="0.6.1")
 
 
 @app.get("/api/account-risk/profile", response_model=AccountRiskProfile)
@@ -79,16 +79,22 @@ def update_account_risk_profile(update: AccountRiskProfileUpdate):
 @app.get("/api/live-watchlist/latest", response_model=LiveWatchlistResponse)
 def get_live_watchlist():
     candidates = build_live_candidates()
+    alert_count = len([candidate for candidate in candidates if candidate.notify_status in {"alert_queued", "pending_alert"}])
+    high_conviction = len([candidate for candidate in candidates if candidate.priority_score >= 85])
     return LiveWatchlistResponse(
+        mode="prototype_candidates_not_live_signals",
+        live_trading_enabled=False,
+        execution_enabled=False,
         summary=LiveWatchlistSummary(
-            triggered_now=18,
-            high_conviction=len([c for c in candidates if c.priority_score >= 85]),
-            alerts_sent_today=7,
+            triggered_now=len(candidates),
+            high_conviction=high_conviction,
+            alerts_sent_today=alert_count,
             average_priority_score=int(sum(c.priority_score for c in candidates) / len(candidates)),
             strongest_trigger=candidates[0].trigger,
         ),
         agents=agents(),
         candidates=candidates,
+        disclaimer="Prototype candidates only. Not live market-triggered alerts. No live execution.",
     )
 
 
