@@ -1,28 +1,159 @@
 "use client";
 
+import { useMemo, useState } from "react";
 import { PageHeader } from "@/components/Cards";
-import { StockSearchChart } from "@/components/StockSearchChart";
+import { StockSearchChart, type StockChartSelection } from "@/components/StockSearchChart";
+
+function money(value?: number | null) {
+  if (value === undefined || value === null || Number.isNaN(value)) return "—";
+  return `$${value.toLocaleString(undefined, { maximumFractionDigits: 2 })}`;
+}
+
+function percent(value?: number | null) {
+  if (value === undefined || value === null || Number.isNaN(value)) return "—";
+  return `${value.toFixed(2)}%`;
+}
+
+function number(value?: number | null, suffix = "") {
+  if (value === undefined || value === null || Number.isNaN(value)) return "—";
+  return `${value.toLocaleString(undefined, { maximumFractionDigits: 2 })}${suffix}`;
+}
+
+function calcReport(selection: StockChartSelection | null) {
+  const snapshot = selection?.snapshot;
+  const history = selection?.history;
+  const closes = history?.data.map((row) => row.close).filter((value): value is number => value !== null) ?? [];
+  const volumes = history?.data.map((row) => row.volume).filter((value): value is number => value !== null) ?? [];
+  const lastClose = closes.at(-1) ?? snapshot?.price ?? null;
+  const firstClose = closes.at(0) ?? null;
+  const prevClose = closes.length > 1 ? closes.at(-2) ?? null : snapshot?.previous_close ?? null;
+  const momentum = firstClose && lastClose ? ((lastClose - firstClose) / firstClose) * 100 : null;
+  const oneDayChange = prevClose && lastClose ? ((lastClose - prevClose) / prevClose) * 100 : snapshot?.change_percent ?? null;
+  const avgVolume = volumes.length ? volumes.reduce((sum, value) => sum + value, 0) / volumes.length : snapshot?.average_volume ?? null;
+  const latestVolume = volumes.at(-1) ?? snapshot?.volume ?? null;
+  const rvol = avgVolume && latestVolume ? latestVolume / avgVolume : null;
+  const spread = snapshot?.bid_ask_spread ?? null;
+  const sourceQuality = snapshot?.data_quality ?? history?.data_quality ?? "not_loaded";
+  const provider = snapshot?.provider ?? history?.provider ?? "—";
+  const isMock = Boolean(snapshot?.is_mock || history?.is_mock);
+  const hasUsableSourceData = Boolean(snapshot?.price && !isMock && sourceQuality === "real");
+
+  let featureStatus = "waiting_for_source_data";
+  if (isMock) featureStatus = "mock_selected_for_testing";
+  else if (hasUsableSourceData) featureStatus = "source_data_ready";
+  else if (selection) featureStatus = "source_unavailable";
+
+  let modelStatus = "not_run";
+  if (hasUsableSourceData) modelStatus = "ready_for_feature_agents_and_model_run";
+  if (isMock) modelStatus = "disabled_for_mock_data";
+
+  let riskStatus = "not_evaluated";
+  if (hasUsableSourceData && spread !== null) riskStatus = spread <= 0.2 ? "spread_quality_pass" : "spread_review_needed";
+  if (isMock) riskStatus = "disabled_for_mock_data";
+
+  return {
+    symbol: selection?.symbol ?? "Select a ticker",
+    source: selection?.source ?? "auto",
+    provider,
+    sourceQuality,
+    isMock,
+    hasUsableSourceData,
+    currentPrice: snapshot?.price ?? lastClose,
+    dayChange: oneDayChange,
+    rvol,
+    spread,
+    momentum,
+    latestVolume,
+    avgVolume,
+    featureStatus,
+    modelStatus,
+    riskStatus,
+    error: snapshot?.error || history?.error || null,
+  };
+}
 
 export default function StocksPage() {
+  const [selection, setSelection] = useState<StockChartSelection | null>(null);
+  const report = useMemo(() => calcReport(selection), [selection]);
+
   return (
     <div className="min-h-screen bg-slate-500 p-4 lg:p-6">
       <div className="mx-auto w-full max-w-[1600px]">
         <PageHeader
           eyebrow="stocks data workspace"
           title="Stocks"
-          description="Search a ticker, select a data source, and inspect source-backed price history. Prototype model/risk workflows are preserved in Model Lab and backend endpoints, but this page no longer shows hardcoded AMD model values as dashboard truth."
+          description="Search a ticker, select a data source, and inspect a source-backed report. Prototype model/risk endpoints are preserved, but this report is driven by the selected source response."
         />
 
         <div className="space-y-4">
-          <StockSearchChart />
+          <StockSearchChart onSelectionChange={setSelection} />
+
+          <section className="rounded-xl border border-emerald-800 bg-slate-950 p-4 shadow-sm">
+            <div className="flex flex-col gap-2 lg:flex-row lg:items-center lg:justify-between">
+              <div>
+                <p className="text-xs font-semibold uppercase tracking-[0.22em] text-emerald-500">Source-backed stock report</p>
+                <h2 className="mt-1 text-xl font-black text-white">Current Workflow Candidate: {report.symbol}</h2>
+              </div>
+              <div className="flex flex-wrap gap-2 text-xs font-bold uppercase">
+                <span className="rounded-full border border-slate-700 bg-slate-900 px-3 py-1 text-slate-300">Source: {report.source}</span>
+                <span className="rounded-full border border-slate-700 bg-slate-900 px-3 py-1 text-slate-300">Provider: {report.provider}</span>
+                <span className={`rounded-full border px-3 py-1 ${report.hasUsableSourceData ? "border-emerald-500 bg-emerald-500/10 text-emerald-300" : report.isMock ? "border-cyan-500 bg-cyan-500/10 text-cyan-300" : "border-amber-500 bg-amber-500/10 text-amber-300"}`}>Quality: {report.sourceQuality}</span>
+              </div>
+            </div>
+
+            {report.error && (
+              <div className="mt-4 rounded-lg border border-amber-500/30 bg-amber-500/10 px-4 py-3 text-sm text-amber-200">
+                {report.error}
+              </div>
+            )}
+
+            <div className="mt-4 grid grid-cols-2 gap-4 lg:grid-cols-4">
+              <ReportMetric label="Current Price" value={money(report.currentPrice)} />
+              <ReportMetric label="Day Change" value={percent(report.dayChange)} />
+              <ReportMetric label="RVOL" value={number(report.rvol, "x")} />
+              <ReportMetric label="Spread" value={percent(report.spread)} />
+            </div>
+          </section>
+
+          <div className="grid grid-cols-1 gap-4 lg:grid-cols-3">
+            <section className="rounded-xl border border-slate-700 bg-slate-950 p-4 shadow-sm">
+              <h2 className="mb-4 text-lg font-semibold text-emerald-500">Feature Pipeline</h2>
+              <div className="grid grid-cols-2 gap-3">
+                <ReportMetric label="Momentum" value={percent(report.momentum)} />
+                <ReportMetric label="Latest Volume" value={number(report.latestVolume)} />
+                <ReportMetric label="Avg Volume" value={number(report.avgVolume)} />
+                <ReportMetric label="Feature Status" value={report.featureStatus.replace(/_/g, " ")} compact />
+              </div>
+            </section>
+
+            <section className="rounded-xl border border-slate-700 bg-slate-950 p-4 shadow-sm">
+              <h2 className="mb-4 text-lg font-semibold text-emerald-500">Model Pipeline</h2>
+              <div className="space-y-3 text-sm text-slate-300">
+                <p>Model status: <span className="font-bold text-white">{report.modelStatus.replace(/_/g, " ")}</span></p>
+                <p>Input source: <span className="font-bold text-white">{report.provider}</span></p>
+                <p>Mock guard: <span className={report.isMock ? "font-bold text-cyan-300" : "font-bold text-emerald-300"}>{report.isMock ? "explicit mock selected" : "no mock in report"}</span></p>
+                <p className="text-slate-400">The trained model should consume feature-store rows produced from this selected source, not static defaults.</p>
+              </div>
+            </section>
+
+            <section className="rounded-xl border border-slate-700 bg-slate-950 p-4 shadow-sm">
+              <h2 className="mb-4 text-lg font-semibold text-emerald-500">Account + Risk Fit</h2>
+              <div className="space-y-3 text-sm text-slate-300">
+                <p>Risk status: <span className="font-bold text-white">{report.riskStatus.replace(/_/g, " ")}</span></p>
+                <p>Spread: <span className="font-bold text-white">{percent(report.spread)}</span></p>
+                <p>Actionability: <span className={report.hasUsableSourceData ? "font-bold text-amber-300" : "font-bold text-slate-400"}>{report.hasUsableSourceData ? "ready for model/risk validation" : "blocked until source data is usable"}</span></p>
+                <p className="text-slate-400">No buy/target/stop output should be shown until source, features, model, and risk checks pass.</p>
+              </div>
+            </section>
+          </div>
 
           <section className="rounded-xl border border-slate-700 bg-slate-950 p-4 shadow-sm">
-            <h2 className="mb-3 text-lg font-semibold text-emerald-500">Stock Workflow Guardrails</h2>
+            <h2 className="mb-3 text-lg font-semibold text-emerald-500">Stock Strategy Lanes</h2>
             <div className="grid grid-cols-1 gap-4 md:grid-cols-3">
               {[
-                ["Source First", "The chart and metrics must come from the selected source. Auto uses configured real providers only. Mock is explicit testing only."],
-                ["Feature Pipeline", "Feature/model/risk workflows must run from source-backed feature rows, not hardcoded AMD defaults."],
-                ["Actionable Output", "A buy/watch decision should only appear after source data, feature agents, trained model scoring, and risk checks pass."],
+                ["Day Trade", "Needs intraday source data, RVOL, VWAP deviation, spread quality, short momentum, breakout/reversion alerts."],
+                ["Swing", "Needs daily source data, momentum, breakout confirmation, sector relative strength, sentiment, options confirmation."],
+                ["1 Month", "Needs MA20/50 trend, relative strength, earnings revisions, macro regime, volatility forecast."],
               ].map(([title, body]) => (
                 <div key={title} className="rounded-xl border border-slate-800 bg-slate-900 p-4">
                   <h3 className="text-lg font-bold text-white">{title}</h3>
@@ -33,6 +164,15 @@ export default function StocksPage() {
           </section>
         </div>
       </div>
+    </div>
+  );
+}
+
+function ReportMetric({ label, value, compact = false }: { label: string; value: string; compact?: boolean }) {
+  return (
+    <div className="rounded-xl border border-slate-800 bg-slate-900 p-4">
+      <p className="text-[10px] font-semibold uppercase tracking-wide text-emerald-500">{label}</p>
+      <p className={`${compact ? "text-sm" : "text-2xl"} mt-2 font-black text-white capitalize`}>{value}</p>
     </div>
   );
 }
