@@ -29,6 +29,8 @@ export type DataSourcesStatusResponse = {
   sources: DataSourceStatus[];
 };
 
+export type MarketDataSource = "auto" | "yfinance" | "alpaca" | "mock";
+
 export type AccountRiskProfile = {
   account_mode: "manual" | "paper";
   account_equity: number;
@@ -416,8 +418,8 @@ export const api = {
   getEdgeSignals: () => request<{ last_updated: string; alerts_enabled: boolean; account_range: string; signals: EdgeSignal[] }>("/api/edge-signals/latest"),
   getModelStatus: () => request<ModelStatusResponse>("/api/models/status"),
   getDataSourcesStatus: () => request<DataSourcesStatusResponse>("/api/data-sources/status"),
-  getMarketDataSnapshot: (symbol: string) => request<MarketDataSnapshot>(`/api/market-data/snapshot/${symbol}`),
-  getMarketDataHistory: (symbol: string, period = "6mo", interval = "1d") => request<PriceHistory>(`/api/market-data/history/${symbol}?period=${period}&interval=${interval}`),
+  getMarketDataSnapshot: (symbol: string, source: MarketDataSource = "auto") => request<MarketDataSnapshot>(`/api/market-data/snapshot/${symbol}?source=${source}`),
+  getMarketDataHistory: (symbol: string, period = "6mo", interval = "1d", source: MarketDataSource = "auto") => request<PriceHistory>(`/api/market-data/history/${symbol}?period=${period}&interval=${interval}&source=${source}`),
   getMarketSnapshots: () => request<MarketSnapshot[]>("/api/market/snapshots"),
   getMarketSnapshot: (symbol: string, provider = "mock") => request<MarketSnapshot>(`/api/market/${symbol}/snapshot?provider=${provider}`),
   getMarketCandles: (symbol: string, provider = "mock", period = "1mo", interval = "1d") => request<MarketCandlesResponse>(`/api/market/${symbol}/candles?provider=${provider}&period=${period}&interval=${interval}`),
