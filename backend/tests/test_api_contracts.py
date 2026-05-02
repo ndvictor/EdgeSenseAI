@@ -269,7 +269,10 @@ def test_foundation_routes_preserve_existing_agent_endpoints():
     assert payload["model_orchestrator"]["status"] == "configured"
 
 
-def test_llm_gateway_contracts_and_dry_run_safety():
+def test_llm_gateway_contracts_and_dry_run_safety(monkeypatch):
+    from app.core.settings import settings
+
+    monkeypatch.setattr(settings, "llm_gateway_enable_paid_tests", False)
     assert client.get("/api/llm-gateway/status").status_code == 200
     providers = client.get("/api/llm-gateway/providers")
     assert providers.status_code == 200
@@ -296,6 +299,25 @@ def test_llm_gateway_contracts_and_dry_run_safety():
     assert payload["dry_run"] is True
     assert payload["paid_call_attempted"] is False
 
+    blocked_paid = client.post(
+        "/api/llm-gateway/providers/test",
+        json={"provider": "openai", "model": "gpt-4o-mini", "prompt": "safe paid gate test", "allow_paid_call": True},
+    )
+    assert blocked_paid.status_code == 200
+    blocked_payload = blocked_paid.json()
+    assert blocked_payload["dry_run"] is True
+    assert blocked_payload["status"] == "blocked_by_gateway_policy"
+
     summary = client.get("/api/ai-ops/summary").json()
     assert summary["llm_gateway"]["data_source"] == "placeholder"
     assert "gateway_status" in summary["llm_gateway"]
+
+
+def test_edge_radar_records_dry_run_llm_usage():
+    response = client.post("/api/agents/edge-radar/run", json={"symbols": ["AMD"], "data_source": "mock"})
+    assert response.status_code == 200
+    usage = client.get("/api/llm-gateway/usage")
+    assert usage.status_code == 200
+    records = usage.json()
+    assert any(record["agent"] in {"Risk Manager Agent", "Portfolio Manager Agent", "Cost Controller Agent"} for record in records)
+    assert all(record["dry_run"] is True for record in records if record["agent"] in {"Risk Manager Agent", "Portfolio Manager Agent", "Cost Controller Agent"})

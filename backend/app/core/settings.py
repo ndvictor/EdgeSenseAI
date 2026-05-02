@@ -22,8 +22,16 @@ class Settings(BaseSettings):
     cors_origins_raw: str = Field(default="http://localhost:3900,http://127.0.0.1:3900,http://frontend:3000", alias="CORS_ORIGINS")
 
     aws_region: str = Field(default="us-east-1", alias="AWS_REGION")
-    bedrock_model_id: str = Field(default="anthropic.claude-3-haiku-20240307-v1:0", alias="BEDROCK_MODEL_ID")
+    bedrock_model_id: str = Field(default="", alias="BEDROCK_MODEL_ID")
     openai_api_key: str = Field(default="", alias="OPENAI_API_KEY")
+    anthropic_api_key: str = Field(default="", alias="ANTHROPIC_API_KEY")
+    litellm_api_base: str = Field(default="", alias="LITELLM_API_BASE")
+    litellm_master_key: str = Field(default="", alias="LITELLM_MASTER_KEY")
+    llm_gateway_enable_paid_tests: bool = Field(default=False, alias="LLM_GATEWAY_ENABLE_PAID_TESTS")
+    llm_gateway_daily_budget: float = Field(default=10.0, alias="LLM_GATEWAY_DAILY_BUDGET")
+    llm_gateway_default_cheap_model: str = Field(default="gpt-4o-mini", alias="LLM_GATEWAY_DEFAULT_CHEAP_MODEL")
+    llm_gateway_default_reasoning_model: str = Field(default="gpt-4o", alias="LLM_GATEWAY_DEFAULT_REASONING_MODEL")
+    llm_gateway_default_fallback_model: str = Field(default="local-placeholder", alias="LLM_GATEWAY_DEFAULT_FALLBACK_MODEL")
 
     live_trading_enabled: bool = Field(default=False, alias="LIVE_TRADING_ENABLED")
     paper_trading_enabled: bool = Field(default=True, alias="PAPER_TRADING_ENABLED")

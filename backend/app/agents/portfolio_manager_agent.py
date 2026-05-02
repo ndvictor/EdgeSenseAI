@@ -1,6 +1,7 @@
 from typing import Any
 
 from app.agents.base import AgentRunResult
+from app.services.llm_gateway_service import run_llm_gateway_call
 
 
 AGENT_NAME = "Portfolio Manager Agent"
@@ -22,6 +23,14 @@ def run_portfolio_manager_agent(input_payload: dict[str, Any]) -> AgentRunResult
             "Paper candidates are suggestions only and require human approval.",
         ],
     }
+    llm_gateway = run_llm_gateway_call(
+        agent_name=AGENT_NAME,
+        workflow_name=input_payload.get("workflow_name", "small_account_edge_radar"),
+        task_type="portfolio_manager_decision",
+        prompt=f"Review paper-only portfolio decision for {len(watchlist)} candidate(s). Live trading disabled.",
+        allow_paid_call=False,
+        metadata={"candidate_count": len(watchlist), "live_trading_allowed": False},
+    )
     return AgentRunResult(
         agent_name=AGENT_NAME,
         status="completed",
@@ -29,6 +38,6 @@ def run_portfolio_manager_agent(input_payload: dict[str, Any]) -> AgentRunResult
         confidence=0.72 if watchlist else 0.55,
         warnings=["Portfolio manager is deterministic first-pass orchestration, not execution logic."],
         errors=[],
-        metadata={"decision": decision},
+        metadata={"decision": decision, "llm_gateway": llm_gateway.model_dump()},
         data_source="source_backed" if any(signal.get("data_source") == "source_backed" for signal in watchlist) else "placeholder",
     )

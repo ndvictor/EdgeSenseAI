@@ -1,12 +1,12 @@
-import os
 from datetime import datetime, timezone
 from typing import Any, Literal
 from uuid import uuid4
 
 from pydantic import BaseModel, Field
 
+from app.core.settings import settings
 
-ProviderStatus = Literal["configured", "not_configured", "placeholder", "error"]
+ProviderStatus = Literal["configured", "not_configured", "placeholder", "dry_run_available", "error"]
 
 
 class LlmProviderStatus(BaseModel):
@@ -136,6 +136,21 @@ class LlmGatewayTestCallResponse(BaseModel):
     warnings: list[str] = Field(default_factory=list)
 
 
+class LlmGatewayCallResponse(BaseModel):
+    dry_run: bool
+    provider: str
+    model: str
+    fallback_model: str
+    prompt_tokens_estimate: int
+    completion_tokens_estimate: int
+    estimated_cost: float
+    status: str
+    response_text: str
+    blocked_reason: str | None = None
+    metadata: dict[str, Any] = Field(default_factory=dict)
+    data_source: str = "placeholder"
+
+
 _MODEL_PRICING: dict[str, tuple[str, str, float, float, int | None]] = {
     "gpt-4o-mini": ("openai", "cheap_fast_model", 0.00015, 0.0006, 128000),
     "gpt-4o": ("openai", "strong_reasoning_model", 0.005, 0.015, 128000),
@@ -149,14 +164,33 @@ _USAGE_RECORDS: list[LlmUsageRecord] = []
 
 
 def _env_present(name: str) -> bool:
-    return bool(os.getenv(name))
+    return bool(getattr(settings, _SETTING_BY_ENV.get(name, ""), ""))
+
+
+_SETTING_BY_ENV = {
+    "OPENAI_API_KEY": "openai_api_key",
+    "ANTHROPIC_API_KEY": "anthropic_api_key",
+    "AWS_REGION": "aws_region",
+    "BEDROCK_MODEL_ID": "bedrock_model_id",
+    "LITELLM_API_BASE": "litellm_api_base",
+    "LITELLM_MASTER_KEY": "litellm_master_key",
+}
 
 
 def _daily_budget() -> float:
-    try:
-        return float(os.getenv("LLM_GATEWAY_DAILY_BUDGET", "25"))
-    except ValueError:
-        return 25.0
+    return float(settings.llm_gateway_daily_budget)
+
+
+def _cheap_model() -> str:
+    return settings.llm_gateway_default_cheap_model or "gpt-4o-mini"
+
+
+def _reasoning_model() -> str:
+    return settings.llm_gateway_default_reasoning_model or "gpt-4o"
+
+
+def _fallback_model() -> str:
+    return settings.llm_gateway_default_fallback_model or "local-placeholder"
 
 
 def _litellm_available() -> bool:
@@ -192,7 +226,7 @@ def get_provider_statuses() -> list[LlmProviderStatus]:
     rows.append(
         LlmProviderStatus(
             provider="local",
-            status="placeholder",
+            status="dry_run_available",
             configured=True,
             required_env_vars=[],
             configured_env_vars=[],
@@ -219,9 +253,9 @@ def get_model_configs() -> list[LlmModelConfig]:
 
 
 def get_routing_rules() -> list[LlmRoutingRule]:
-    cheap = "gpt-4o-mini"
-    strong = "gpt-4o"
-    fallback = "local-placeholder"
+    cheap = _cheap_model()
+    strong = _reasoning_model()
+    fallback = _fallback_model()
     cheap_tasks = ["ticker_extraction", "news_classification", "data_quality_summary", "edge_signal_explanation"]
     strong_tasks = ["portfolio_manager_decision", "options_strategy_review", "macro_conflict_analysis", "final_recommendation_summary"]
     return [
@@ -234,9 +268,9 @@ def get_routing_rules() -> list[LlmRoutingRule]:
 
 
 def get_agent_model_map() -> list[AgentModelMapping]:
-    cheap = "gpt-4o-mini"
-    strong = "gpt-4o"
-    fallback = "local-placeholder"
+    cheap = _cheap_model()
+    strong = _reasoning_model()
+    fallback = _fallback_model()
     mappings = [
         ("Market Regime Agent", cheap, fallback, 2.0, 100),
         ("Edge Signal Scanner Agent", cheap, fallback, 3.0, 150),
@@ -360,19 +394,17 @@ def test_gateway_call(request: LlmGatewayTestCallRequest) -> LlmGatewayTestCallR
             completion_tokens=40,
         )
     )
-    paid_tests_enabled = os.getenv("LLM_GATEWAY_ENABLE_PAID_TESTS", "false").lower() == "true"
+    paid_tests_enabled = settings.llm_gateway_enable_paid_tests
     dry_run = not (request.allow_paid_call and paid_tests_enabled)
     warnings: list[str] = []
     if request.allow_paid_call and not paid_tests_enabled:
-        warnings.append("allow_paid_call was true, but server-side LLM_GATEWAY_ENABLE_PAID_TESTS is not true; returning dry run.")
+        warnings.append("allow_paid_call was true, but server-side LLM_GATEWAY_ENABLE_PAID_TESTS is false; blocked by gateway policy.")
     if dry_run:
         response_text = "Dry-run only. No provider call was made."
-        status = "dry_run"
+        status = "blocked_by_gateway_policy" if request.allow_paid_call and not paid_tests_enabled else "dry_run"
     else:
-        response_text = "Paid test calls are gated; wire a reviewed LiteLLM call path before enabling production use."
-        status = "paid_test_not_implemented"
-        dry_run = True
-        warnings.append("Paid call path is intentionally not implemented in this foundation pass.")
+        response_text = _run_paid_test_call(request, max_tokens=20)
+        status = "paid_test_completed"
 
     record = LlmUsageRecord(
         id=f"llm-{uuid4().hex[:12]}",
@@ -399,4 +431,115 @@ def test_gateway_call(request: LlmGatewayTestCallRequest) -> LlmGatewayTestCallR
         response_text=response_text,
         estimated_cost=record.estimated_cost,
         warnings=warnings,
+    )
+
+
+def test_provider_connection(request: LlmGatewayTestCallRequest) -> LlmGatewayTestCallResponse:
+    return test_gateway_call(request)
+
+
+def _run_paid_test_call(request: LlmGatewayTestCallRequest, max_tokens: int = 20) -> str:
+    try:
+        import litellm
+
+        response = litellm.completion(
+            model=request.model,
+            messages=[{"role": "user", "content": request.prompt[:500]}],
+            max_tokens=min(max_tokens, 20),
+        )
+        choice = response.choices[0] if response.choices else None
+        message = getattr(choice, "message", None)
+        content = getattr(message, "content", None) if message else None
+        return str(content or "Paid test completed with no text content.")
+    except Exception as exc:
+        return f"Paid test call failed safely: {exc}"
+
+
+def _select_rule(task_type: str) -> LlmRoutingRule:
+    for rule in get_routing_rules():
+        if rule.task_type == task_type and rule.enabled:
+            return rule
+    return LlmRoutingRule(
+        task_type=task_type,
+        preferred_provider="local",
+        preferred_model=_fallback_model(),
+        fallback_model=_fallback_model(),
+        max_cost_per_call=0.0,
+        max_tokens=1000,
+        enabled=True,
+    )
+
+
+def _provider_for_model(model: str) -> str:
+    provider, _, _, _, _ = _MODEL_PRICING.get(model, ("local", "placeholder", 0.0, 0.0, None))
+    return provider
+
+
+def run_llm_gateway_call(
+    agent_name: str,
+    workflow_name: str,
+    task_type: str,
+    prompt: str,
+    allow_paid_call: bool = False,
+    metadata: dict | None = None,
+) -> LlmGatewayCallResponse:
+    rule = _select_rule(task_type)
+    prompt_tokens = max(1, len(prompt.split()))
+    completion_tokens = min(rule.max_tokens, 120)
+    estimate = estimate_cost(LlmCostEstimateRequest(model=rule.preferred_model, prompt_tokens=prompt_tokens, completion_tokens=completion_tokens))
+    blocked_reason = None
+    dry_run = True
+    status = "dry_run"
+    provider = rule.preferred_provider or _provider_for_model(rule.preferred_model)
+    model = rule.preferred_model
+
+    costs = get_cost_summary()
+    if costs.cost_today + estimate.estimated_cost > costs.daily_budget:
+        blocked_reason = "daily_budget_would_be_exceeded"
+        status = "blocked_budget"
+    elif estimate.estimated_cost > rule.max_cost_per_call:
+        blocked_reason = "max_cost_per_call_would_be_exceeded"
+        status = "blocked_cost_limit"
+    elif allow_paid_call and not settings.llm_gateway_enable_paid_tests:
+        blocked_reason = "paid_calls_disabled_by_gateway_policy"
+        status = "blocked_by_gateway_policy"
+    elif allow_paid_call and settings.llm_gateway_enable_paid_tests:
+        dry_run = False
+        status = "paid_call_completed"
+
+    if dry_run:
+        response_text = "Dry-run LLM Gateway call. No provider call was made."
+    else:
+        response_text = _run_paid_test_call(
+            LlmGatewayTestCallRequest(provider=provider, model=model, prompt=prompt, allow_paid_call=True),
+            max_tokens=min(completion_tokens, 20),
+        )
+
+    record = LlmUsageRecord(
+        id=f"llm-{uuid4().hex[:12]}",
+        timestamp=datetime.now(timezone.utc),
+        provider=provider,
+        model=model,
+        agent=agent_name,
+        workflow=workflow_name,
+        prompt_tokens=prompt_tokens,
+        completion_tokens=completion_tokens,
+        estimated_cost=0.0 if dry_run else estimate.estimated_cost,
+        latency_ms=0.0,
+        status=status,
+        dry_run=dry_run,
+    )
+    _USAGE_RECORDS.append(record)
+    return LlmGatewayCallResponse(
+        dry_run=dry_run,
+        provider=provider,
+        model=model,
+        fallback_model=rule.fallback_model,
+        prompt_tokens_estimate=prompt_tokens,
+        completion_tokens_estimate=completion_tokens,
+        estimated_cost=estimate.estimated_cost,
+        status=status,
+        response_text=response_text,
+        blocked_reason=blocked_reason,
+        metadata=metadata or {},
     )

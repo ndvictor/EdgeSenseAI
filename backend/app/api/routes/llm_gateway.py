@@ -20,6 +20,7 @@ from app.services.llm_gateway_service import (
     get_provider_statuses,
     get_routing_rules,
     get_usage_records,
+    test_provider_connection,
     test_gateway_call,
 )
 
@@ -69,3 +70,8 @@ def post_estimate(request: LlmCostEstimateRequest):
 @router.post("/llm-gateway/test-call", response_model=LlmGatewayTestCallResponse)
 def post_test_call(request: LlmGatewayTestCallRequest):
     return test_gateway_call(request)
+
+
+@router.post("/llm-gateway/providers/test", response_model=LlmGatewayTestCallResponse)
+def post_provider_test(request: LlmGatewayTestCallRequest):
+    return test_provider_connection(request)
