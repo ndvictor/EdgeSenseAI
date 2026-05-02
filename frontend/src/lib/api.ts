@@ -54,6 +54,21 @@ export type ModelVote = {
   explanation: string;
 };
 
+export type ModelStatus = {
+  name: string;
+  category: string;
+  status: string;
+  purpose: string;
+  current_mode: string;
+  next_step: string;
+};
+
+export type ModelStatusResponse = {
+  data_mode: string;
+  live_prediction_enabled: boolean;
+  models: ModelStatus[];
+};
+
 export type PricePlan = {
   current_price: number;
   buy_zone_low: number;
@@ -158,4 +173,5 @@ export const api = {
   updateAccountRisk: (payload: Partial<AccountRiskProfile>) => request<AccountRiskProfile>("/api/account-risk/profile", { method: "PUT", body: JSON.stringify(payload) }),
   getLiveWatchlist: () => request<LiveWatchlistResponse>("/api/live-watchlist/latest"),
   getEdgeSignals: () => request<{ last_updated: string; alerts_enabled: boolean; account_range: string; signals: EdgeSignal[] }>("/api/edge-signals/latest"),
+  getModelStatus: () => request<ModelStatusResponse>("/api/models/status"),
 };
