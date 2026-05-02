@@ -12,6 +12,44 @@ def test_health_contract():
     assert payload["status"] == "ok"
     assert payload["backend_port"] == 8900
     assert payload["frontend_port"] == 3900
+    assert payload["market_data_provider_priority"]
+
+
+def test_metrics_endpoint():
+    response = client.get("/metrics")
+    assert response.status_code == 200
+    assert "edgesenseai_backend_requests_total" in response.text
+
+
+def test_data_sources_status_contract():
+    response = client.get("/api/data-sources/status")
+    assert response.status_code == 200
+    payload = response.json()
+    assert payload["total_sources"] >= 8
+    keys = {source["key"] for source in payload["sources"]}
+    assert "yfinance" in keys
+    assert "alpaca" in keys
+    assert "postgresql" in keys
+    assert "redis" in keys
+
+
+def test_market_data_snapshot_contract():
+    response = client.get("/api/market-data/snapshot/AMD")
+    assert response.status_code == 200
+    payload = response.json()
+    assert payload["symbol"] == "AMD"
+    assert "data_quality" in payload
+    assert "provider_statuses" in payload or payload["data_quality"] in {"real", "unavailable", "not_configured"}
+
+
+def test_market_data_history_contract():
+    response = client.get("/api/market-data/history/AMD?period=5d&interval=1d")
+    assert response.status_code == 200
+    payload = response.json()
+    assert payload["symbol"] == "AMD"
+    assert payload["period"] == "5d"
+    assert payload["interval"] == "1d"
+    assert "data" in payload
 
 
 def test_command_center_contains_actionable_top_action():
