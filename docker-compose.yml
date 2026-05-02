@@ -1,0 +1,174 @@
+version: "3.9"
+
+services:
+  zookeeper:
+    image: confluentinc/cp-zookeeper:7.6.1
+    container_name: edgesenseai-zookeeper
+    environment:
+      ZOOKEEPER_CLIENT_PORT: 2181
+      ZOOKEEPER_TICK_TIME: 2000
+    ports:
+      - "12182:2181"
+    networks:
+      - edgesenseai-net
+
+  kafka:
+    image: confluentinc/cp-kafka:7.6.1
+    container_name: edgesenseai-kafka
+    depends_on:
+      - zookeeper
+    ports:
+      - "19093:9092"
+      - "39093:29092"
+    environment:
+      KAFKA_BROKER_ID: 1
+      KAFKA_ZOOKEEPER_CONNECT: zookeeper:2181
+      KAFKA_LISTENER_SECURITY_PROTOCOL_MAP: PLAINTEXT:PLAINTEXT,PLAINTEXT_HOST:PLAINTEXT
+      KAFKA_ADVERTISED_LISTENERS: PLAINTEXT://kafka:29092,PLAINTEXT_HOST://localhost:19093
+      KAFKA_LISTENERS: PLAINTEXT://0.0.0.0:29092,PLAINTEXT_HOST://0.0.0.0:9092
+      KAFKA_INTER_BROKER_LISTENER_NAME: PLAINTEXT
+      KAFKA_OFFSETS_TOPIC_REPLICATION_FACTOR: 1
+      KAFKA_TRANSACTION_STATE_LOG_MIN_ISR: 1
+      KAFKA_TRANSACTION_STATE_LOG_REPLICATION_FACTOR: 1
+      KAFKA_AUTO_CREATE_TOPICS_ENABLE: "true"
+    networks:
+      - edgesenseai-net
+
+  postgres:
+    image: postgres:16
+    container_name: edgesenseai-postgres
+    environment:
+      POSTGRES_DB: edgesenseai
+      POSTGRES_USER: edgesenseai
+      POSTGRES_PASSWORD: edgesenseai
+    ports:
+      - "55532:5432"
+    volumes:
+      - postgres-data:/var/lib/postgresql/data
+    networks:
+      - edgesenseai-net
+
+  redis:
+    image: redis:7
+    container_name: edgesenseai-redis
+    ports:
+      - "56390:6379"
+    volumes:
+      - redis-data:/data
+    networks:
+      - edgesenseai-net
+
+  backend:
+    build:
+      context: ./backend
+    container_name: edgesenseai-backend
+    depends_on:
+      - postgres
+      - redis
+      - kafka
+    environment:
+      APP_NAME: EdgeSenseAI Backend
+      APP_ENV: local
+      DATABASE_URL: postgresql://edgesenseai:edgesenseai@postgres:5432/edgesenseai
+      REDIS_URL: redis://redis:6379/0
+      KAFKA_BOOTSTRAP_SERVERS: kafka:29092
+      PROMETHEUS_URL: http://prometheus:9090
+      BACKEND_BASE_URL: http://backend:8000
+      CORS_ORIGINS: http://localhost:3900,http://127.0.0.1:3900,http://frontend:3000
+      MARKET_DATA_PROVIDER: yfinance
+      MARKET_DATA_PROVIDER_PRIORITY: alpaca,yfinance
+      LIVE_TRADING_ENABLED: "false"
+      PAPER_TRADING_ENABLED: "true"
+      EXECUTION_AGENT_ENABLED: "false"
+      REQUIRE_HUMAN_APPROVAL: "true"
+      MAX_DAILY_LLM_COST: "10"
+      MAX_DAILY_AGENT_RUNS: "500"
+      AWS_REGION: us-east-1
+      BEDROCK_MODEL_ID: anthropic.claude-3-haiku-20240307-v1:0
+    ports:
+      - "8900:8000"
+    volumes:
+      - ./backend:/app
+      - ${HOME}/.aws:/root/.aws:ro
+    networks:
+      - edgesenseai-net
+
+  frontend:
+    build:
+      context: ./frontend
+    container_name: edgesenseai-frontend
+    depends_on:
+      - backend
+    environment:
+      BACKEND_BASE_URL: http://backend:8000
+      NEXT_PUBLIC_API_URL: http://localhost:8900
+    ports:
+      - "3900:3000"
+    extra_hosts:
+      - "host.docker.internal:host-gateway"
+    networks:
+      - edgesenseai-net
+
+  prometheus:
+    image: prom/prometheus:v2.54.1
+    container_name: edgesenseai-prometheus
+    depends_on:
+      - backend
+      - blackbox
+    command:
+      - --config.file=/etc/prometheus/prometheus.yml
+    volumes:
+      - ./infra/prometheus/prometheus.yml:/etc/prometheus/prometheus.yml:ro
+      - ./infra/prometheus/alert.rules.yml:/etc/prometheus/alert.rules.yml:ro
+      - prometheus-data:/prometheus
+    ports:
+      - "19091:9090"
+    networks:
+      - edgesenseai-net
+
+  grafana:
+    image: grafana/grafana:11.1.4
+    container_name: edgesenseai-grafana
+    depends_on:
+      - prometheus
+    environment:
+      GF_SECURITY_ADMIN_USER: admin
+      GF_SECURITY_ADMIN_PASSWORD: admin
+    volumes:
+      - grafana-data:/var/lib/grafana
+      - ./infra/grafana/provisioning:/etc/grafana/provisioning
+      - ./infra/grafana/dashboards:/var/lib/grafana/dashboards
+    ports:
+      - "13002:3000"
+    networks:
+      - edgesenseai-net
+
+  node-exporter:
+    image: prom/node-exporter:v1.8.2
+    container_name: edgesenseai-node-exporter
+    ports:
+      - "19101:9100"
+    networks:
+      - edgesenseai-net
+
+  blackbox:
+    image: prom/blackbox-exporter:v0.25.0
+    container_name: edgesenseai-blackbox
+    command:
+      - --config.file=/etc/blackbox_exporter/config.yml
+    volumes:
+      - ./infra/blackbox/blackbox.yml:/etc/blackbox_exporter/config.yml:ro
+    ports:
+      - "19116:9115"
+    networks:
+      - edgesenseai-net
+
+volumes:
+  postgres-data:
+  redis-data:
+  prometheus-data:
+  grafana-data:
+
+networks:
+  edgesenseai-net:
+    driver: bridge
