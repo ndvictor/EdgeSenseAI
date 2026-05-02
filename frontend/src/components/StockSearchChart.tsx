@@ -21,6 +21,17 @@ type LinePoint = {
   value: number;
 };
 
+export type StockChartSelection = {
+  symbol: string;
+  source: MarketDataSource;
+  snapshot: MarketDataSnapshot | null;
+  history: PriceHistory | null;
+};
+
+type StockSearchChartProps = {
+  onSelectionChange?: (selection: StockChartSelection) => void;
+};
+
 function toCandleData(response: PriceHistory): CandlePoint[] {
   return response.data
     .filter((candle) => candle.open !== null && candle.high !== null && candle.low !== null && candle.close !== null)
@@ -52,7 +63,7 @@ function formatPercent(value?: number | null) {
   return `${value.toFixed(2)}%`;
 }
 
-export function StockSearchChart() {
+export function StockSearchChart({ onSelectionChange }: StockSearchChartProps) {
   const containerRef = useRef<HTMLDivElement | null>(null);
   const chartRef = useRef<IChartApi | null>(null);
   const candleSeriesRef = useRef<ISeriesApi<"Candlestick"> | null>(null);
@@ -84,11 +95,14 @@ export function StockSearchChart() {
       setSymbol(normalizedSymbol);
       setSnapshot(nextSnapshot);
       setHistory(nextHistory);
+      onSelectionChange?.({ symbol: normalizedSymbol, source: dataSource, snapshot: nextSnapshot, history: nextHistory });
       if (nextSnapshot.data_quality === "unavailable" || nextHistory.data_quality === "unavailable" || nextHistory.data.length === 0) {
         setError(nextSnapshot.error || nextHistory.error || `No market data returned for ${normalizedSymbol}`);
       }
     } catch (err) {
-      setError(err instanceof Error ? err.message : "Unable to load market chart. Confirm backend is running on port 8900 and NEXT_PUBLIC_API_URL points to it.");
+      const message = err instanceof Error ? err.message : "Unable to load market chart. Confirm backend is running on port 8900 and NEXT_PUBLIC_API_URL points to it.";
+      setError(message);
+      onSelectionChange?.({ symbol: normalizedSymbol, source: dataSource, snapshot: null, history: null });
     } finally {
       setLoading(false);
     }
