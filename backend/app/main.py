@@ -2,7 +2,7 @@ from datetime import datetime
 from fastapi import FastAPI
 from fastapi.middleware.cors import CORSMiddleware
 
-from app.data_providers.base import MarketSnapshot
+from app.data_providers.base import MarketCandlesResponse, MarketSnapshot
 from app.data_providers.provider_factory import get_market_data_provider
 from app.schemas import (
     AccountRiskProfile,
@@ -30,7 +30,7 @@ from app.services.recommendation_engine_service import (
 )
 from app.services.risk_engine_service import RiskCheckResult, evaluate_trade_risk
 
-app = FastAPI(title="EdgeSenseAI Backend", version="0.6.1")
+app = FastAPI(title="EdgeSenseAI Backend", version="0.6.2")
 
 app.add_middleware(
     CORSMiddleware,
@@ -55,7 +55,7 @@ def agents() -> list[AgentStatus]:
 
 @app.get("/health", response_model=HealthResponse)
 def health():
-    return HealthResponse(status="ok", service="edgesenseai-backend", version="0.6.1")
+    return HealthResponse(status="ok", service="edgesenseai-backend", version="0.6.2")
 
 
 @app.get("/api/account-risk/profile", response_model=AccountRiskProfile)
@@ -121,6 +121,18 @@ def get_model_status():
 @app.get("/api/market/snapshots", response_model=list[MarketSnapshot])
 def get_market_snapshots():
     return get_market_data_provider().get_watchlist_snapshots()
+
+
+@app.get("/api/market/{symbol}/snapshot", response_model=MarketSnapshot)
+def get_market_snapshot(symbol: str, provider: str = "mock"):
+    asset_class = "crypto" if "-USD" in symbol.upper() else "stock"
+    return get_market_data_provider(provider).get_snapshot(symbol.upper(), asset_class=asset_class)
+
+
+@app.get("/api/market/{symbol}/candles", response_model=MarketCandlesResponse)
+def get_market_candles(symbol: str, period: str = "1mo", interval: str = "1d", provider: str = "mock"):
+    asset_class = "crypto" if "-USD" in symbol.upper() else "stock"
+    return get_market_data_provider(provider).get_candles(symbol.upper(), period=period, interval=interval, asset_class=asset_class)
 
 
 @app.get("/api/features/{symbol}", response_model=EngineeredFeatures)
