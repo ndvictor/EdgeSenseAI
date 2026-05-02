@@ -12,6 +12,23 @@ async function request<T>(path: string, options?: RequestInit): Promise<T> {
   return response.json();
 }
 
+export type DataSourceStatus = {
+  name: string;
+  key?: string | null;
+  status: string;
+  type: string;
+  configured: boolean;
+  used_for: string[];
+  last_checked: string;
+  message: string;
+};
+
+export type DataSourcesStatusResponse = {
+  connected_sources: number;
+  total_sources: number;
+  sources: DataSourceStatus[];
+};
+
 export type AccountRiskProfile = {
   account_mode: "manual" | "paper";
   account_equity: number;
@@ -83,6 +100,45 @@ export type MarketSnapshot = {
   vwap: number;
   volatility_proxy: number;
   data_mode: string;
+};
+
+export type MarketDataSnapshot = {
+  symbol: string;
+  price: number | null;
+  previous_close: number | null;
+  change: number | null;
+  change_percent: number | null;
+  day_high: number | null;
+  day_low: number | null;
+  volume: number | null;
+  average_volume?: number | null;
+  bid?: number | null;
+  ask?: number | null;
+  bid_ask_spread?: number | null;
+  market_cap: number | null;
+  fifty_two_week_high: number | null;
+  fifty_two_week_low: number | null;
+  sector: string | null;
+  industry: string | null;
+  provider: string | null;
+  source?: string | null;
+  is_mock: boolean;
+  data_quality?: string | null;
+  unavailable_fields?: string[];
+  not_configured_fields?: string[];
+  provider_statuses?: Array<Record<string, unknown>> | null;
+  error?: string | null;
+};
+
+export type PriceHistory = {
+  symbol: string;
+  period: string;
+  interval: string;
+  data: Array<{ date: string; open: number | null; high: number | null; low: number | null; close: number | null; volume: number | null }>;
+  provider: string | null;
+  is_mock: boolean;
+  data_quality?: string | null;
+  error?: string | null;
 };
 
 export type MarketCandle = {
@@ -359,6 +415,9 @@ export const api = {
   getLiveWatchlist: () => request<LiveWatchlistResponse>("/api/live-watchlist/latest"),
   getEdgeSignals: () => request<{ last_updated: string; alerts_enabled: boolean; account_range: string; signals: EdgeSignal[] }>("/api/edge-signals/latest"),
   getModelStatus: () => request<ModelStatusResponse>("/api/models/status"),
+  getDataSourcesStatus: () => request<DataSourcesStatusResponse>("/api/data-sources/status"),
+  getMarketDataSnapshot: (symbol: string) => request<MarketDataSnapshot>(`/api/market-data/snapshot/${symbol}`),
+  getMarketDataHistory: (symbol: string, period = "6mo", interval = "1d") => request<PriceHistory>(`/api/market-data/history/${symbol}?period=${period}&interval=${interval}`),
   getMarketSnapshots: () => request<MarketSnapshot[]>("/api/market/snapshots"),
   getMarketSnapshot: (symbol: string, provider = "mock") => request<MarketSnapshot>(`/api/market/${symbol}/snapshot?provider=${provider}`),
   getMarketCandles: (symbol: string, provider = "mock", period = "1mo", interval = "1d") => request<MarketCandlesResponse>(`/api/market/${symbol}/candles?provider=${provider}&period=${period}&interval=${interval}`),
