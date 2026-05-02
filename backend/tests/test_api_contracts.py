@@ -73,3 +73,50 @@ def test_edge_signals_contract():
         assert 0 <= signal["confidence"] <= 1
         assert signal["recommended_action"]
         assert signal["risk_factors"]
+
+
+def test_market_snapshots_contract():
+    response = client.get("/api/market/snapshots")
+    assert response.status_code == 200
+    payload = response.json()
+    assert payload
+    assert payload[0]["current_price"] > 0
+    assert payload[0]["data_mode"] == "synthetic_prototype"
+
+
+def test_features_contract():
+    response = client.get("/api/features/AMD")
+    assert response.status_code == 200
+    payload = response.json()
+    assert payload["symbol"] == "AMD"
+    assert 0 <= payload["composite_feature_score"] <= 100
+    assert payload["notes"]
+
+
+def test_model_pipeline_contract():
+    response = client.get("/api/model-pipeline/AMD")
+    assert response.status_code == 200
+    payload = response.json()
+    assert payload["symbol"] == "AMD"
+    assert payload["features"]["symbol"] == "AMD"
+    assert payload["ranker_score"] >= 0
+    assert payload["pipeline_notes"]
+
+
+def test_account_feasibility_contract():
+    response = client.get("/api/account-feasibility/AMD")
+    assert response.status_code == 200
+    payload = response.json()
+    assert payload["symbol"] == "AMD"
+    assert payload["max_position_size_dollars"] > 0
+    assert payload["max_risk_dollars"] > 0
+    assert payload["suggested_expression"]
+
+
+def test_risk_check_contract():
+    response = client.get("/api/risk-check/AMD")
+    assert response.status_code == 200
+    payload = response.json()
+    assert payload["reward_risk_ratio"] > 0
+    assert payload["max_dollar_risk"] > 0
+    assert payload["risk_status"] in {"passed", "blocked_or_review"}
