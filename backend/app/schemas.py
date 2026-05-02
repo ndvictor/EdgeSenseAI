@@ -153,7 +153,7 @@ class TradeRecommendation(BaseModel):
     final_reason: str
     invalidation_rules: List[str]
     risk_factors: List[str]
-    data_mode: Literal["synthetic_prototype", "paper", "live"] = "synthetic_prototype"
+    data_mode: Literal["synthetic_prototype", "paper", "live", "source_unavailable"] = "synthetic_prototype"
     execution_enabled: bool = False
     research_only: bool = True
 
@@ -172,10 +172,20 @@ class Recommendation(BaseModel):
     risk_factors: List[str]
 
 
+class SourceDataStatus(BaseModel):
+    symbol: str
+    provider: str | None = None
+    data_quality: str | None = None
+    is_mock: bool = False
+    error: str | None = None
+
+
 class CommandCenterResponse(BaseModel):
     account_profile: AccountRiskProfile
-    top_action: TradeRecommendation
+    top_action: TradeRecommendation | None = None
     top_recommendations: List[Recommendation]
     urgent_edge_alerts: List[EdgeSignal]
     agents: List[AgentStatus]
+    source_data_status: List[SourceDataStatus] = Field(default_factory=list)
+    dashboard_mode: str = "source_backed"
     cost_usage_message: str = "No cost usage data recorded yet."
