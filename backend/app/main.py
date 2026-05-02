@@ -6,7 +6,9 @@ from fastapi import FastAPI
 from fastapi.middleware.cors import CORSMiddleware
 
 from app.api.routes.agent_scorecards import router as agent_scorecards_router
+from app.api.routes.ai_ops import router as ai_ops_router
 from app.api.routes.data_sources import router as data_sources_router
+from app.api.routes.edge_radar import router as edge_radar_router
 from app.api.routes.historical_analogs import router as historical_analogs_router
 from app.api.routes.market_data import router as market_data_router
 from app.api.routes.market_radar import router as market_radar_router
@@ -90,6 +92,8 @@ app.include_router(historical_analogs_router, prefix="/api")
 app.include_router(market_radar_router, prefix="/api")
 app.include_router(trade_quality_router, prefix="/api")
 app.include_router(signal_orchestration_router, prefix="/api")
+app.include_router(edge_radar_router, prefix="/api")
+app.include_router(ai_ops_router, prefix="/api")
 
 _ACCOUNT_PROFILE = AccountRiskProfile()
 _MARKET_DATA = MarketDataService()
