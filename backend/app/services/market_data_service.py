@@ -1,5 +1,6 @@
 from typing import Any, Dict, Optional
 
+import requests
 import yfinance as yf
 
 from app.core.settings import settings
@@ -73,29 +74,85 @@ class MarketDataService:
         if requested_source == "mock":
             return self._get_mock_history(symbol, period, interval)
 
+        yfinance_error = None
         try:
             ticker = yf.Ticker(symbol)
             hist = ticker.history(period=period, interval=interval)
-            if hist.empty:
-                return self._get_unavailable_history(symbol, period, interval, error=f"No data returned from {requested_source} source")
+            if not hist.empty:
+                data = []
+                for date, row in hist.iterrows():
+                    data.append({
+                        "date": date.isoformat(),
+                        "open": float(row["Open"]) if row["Open"] else None,
+                        "high": float(row["High"]) if row["High"] else None,
+                        "low": float(row["Low"]) if row["Low"] else None,
+                        "close": float(row["Close"]) if row["Close"] else None,
+                        "volume": int(row["Volume"]) if row["Volume"] else None,
+                    })
+                return {
+                    "symbol": symbol.upper(),
+                    "period": period,
+                    "interval": interval,
+                    "data": data,
+                    "provider": "yfinance",
+                    "is_mock": False,
+                    "data_quality": "real",
+                }
+            yfinance_error = f"No data returned from {requested_source} source"
+        except Exception as exc:
+            yfinance_error = str(exc)
 
+        yahoo_fallback = self._get_history_from_yahoo_chart_api(symbol, period, interval)
+        if yahoo_fallback.get("data"):
+            return yahoo_fallback
+
+        combined_error = yfinance_error or yahoo_fallback.get("error") or "No market history returned"
+        if yahoo_fallback.get("error"):
+            combined_error = f"{combined_error}; Yahoo chart fallback: {yahoo_fallback.get('error')}"
+        return self._get_unavailable_history(symbol, period, interval, error=combined_error)
+
+    def _get_history_from_yahoo_chart_api(self, symbol: str, period: str, interval: str) -> Dict[str, Any]:
+        try:
+            response = requests.get(
+                f"https://query1.finance.yahoo.com/v8/finance/chart/{symbol.upper()}",
+                params={"range": period, "interval": interval},
+                headers={"User-Agent": "Mozilla/5.0 EdgeSenseAI/0.8", "Accept": "application/json,text/plain,*/*"},
+                timeout=10,
+            )
+            if response.status_code >= 400:
+                return self._get_unavailable_history(symbol, period, interval, error=f"Yahoo chart API HTTP {response.status_code}")
+            payload = response.json()
+            result = (payload.get("chart", {}).get("result") or [None])[0]
+            if not result:
+                return self._get_unavailable_history(symbol, period, interval, error="Yahoo chart API returned no result")
+            timestamps = result.get("timestamp") or []
+            quote = ((result.get("indicators", {}) or {}).get("quote") or [{}])[0]
+            opens = quote.get("open") or []
+            highs = quote.get("high") or []
+            lows = quote.get("low") or []
+            closes = quote.get("close") or []
+            volumes = quote.get("volume") or []
             data = []
-            for date, row in hist.iterrows():
+            for idx, timestamp in enumerate(timestamps):
+                close = self._number(closes[idx] if idx < len(closes) else None)
+                if close is None:
+                    continue
                 data.append({
-                    "date": date.isoformat(),
-                    "open": float(row["Open"]) if row["Open"] else None,
-                    "high": float(row["High"]) if row["High"] else None,
-                    "low": float(row["Low"]) if row["Low"] else None,
-                    "close": float(row["Close"]) if row["Close"] else None,
-                    "volume": int(row["Volume"]) if row["Volume"] else None,
+                    "date": self._timestamp_to_iso(timestamp),
+                    "open": self._number(opens[idx] if idx < len(opens) else None),
+                    "high": self._number(highs[idx] if idx < len(highs) else None),
+                    "low": self._number(lows[idx] if idx < len(lows) else None),
+                    "close": close,
+                    "volume": int(volumes[idx]) if idx < len(volumes) and volumes[idx] is not None else None,
                 })
-
+            if not data:
+                return self._get_unavailable_history(symbol, period, interval, error="Yahoo chart API returned no usable candles")
             return {
                 "symbol": symbol.upper(),
                 "period": period,
                 "interval": interval,
                 "data": data,
-                "provider": "yfinance",
+                "provider": "yahoo_chart_api",
                 "is_mock": False,
                 "data_quality": "real",
             }
@@ -156,6 +213,18 @@ class MarketDataService:
             "data_quality": data_quality,
             "error": error,
         }
+
+    def _timestamp_to_iso(self, timestamp: int) -> str:
+        from datetime import datetime, timezone
+
+        return datetime.fromtimestamp(int(timestamp), tz=timezone.utc).isoformat()
+
+    def _number(self, value: Any) -> Optional[float]:
+        try:
+            number = float(value)
+        except (TypeError, ValueError):
+            return None
+        return number if number >= 0 else None
 
     def _get_unavailable_quote(self, symbol: str, error: str | None = None) -> Dict[str, Any]:
         return {
