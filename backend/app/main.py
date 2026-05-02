@@ -2,6 +2,8 @@ from datetime import datetime
 from fastapi import FastAPI
 from fastapi.middleware.cors import CORSMiddleware
 
+from app.data_providers.base import MarketSnapshot
+from app.data_providers.provider_factory import get_market_data_provider
 from app.schemas import (
     AccountRiskProfile,
     AccountRiskProfileUpdate,
@@ -12,15 +14,19 @@ from app.schemas import (
     LiveWatchlistResponse,
     LiveWatchlistSummary,
 )
+from app.services.account_feasibility_service import AccountFeasibilityResult, evaluate_account_feasibility
 from app.services.edge_signal_service import build_edge_signals
+from app.services.feature_engineering_service import EngineeredFeatures, build_features
 from app.services.live_watchlist_service import build_live_candidates
+from app.services.model_pipeline_service import ModelPipelineResult, run_model_pipeline
 from app.services.model_status_service import ModelStatusResponse, build_model_status_response
 from app.services.recommendation_engine_service import (
     build_alternative_recommendations,
     build_top_action_recommendation,
 )
+from app.services.risk_engine_service import RiskCheckResult, evaluate_trade_risk
 
-app = FastAPI(title="EdgeSenseAI Backend", version="0.2.0")
+app = FastAPI(title="EdgeSenseAI Backend", version="0.3.0")
 
 app.add_middleware(
     CORSMiddleware,
@@ -48,7 +54,7 @@ def agents() -> list[AgentStatus]:
 
 @app.get("/health", response_model=HealthResponse)
 def health():
-    return HealthResponse(status="ok", service="edgesenseai-backend", version="0.2.0")
+    return HealthResponse(status="ok", service="edgesenseai-backend", version="0.3.0")
 
 
 @app.get("/api/account-risk/profile", response_model=AccountRiskProfile)
@@ -103,6 +109,38 @@ def scan_edge_signals():
 @app.get("/api/models/status", response_model=ModelStatusResponse)
 def get_model_status():
     return build_model_status_response()
+
+
+@app.get("/api/market/snapshots", response_model=list[MarketSnapshot])
+def get_market_snapshots():
+    return get_market_data_provider().get_watchlist_snapshots()
+
+
+@app.get("/api/features/{symbol}", response_model=EngineeredFeatures)
+def get_features(symbol: str):
+    snapshot = get_market_data_provider().get_snapshot(symbol.upper())
+    return build_features(snapshot)
+
+
+@app.get("/api/model-pipeline/{symbol}", response_model=ModelPipelineResult)
+def get_model_pipeline(symbol: str):
+    snapshot = get_market_data_provider().get_snapshot(symbol.upper())
+    return run_model_pipeline(snapshot)
+
+
+@app.get("/api/account-feasibility/{symbol}", response_model=AccountFeasibilityResult)
+def get_account_feasibility(symbol: str):
+    snapshot = get_market_data_provider().get_snapshot(symbol.upper())
+    return evaluate_account_feasibility(snapshot.symbol, snapshot.current_price, _ACCOUNT_PROFILE)
+
+
+@app.get("/api/risk-check/{symbol}", response_model=RiskCheckResult)
+def get_risk_check(symbol: str):
+    snapshot = get_market_data_provider().get_snapshot(symbol.upper())
+    entry_price = snapshot.current_price
+    stop_loss = entry_price * 0.972
+    target_price = entry_price * 1.056
+    return evaluate_trade_risk(entry_price, stop_loss, target_price, _ACCOUNT_PROFILE)
 
 
 @app.get("/api/command-center", response_model=CommandCenterResponse)
