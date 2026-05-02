@@ -1,12 +1,14 @@
 "use client";
 
 import { useEffect, useMemo, useRef, useState } from "react";
-import { createChart, ColorType, type IChartApi, type ISeriesApi, type UTCTimestamp, CandlestickSeries } from "lightweight-charts";
+import { createChart, ColorType, type IChartApi, type ISeriesApi, type UTCTimestamp, CandlestickSeries, LineSeries } from "lightweight-charts";
 import { api, type MarketDataSnapshot, type MarketDataSource, type PriceHistory } from "@/lib/api";
 
 const QUICK_SYMBOLS = ["AMD", "NVDA", "AAPL", "MSFT", "TSLA", "META", "GOOGL", "BTC-USD"];
 
-type ChartPoint = {
+type ChartMode = "line" | "candles";
+
+type CandlePoint = {
   time: UTCTimestamp;
   open: number;
   high: number;
@@ -14,7 +16,12 @@ type ChartPoint = {
   close: number;
 };
 
-function toChartData(response: PriceHistory): ChartPoint[] {
+type LinePoint = {
+  time: UTCTimestamp;
+  value: number;
+};
+
+function toCandleData(response: PriceHistory): CandlePoint[] {
   return response.data
     .filter((candle) => candle.open !== null && candle.high !== null && candle.low !== null && candle.close !== null)
     .map((candle) => ({
@@ -23,6 +30,15 @@ function toChartData(response: PriceHistory): ChartPoint[] {
       high: Number(candle.high),
       low: Number(candle.low),
       close: Number(candle.close),
+    }));
+}
+
+function toLineData(response: PriceHistory): LinePoint[] {
+  return response.data
+    .filter((candle) => candle.close !== null)
+    .map((candle) => ({
+      time: Math.floor(new Date(candle.date).getTime() / 1000) as UTCTimestamp,
+      value: Number(candle.close),
     }));
 }
 
@@ -39,10 +55,12 @@ function formatPercent(value?: number | null) {
 export function StockSearchChart() {
   const containerRef = useRef<HTMLDivElement | null>(null);
   const chartRef = useRef<IChartApi | null>(null);
-  const seriesRef = useRef<ISeriesApi<"Candlestick"> | null>(null);
+  const candleSeriesRef = useRef<ISeriesApi<"Candlestick"> | null>(null);
+  const lineSeriesRef = useRef<ISeriesApi<"Line"> | null>(null);
 
   const [symbol, setSymbol] = useState("AMD");
   const [dataSource, setDataSource] = useState<MarketDataSource>("auto");
+  const [chartMode, setChartMode] = useState<ChartMode>("line");
   const [period, setPeriod] = useState("1mo");
   const [interval, setIntervalValue] = useState("1d");
   const [snapshot, setSnapshot] = useState<MarketDataSnapshot | null>(null);
@@ -50,7 +68,8 @@ export function StockSearchChart() {
   const [loading, setLoading] = useState(false);
   const [error, setError] = useState<string | null>(null);
 
-  const chartData = useMemo(() => (history ? toChartData(history) : []), [history]);
+  const candleData = useMemo(() => (history ? toCandleData(history) : []), [history]);
+  const lineData = useMemo(() => (history ? toLineData(history) : []), [history]);
 
   async function load(nextSymbol = symbol) {
     const normalizedSymbol = nextSymbol.trim().toUpperCase();
@@ -69,7 +88,7 @@ export function StockSearchChart() {
         setError(nextSnapshot.error || nextHistory.error || `No market data returned for ${normalizedSymbol}`);
       }
     } catch (err) {
-      setError(err instanceof Error ? err.message : "Unable to load market chart");
+      setError(err instanceof Error ? err.message : "Unable to load market chart. Confirm backend is running on port 8900 and NEXT_PUBLIC_API_URL points to it.");
     } finally {
       setLoading(false);
     }
@@ -97,17 +116,24 @@ export function StockSearchChart() {
       },
     });
 
-    const series = chart.addSeries(CandlestickSeries, {
+    const candleSeries = chart.addSeries(CandlestickSeries, {
       upColor: "#22c55e",
       downColor: "#ef4444",
       borderUpColor: "#22c55e",
       borderDownColor: "#ef4444",
       wickUpColor: "#22c55e",
       wickDownColor: "#ef4444",
+      visible: false,
+    });
+    const lineSeries = chart.addSeries(LineSeries, {
+      color: "#22c55e",
+      lineWidth: 2,
+      visible: true,
     });
 
     chartRef.current = chart;
-    seriesRef.current = series;
+    candleSeriesRef.current = candleSeries;
+    lineSeriesRef.current = lineSeries;
 
     const handleResize = () => {
       if (containerRef.current) {
@@ -121,15 +147,19 @@ export function StockSearchChart() {
       window.removeEventListener("resize", handleResize);
       chart.remove();
       chartRef.current = null;
-      seriesRef.current = null;
+      candleSeriesRef.current = null;
+      lineSeriesRef.current = null;
     };
   }, []);
 
   useEffect(() => {
-    if (!seriesRef.current || !chartRef.current) return;
-    seriesRef.current.setData(chartData);
+    if (!chartRef.current || !candleSeriesRef.current || !lineSeriesRef.current) return;
+    candleSeriesRef.current.setData(candleData);
+    lineSeriesRef.current.setData(lineData);
+    candleSeriesRef.current.applyOptions({ visible: chartMode === "candles" });
+    lineSeriesRef.current.applyOptions({ visible: chartMode === "line" });
     chartRef.current.timeScale().fitContent();
-  }, [chartData]);
+  }, [candleData, lineData, chartMode]);
 
   useEffect(() => {
     load(symbol);
@@ -143,11 +173,11 @@ export function StockSearchChart() {
           <p className="text-xs font-semibold uppercase tracking-[0.22em] text-emerald-500">Live market chart</p>
           <h2 className="mt-1 text-2xl font-black text-white">Search ticker and visualize price action</h2>
           <p className="mt-2 max-w-4xl text-sm leading-relaxed text-slate-400">
-            Select the data source explicitly or use Auto to follow provider priority: Alpaca, yfinance, then mock fallback.
+            Uses the migrated TradeSense-style market data route: /api/market-data/history. Choose Line or Candlestick view.
           </p>
         </div>
 
-        <div className="grid grid-cols-1 gap-3 md:grid-cols-5 xl:min-w-[760px]">
+        <div className="grid grid-cols-1 gap-3 md:grid-cols-6 xl:min-w-[900px]">
           <label className="md:col-span-2">
             <span className="text-xs font-semibold uppercase tracking-wide text-slate-400">Ticker</span>
             <input
@@ -167,6 +197,13 @@ export function StockSearchChart() {
               <option value="yfinance">YFinance</option>
               <option value="alpaca">Alpaca</option>
               <option value="mock">Mock</option>
+            </select>
+          </label>
+          <label>
+            <span className="text-xs font-semibold uppercase tracking-wide text-slate-400">Chart</span>
+            <select value={chartMode} onChange={(event) => setChartMode(event.target.value as ChartMode)} className="mt-2 w-full rounded-lg border border-emerald-900 bg-slate-900 px-3 py-3 text-sm text-white">
+              <option value="line">Line</option>
+              <option value="candles">Candlestick</option>
             </select>
           </label>
           <label>
@@ -217,6 +254,9 @@ export function StockSearchChart() {
 
       <div className="mt-4 rounded-xl border border-slate-800 bg-slate-950 p-2">
         <div ref={containerRef} className="h-[420px] w-full" />
+        {history && history.data.length === 0 && (
+          <div className="px-4 pb-4 text-sm text-slate-400">No chart data returned for the selected source. Choose Mock only for explicit offline testing, or configure Alpaca/Polygon for reliable live data.</div>
+        )}
       </div>
     </section>
   );
