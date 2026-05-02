@@ -601,6 +601,160 @@ export type EdgeRadarRunResponse = {
   duration_ms: number;
 };
 
+export type DataQualityReport = {
+  ticker: string;
+  asset_class: string;
+  provider?: string | null;
+  data_source: DataSourceKind;
+  quality_status: "pass" | "warn" | "fail" | string;
+  freshness_status: string;
+  missing_fields: string[];
+  blockers: string[];
+  warnings: string[];
+  checked_at: string;
+};
+
+export type NormalizedMarketSnapshot = {
+  ticker?: string;
+  symbol?: string;
+  asset_class?: string;
+  timestamp?: string;
+  provider?: string | null;
+  source?: string | null;
+  data_source?: DataSourceKind;
+  price?: number | null;
+  current_price?: number | null;
+  previous_close?: number | null;
+  change_percent?: number | null;
+  day_high?: number | null;
+  day_low?: number | null;
+  volume?: number | null;
+  average_volume?: number | null;
+  bid?: number | null;
+  ask?: number | null;
+  bid_ask_spread?: number | null;
+  spread_percent?: number | null;
+  relative_volume?: number | null;
+  vwap?: number | null;
+  volatility_proxy?: number | null;
+  data_quality?: string;
+  is_mock?: boolean;
+};
+
+export type FeatureStoreRow = {
+  id: string;
+  ticker: string;
+  asset_class: string;
+  horizon: string;
+  timestamp: string;
+  data_source: DataSourceKind;
+  data_quality: string;
+  technical_score?: number | null;
+  momentum_score?: number | null;
+  volume_score?: number | null;
+  rvol_score?: number | null;
+  options_score?: number | null;
+  sentiment_score?: number | null;
+  volatility_score?: number | null;
+  macro_score?: number | null;
+  regime_score?: number | null;
+  liquidity_score?: number | null;
+  confidence?: number | null;
+  feature_version: string;
+  created_at: string;
+};
+
+export type FeatureStoreRunRequest = {
+  symbol: string;
+  asset_class: string;
+  horizon: "intraday" | "day_trade" | "swing" | "one_month" | string;
+  source: "auto" | "yfinance" | "mock" | string;
+};
+
+export type FeatureStoreRunResponse = {
+  row: FeatureStoreRow;
+  quality_report: DataQualityReport;
+  normalized_snapshot?: NormalizedMarketSnapshot | null;
+  storage_mode?: string;
+  warnings?: string[];
+};
+
+export type ModelRegistryItem = {
+  key: string;
+  name?: string;
+  status: string;
+  should_run_when?: string[];
+  data_source?: DataSourceKind;
+};
+
+export type ModelRegistryResponse = {
+  data_source: DataSourceKind;
+  models: ModelRegistryItem[];
+  available_model_count?: number;
+  placeholder_model_count?: number;
+};
+
+export type ModelRunPlanRequest = {
+  symbols: string[];
+  asset_class: string;
+  horizon: "intraday" | "day_trade" | "swing" | "one_month" | string;
+  source: "auto" | "yfinance" | "mock" | string;
+  feature_rows?: FeatureStoreRow[] | null;
+};
+
+export type PlannedModel = {
+  key: string;
+  status: string;
+  should_run: boolean;
+  reason: string;
+  data_source?: DataSourceKind;
+};
+
+export type ModelRunPlanResponse = {
+  data_source: DataSourceKind;
+  models: PlannedModel[];
+  feature_rows_used?: number;
+  warnings?: string[];
+};
+
+export type ModelRunRequest = ModelRunPlanRequest;
+
+export type ModelOutput = {
+  model?: string;
+  model_name?: string;
+  status?: string;
+  prediction?: string | number | null;
+  probability?: number | null;
+  score?: number | null;
+  confidence?: number | null;
+  scores?: Array<Record<string, unknown>>;
+  result?: Record<string, unknown>;
+  notes?: string[];
+  feature_importance?: Array<Record<string, unknown>> | Record<string, unknown> | null;
+  data_source?: DataSourceKind;
+  reason?: string;
+};
+
+export type BlockedOrPlaceholderModel = {
+  model?: string;
+  model_name?: string;
+  status: "placeholder_not_run" | "blocked" | "missing_inputs" | "not_configured" | string;
+  reason?: string;
+  needed_inputs?: string[];
+  next_step?: string;
+  data_source?: DataSourceKind;
+};
+
+export type ModelRunResponse = {
+  status: string;
+  data_source: DataSourceKind;
+  plan?: ModelRunPlanResponse;
+  feature_rows?: FeatureStoreRow[];
+  results?: Array<ModelOutput | BlockedOrPlaceholderModel>;
+  warnings?: string[];
+  next_action?: string;
+};
+
 export const api = {
   getCommandCenter: () => request<CommandCenterResponse>("/api/command-center"),
   getAccountRisk: () => request<AccountRiskProfile>("/api/account-risk/profile"),
@@ -629,4 +783,13 @@ export const api = {
   getAiOpsSchedulerJobs: () => request<AiOpsSchedulerJobsResponse>("/api/ai-ops/scheduler/jobs"),
   getAiOpsAuditEvents: () => request<AiOpsAuditEventsResponse>("/api/ai-ops/audit-events"),
   runEdgeRadar: (payload: EdgeRadarRunRequest) => request<EdgeRadarRunResponse>("/api/agents/edge-radar/run", { method: "POST", body: JSON.stringify(payload) }),
+  getDataQuality: (symbol: string, assetClass = "stock", source: MarketDataSource | string = "auto") =>
+    request<DataQualityReport>(`/api/data-quality/${symbol}?asset_class=${assetClass}&source=${source}`),
+  runFeatureStore: (payload: FeatureStoreRunRequest) =>
+    request<FeatureStoreRunResponse>("/api/feature-store/run", { method: "POST", body: JSON.stringify(payload) }),
+  getLatestFeatureStoreRows: () => request<FeatureStoreRow[]>("/api/feature-store/latest"),
+  getFeatureStoreRowsBySymbol: (symbol: string) => request<FeatureStoreRow[]>(`/api/feature-store/${symbol}`),
+  getModelRunRegistry: () => request<ModelRegistryResponse>("/api/model-runs/registry"),
+  planModelRun: (payload: ModelRunPlanRequest) => request<ModelRunPlanResponse>("/api/model-runs/plan", { method: "POST", body: JSON.stringify(payload) }),
+  runModelRun: (payload: ModelRunRequest) => request<ModelRunResponse>("/api/model-runs/run", { method: "POST", body: JSON.stringify(payload) }),
 };
