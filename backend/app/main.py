@@ -21,6 +21,7 @@ from app.services.feature_engineering_service import EngineeredFeatures, build_f
 from app.services.journal_service import JournalSummary, build_journal_summary
 from app.services.live_watchlist_service import build_live_candidates
 from app.services.market_regime_service import MarketRegimeResponse, build_market_regime
+from app.services.model_lab_service import ModelLabRunRequest, ModelLabRunResponse, run_model_lab_workflow
 from app.services.model_pipeline_service import ModelPipelineResult, run_model_pipeline
 from app.services.model_status_service import ModelStatusResponse, build_model_status_response
 from app.services.recommendation_engine_service import (
@@ -29,14 +30,11 @@ from app.services.recommendation_engine_service import (
 )
 from app.services.risk_engine_service import RiskCheckResult, evaluate_trade_risk
 
-app = FastAPI(title="EdgeSenseAI Backend", version="0.5.0")
+app = FastAPI(title="EdgeSenseAI Backend", version="0.6.0")
 
 app.add_middleware(
     CORSMiddleware,
-    allow_origins=[
-        "http://localhost:3900",
-        "http://127.0.0.1:3900",
-    ],
+    allow_origins=["http://localhost:3900", "http://127.0.0.1:3900"],
     allow_credentials=True,
     allow_methods=["*"],
     allow_headers=["*"],
@@ -57,7 +55,7 @@ def agents() -> list[AgentStatus]:
 
 @app.get("/health", response_model=HealthResponse)
 def health():
-    return HealthResponse(status="ok", service="edgesenseai-backend", version="0.5.0")
+    return HealthResponse(status="ok", service="edgesenseai-backend", version="0.6.0")
 
 
 @app.get("/api/account-risk/profile", response_model=AccountRiskProfile)
@@ -129,6 +127,11 @@ def get_features(symbol: str):
 def get_model_pipeline(symbol: str):
     snapshot = get_market_data_provider().get_snapshot(symbol.upper())
     return run_model_pipeline(snapshot)
+
+
+@app.post("/api/model-lab/run", response_model=ModelLabRunResponse)
+def run_model_lab(request: ModelLabRunRequest):
+    return run_model_lab_workflow(request)
 
 
 @app.get("/api/account-feasibility/{symbol}", response_model=AccountFeasibilityResult)
