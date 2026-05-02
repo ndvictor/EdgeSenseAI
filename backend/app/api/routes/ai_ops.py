@@ -4,11 +4,12 @@ from typing import Any
 from fastapi import APIRouter
 
 from app.agents.registry import get_agent_registry_summary
-from app.orchestration.schedulers.edge_scheduler import list_scheduler_jobs
+from app.orchestration.schedulers.edge_scheduler import get_last_scheduled_scan_result, list_scheduler_jobs
 from app.orchestration.workflows.small_account_edge_radar import build_langgraph_definition
 from app.services.auto_run_control_service import get_auto_run_state
 from app.services.feature_store_service import get_feature_store_status
 from app.services.llm_gateway_service import get_gateway_summary
+from app.services.market_scan_run_service import get_scan_run_summary
 from app.services.model_orchestrator_service import get_model_registry
 from app.services.platform_workflows import get_agent_scorecards
 from app.strategies.registry import list_strategies
@@ -29,6 +30,8 @@ def get_ai_ops_summary() -> dict[str, Any]:
     llm_gateway = get_gateway_summary()
     agent_registry = get_agent_registry_summary()
     auto_run = get_auto_run_state()
+    scan_summary = get_scan_run_summary()
+    last_scheduled_scan = get_last_scheduled_scan_result()
     return {
         "data_source": "source_backed",
         "status": "foundation_installed",
@@ -52,6 +55,10 @@ def get_ai_ops_summary() -> dict[str, Any]:
         "placeholder_agents_count": agent_registry["placeholder_agents_count"],
         "auto_run_enabled": auto_run.auto_run_enabled,
         "market_scanner_status": "configured",
+        "scanner_status": "configured",
+        "latest_market_scan": scan_summary.latest_run.model_dump() if scan_summary.latest_run else None,
+        "scan_runs_today": scan_summary.scan_runs_today,
+        "last_scheduled_scan_status": last_scheduled_scan["status"] if last_scheduled_scan else "not_run",
         "live_trading_enabled": auto_run.live_trading_enabled,
         "require_human_approval": auto_run.require_human_approval,
         "agent_scorecards_available": len(scorecards),

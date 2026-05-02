@@ -1,10 +1,12 @@
-from typing import Any
+from datetime import datetime
+from typing import Any, Literal
 
 from pydantic import BaseModel, Field
 
 from app.services.auto_run_control_service import AutoRunControlState, get_auto_run_state
 from app.services.edge_signal_rules_service import EdgeSignalRule, get_rules_for_signals
 from app.services.market_data_service import MarketDataService
+from app.services.market_scan_run_service import record_scan_run
 from app.strategies.registry import StrategyConfig, get_strategy
 
 
@@ -13,6 +15,7 @@ class MarketScannerRequest(BaseModel):
     symbols: list[str] = Field(default_factory=lambda: ["AMD"])
     data_source: str = "auto"
     auto_run: bool = False
+    trigger_type: Literal["manual", "scheduled"] = "manual"
     account_size: float | None = None
     max_risk_per_trade: float | None = None
 
@@ -29,6 +32,8 @@ class MarketScannerSignal(BaseModel):
 
 
 class MarketScannerResponse(BaseModel):
+    run_id: str
+    trigger_type: Literal["manual", "scheduled"] = "manual"
     strategy_key: str
     symbols_scanned: list[str]
     matched_signals: list[MarketScannerSignal]
@@ -100,10 +105,30 @@ def _recommended_workflow(strategy: StrategyConfig) -> str:
 
 
 def run_market_condition_scan(request: MarketScannerRequest) -> MarketScannerResponse:
+    started_at = datetime.utcnow()
     strategy = get_strategy(request.strategy_key)
     if strategy is None:
         safety_state = get_auto_run_state()
-        return MarketScannerResponse(strategy_key=request.strategy_key, symbols_scanned=request.symbols, matched_signals=[], skipped_signals=[], should_trigger_workflow=False, recommended_workflow_key="none", required_agents=[], required_models=[], safety_state=safety_state, next_action="Unknown strategy. Select a configured strategy before scanning.", data_source="placeholder")
+        next_action = "Unknown strategy. Select a configured strategy before scanning."
+        run = record_scan_run(
+            trigger_type=request.trigger_type,
+            strategy_key=request.strategy_key,
+            symbols=request.symbols,
+            data_source="placeholder",
+            auto_run_enabled=safety_state.auto_run_enabled,
+            matched_signals_count=0,
+            skipped_signals_count=0,
+            should_trigger_workflow=False,
+            recommended_workflow_key="none",
+            required_agents=[],
+            required_models=[],
+            safety_state=safety_state.model_dump(),
+            next_action=next_action,
+            status="failed",
+            started_at=started_at,
+            errors=[f"Unknown strategy: {request.strategy_key}"],
+        )
+        return MarketScannerResponse(run_id=run.run_id, trigger_type=request.trigger_type, strategy_key=request.strategy_key, symbols_scanned=request.symbols, matched_signals=[], skipped_signals=[], should_trigger_workflow=False, recommended_workflow_key="none", required_agents=[], required_models=[], safety_state=safety_state, next_action=next_action, data_source="placeholder")
 
     rules = get_rules_for_signals(strategy.edge_signals)
     matched: list[MarketScannerSignal] = []
@@ -132,7 +157,31 @@ def run_market_condition_scan(request: MarketScannerRequest) -> MarketScannerRes
     else:
         next_action = "Trigger paper/research workflow with human approval gate."
     data_source = "source_backed" if "source_backed" in sources else "demo" if "demo" in sources else "placeholder"
+    run_status = "trigger_ready" if should_trigger else "completed"
+    warnings: list[str] = []
+    if matched and not should_trigger:
+        warnings.append("Matched signals require manual paper/research review; no automatic execution was run.")
+    run = record_scan_run(
+        trigger_type=request.trigger_type,
+        strategy_key=strategy.strategy_key,
+        symbols=request.symbols,
+        data_source=data_source,
+        auto_run_enabled=safety_state.auto_run_enabled,
+        matched_signals_count=len(matched),
+        skipped_signals_count=len(skipped),
+        should_trigger_workflow=should_trigger,
+        recommended_workflow_key=_recommended_workflow(strategy),
+        required_agents=strategy.required_agents,
+        required_models=strategy.required_models,
+        safety_state=safety_state.model_dump(),
+        next_action=next_action,
+        status=run_status,
+        started_at=started_at,
+        warnings=warnings,
+    )
     return MarketScannerResponse(
+        run_id=run.run_id,
+        trigger_type=request.trigger_type,
         strategy_key=strategy.strategy_key,
         symbols_scanned=[symbol.upper() for symbol in request.symbols],
         matched_signals=matched,

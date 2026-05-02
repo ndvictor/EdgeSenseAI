@@ -971,11 +971,14 @@ export type MarketScannerRequest = {
   symbols: string[];
   data_source: "auto" | "yfinance" | "mock" | string;
   auto_run: boolean;
+  trigger_type?: "manual" | "scheduled";
   account_size?: number | null;
   max_risk_per_trade?: number | null;
 };
 
 export type MarketScannerResponse = {
+  run_id: string;
+  trigger_type: "manual" | "scheduled";
   strategy_key: string;
   symbols_scanned: string[];
   matched_signals: MarketScannerSignal[];
@@ -987,6 +990,36 @@ export type MarketScannerResponse = {
   safety_state: AutoRunControlState;
   next_action: string;
   data_source: DataSourceKind;
+};
+
+export type MarketScanRun = {
+  run_id: string;
+  trigger_type: "manual" | "scheduled";
+  strategy_key: string;
+  symbols: string[];
+  data_source: DataSourceKind | string;
+  auto_run_enabled: boolean;
+  matched_signals_count: number;
+  skipped_signals_count: number;
+  should_trigger_workflow: boolean;
+  recommended_workflow_key: string;
+  required_agents: string[];
+  required_models: string[];
+  safety_state: Record<string, unknown>;
+  next_action: string;
+  status: string;
+  started_at: string;
+  completed_at: string;
+  duration_ms: number;
+  errors: string[];
+  warnings: string[];
+};
+
+export type MarketScanRunSummary = {
+  total_runs: number;
+  scan_runs_today: number;
+  latest_run?: MarketScanRun | null;
+  runs: MarketScanRun[];
 };
 
 export const api = {
@@ -1040,6 +1073,10 @@ export const api = {
   getStrategy: (strategyKey: string) => request<StrategyConfig>(`/api/strategies/${strategyKey}`),
   getEdgeSignalRules: () => request<EdgeSignalRulesResponse>("/api/edge-signal-rules"),
   scanMarketConditions: (payload: MarketScannerRequest) => request<MarketScannerResponse>("/api/market-scanner/scan", { method: "POST", body: JSON.stringify(payload) }),
+  getMarketScanRuns: (limit = 25) => request<MarketScanRun[]>(`/api/market-scanner/runs?limit=${limit}`),
+  getLatestMarketScanRun: () => request<MarketScanRun | null>("/api/market-scanner/runs/latest"),
+  getMarketScanRun: (runId: string) => request<MarketScanRun>(`/api/market-scanner/runs/${runId}`),
+  runScheduledMarketScanOnce: () => request<Record<string, unknown>>("/api/market-scanner/run-scheduled-once", { method: "POST" }),
   getAutoRunStatus: () => request<AutoRunControlState>("/api/auto-run/status"),
   updateAutoRunStatus: (payload: AutoRunControlUpdate) => request<AutoRunControlState>("/api/auto-run/status", { method: "PUT", body: JSON.stringify(payload) }),
 };

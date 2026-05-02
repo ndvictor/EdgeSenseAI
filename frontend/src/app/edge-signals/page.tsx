@@ -1,7 +1,7 @@
 "use client";
 
 import { FormEvent, useEffect, useState } from "react";
-import { api, type EdgeSignal, type EdgeSignalRule, type MarketScannerResponse, type StrategyConfig } from "@/lib/api";
+import { api, type EdgeSignal, type EdgeSignalRule, type MarketScannerResponse, type MarketScanRun, type StrategyConfig } from "@/lib/api";
 import { MetricCard, PageHeader } from "@/components/Cards";
 
 function passLabel(value: boolean) {
@@ -44,18 +44,35 @@ export default function EdgeSignalsPage() {
   const [maxRisk, setMaxRisk] = useState(0.01);
   const [autoRun, setAutoRun] = useState(false);
   const [scanResult, setScanResult] = useState<MarketScannerResponse | null>(null);
+  const [scanRuns, setScanRuns] = useState<MarketScanRun[]>([]);
+  const [latestScanRun, setLatestScanRun] = useState<MarketScanRun | null>(null);
+  const [runLogError, setRunLogError] = useState<string | null>(null);
+  const [scheduledLoading, setScheduledLoading] = useState(false);
 
   useEffect(() => {
-    Promise.all([api.getEdgeSignals(), api.getStrategies(), api.getEdgeSignalRules()])
-      .then(([data, strategiesData, rulesData]) => {
+    Promise.all([api.getEdgeSignals(), api.getStrategies(), api.getEdgeSignalRules(), api.getMarketScanRuns(), api.getLatestMarketScanRun()])
+      .then(([data, strategiesData, rulesData, runsData, latestRunData]) => {
         setSignals(data.signals);
         setLastUpdated(data.last_updated);
         setStrategies(strategiesData);
         setRules(rulesData);
+        setScanRuns(runsData);
+        setLatestScanRun(latestRunData);
         if (strategiesData[0]?.strategy_key) setStrategyKey(strategiesData[0].strategy_key);
       })
       .catch((err) => setError(err.message));
   }, []);
+
+  async function refreshScanRuns() {
+    setRunLogError(null);
+    try {
+      const [runsData, latestRunData] = await Promise.all([api.getMarketScanRuns(), api.getLatestMarketScanRun()]);
+      setScanRuns(runsData);
+      setLatestScanRun(latestRunData);
+    } catch (err) {
+      setRunLogError(err instanceof Error ? err.message : "Unable to load scan run history");
+    }
+  }
 
   async function runScanner(event: FormEvent) {
     event.preventDefault();
@@ -71,10 +88,24 @@ export default function EdgeSignalsPage() {
         max_risk_per_trade: maxRisk,
       });
       setScanResult(response);
+      await refreshScanRuns();
     } catch (err) {
       setScannerError(err instanceof Error ? err.message : "Market scanner failed");
     } finally {
       setScannerLoading(false);
+    }
+  }
+
+  async function runScheduledOnce() {
+    setScheduledLoading(true);
+    setRunLogError(null);
+    try {
+      await api.runScheduledMarketScanOnce();
+      await refreshScanRuns();
+    } catch (err) {
+      setRunLogError(err instanceof Error ? err.message : "Scheduled scan test failed");
+    } finally {
+      setScheduledLoading(false);
     }
   }
 
@@ -209,6 +240,7 @@ export default function EdgeSignalsPage() {
             <div className="mt-4 space-y-4">
               <div className="grid grid-cols-2 gap-4 lg:grid-cols-6">
                 <MetricCard label="Strategy" value={scanResult.strategy_key} accent />
+                <MetricCard label="Run ID" value={scanResult.run_id.slice(0, 8)} />
                 <MetricCard label="Symbols" value={scanResult.symbols_scanned.length} />
                 <MetricCard label="Matched" value={scanResult.matched_signals.length} />
                 <MetricCard label="Skipped" value={scanResult.skipped_signals.length} />
@@ -229,6 +261,45 @@ export default function EdgeSignalsPage() {
               <ScannerTable title="Skipped Signals" rows={scanResult.skipped_signals} />
             </div>
           )}
+        </section>
+
+        <section className="rounded-xl border border-emerald-800 bg-slate-950 p-4 shadow-sm">
+          <div className="flex flex-col gap-3 md:flex-row md:items-center md:justify-between">
+            <div>
+              <h2 className="text-lg font-semibold text-emerald-500">Scheduled Scan Runs</h2>
+              <p className="mt-1 text-sm text-slate-300">Scheduler visibility for scan-and-alert runs only. Live trading is disabled and human approval remains required.</p>
+            </div>
+            <button onClick={runScheduledOnce} disabled={scheduledLoading} className="rounded-lg border border-emerald-500 bg-emerald-500/10 px-4 py-2 text-sm font-bold text-emerald-300 disabled:opacity-60">
+              {scheduledLoading ? "Running..." : "Run Scheduled Scan Once"}
+            </button>
+          </div>
+          {runLogError && <div className="mt-4 rounded-xl border border-amber-500/30 bg-amber-500/10 px-4 py-3 text-sm text-amber-200">{runLogError}</div>}
+          <div className="mt-4">
+            {!latestScanRun ? <EmptyState label="latest scan run" /> : (
+              <div className="grid grid-cols-2 gap-4 lg:grid-cols-6">
+                <MetricCard label="Latest Run" value={latestScanRun.run_id.slice(0, 8)} accent />
+                <MetricCard label="Trigger" value={latestScanRun.trigger_type} />
+                <MetricCard label="Strategy" value={latestScanRun.strategy_key} />
+                <MetricCard label="Matched" value={latestScanRun.matched_signals_count} />
+                <MetricCard label="Skipped" value={latestScanRun.skipped_signals_count} />
+                <MetricCard label="Status" value={latestScanRun.status} />
+              </div>
+            )}
+            {latestScanRun && (
+              <div className="mt-4 rounded-xl border border-slate-800 bg-slate-900 p-4">
+                <div className="flex flex-wrap gap-2">
+                  <Badge value={latestScanRun.data_source} />
+                  <Badge value={latestScanRun.should_trigger_workflow ? "workflow_trigger_ready" : "workflow_not_triggered"} />
+                  <Badge value={latestScanRun.auto_run_enabled ? "auto_run_enabled" : "auto_run_disabled"} />
+                </div>
+                <p className="mt-3 text-sm leading-relaxed text-slate-300">{latestScanRun.next_action}</p>
+                <p className="mt-2 text-sm text-slate-400">Symbols: {latestScanRun.symbols.join(", ")} · Workflow: {latestScanRun.recommended_workflow_key}</p>
+              </div>
+            )}
+          </div>
+          <div className="mt-4">
+            <ScanRunsTable runs={scanRuns} />
+          </div>
         </section>
 
         <section className="rounded-xl border border-slate-700 bg-slate-950 p-4 shadow-sm">
@@ -285,6 +356,48 @@ function ScannerTable({ title, rows }: { title: string; rows: MarketScannerRespo
           </tbody>
         </table>
       </div>
+    </div>
+  );
+}
+
+function ScanRunsTable({ runs }: { runs: MarketScanRun[] }) {
+  if (!runs.length) return <EmptyState label="recent scan runs" />;
+  return (
+    <div className="overflow-x-auto rounded-xl border border-slate-800 bg-slate-900">
+      <table className="w-full min-w-[1240px] text-left text-sm">
+        <thead className="text-xs uppercase tracking-wide text-emerald-600">
+          <tr>
+            <th className="px-4 py-3">Run ID</th>
+            <th className="px-4 py-3">Trigger</th>
+            <th className="px-4 py-3">Strategy</th>
+            <th className="px-4 py-3">Symbols</th>
+            <th className="px-4 py-3">Matched</th>
+            <th className="px-4 py-3">Skipped</th>
+            <th className="px-4 py-3">Trigger Workflow</th>
+            <th className="px-4 py-3">Next Action</th>
+            <th className="px-4 py-3">Status</th>
+            <th className="px-4 py-3">Started</th>
+            <th className="px-4 py-3">Completed</th>
+          </tr>
+        </thead>
+        <tbody className="divide-y divide-slate-800">
+          {runs.map((run) => (
+            <tr key={run.run_id}>
+              <td className="px-4 py-3 font-mono text-xs text-white">{run.run_id.slice(0, 8)}</td>
+              <td className="px-4 py-3"><Badge value={run.trigger_type} /></td>
+              <td className="px-4 py-3 text-slate-300">{run.strategy_key}</td>
+              <td className="max-w-xs px-4 py-3 text-slate-300">{run.symbols.join(", ")}</td>
+              <td className="px-4 py-3 text-slate-300">{run.matched_signals_count}</td>
+              <td className="px-4 py-3 text-slate-300">{run.skipped_signals_count}</td>
+              <td className="px-4 py-3"><Badge value={run.should_trigger_workflow ? "yes" : "no"} /></td>
+              <td className="max-w-md px-4 py-3 text-slate-400">{run.next_action}</td>
+              <td className="px-4 py-3"><Badge value={run.status} /></td>
+              <td className="px-4 py-3 text-slate-300">{run.started_at ? new Date(run.started_at).toLocaleString() : "N/A"}</td>
+              <td className="px-4 py-3 text-slate-300">{run.completed_at ? new Date(run.completed_at).toLocaleString() : "N/A"}</td>
+            </tr>
+          ))}
+        </tbody>
+      </table>
     </div>
   );
 }

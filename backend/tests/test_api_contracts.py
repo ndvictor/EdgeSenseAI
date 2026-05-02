@@ -375,3 +375,65 @@ def test_agent_strategy_rules_scanner_and_auto_run_contracts():
     assert summary_payload["strategy_registry_count"] >= 9
     assert summary_payload["available_agents_count"] >= 1
     assert summary_payload["market_scanner_status"] == "configured"
+
+
+def test_market_scanner_records_manual_scan_runs():
+    response = client.post(
+        "/api/market-scanner/scan",
+        json={"strategy_key": "stock_day_trading", "symbols": ["AMD"], "data_source": "mock", "auto_run": False},
+    )
+    assert response.status_code == 200
+    payload = response.json()
+    assert payload["run_id"]
+    assert payload["trigger_type"] == "manual"
+
+    runs = client.get("/api/market-scanner/runs")
+    assert runs.status_code == 200
+    assert any(run["run_id"] == payload["run_id"] for run in runs.json())
+
+    latest = client.get("/api/market-scanner/runs/latest")
+    assert latest.status_code == 200
+    assert latest.json()["run_id"] == payload["run_id"]
+
+    by_id = client.get(f"/api/market-scanner/runs/{payload['run_id']}")
+    assert by_id.status_code == 200
+    assert by_id.json()["strategy_key"] == "stock_day_trading"
+
+
+def test_scheduled_market_scan_respects_auto_run_controls():
+    disabled = client.put("/api/auto-run/status", json={"auto_run_enabled": False})
+    assert disabled.status_code == 200
+    assert disabled.json()["live_trading_enabled"] is False
+
+    skipped = client.post("/api/market-scanner/run-scheduled-once")
+    assert skipped.status_code == 200
+    skipped_payload = skipped.json()
+    assert skipped_payload["status"] == "skipped"
+    assert skipped_payload["scan_run"]["trigger_type"] == "scheduled"
+
+    enabled = client.put("/api/auto-run/status", json={"auto_run_enabled": True, "live_trading_enabled": True})
+    assert enabled.status_code == 200
+    enabled_payload = enabled.json()
+    assert enabled_payload["auto_run_enabled"] is True
+    assert enabled_payload["live_trading_enabled"] is False
+
+    scheduled = client.post("/api/market-scanner/run-scheduled-once")
+    assert scheduled.status_code == 200
+    scheduled_payload = scheduled.json()
+    assert scheduled_payload["status"] == "completed"
+    assert scheduled_payload["scan"]["trigger_type"] == "scheduled"
+    assert scheduled_payload["scan"]["safety_state"]["live_trading_enabled"] is False
+
+    latest = client.get("/api/market-scanner/runs/latest")
+    assert latest.status_code == 200
+    latest_payload = latest.json()
+    assert latest_payload["trigger_type"] == "scheduled"
+    assert latest_payload["safety_state"]["live_trading_enabled"] is False
+
+    summary = client.get("/api/ai-ops/summary")
+    assert summary.status_code == 200
+    summary_payload = summary.json()
+    assert summary_payload["latest_market_scan"]
+    assert summary_payload["scan_runs_today"] >= 1
+    assert summary_payload["last_scheduled_scan_status"] in {"completed", "skipped"}
+    assert summary_payload["scanner_status"] == "configured"
