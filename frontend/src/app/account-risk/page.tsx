@@ -19,19 +19,19 @@ export default function AccountRiskPage() {
     setMessage("Risk profile updated for agents and recommendations.");
   }
 
-  if (!profile) return <div className="min-h-screen bg-slate-500 p-3 text-xs text-slate-300">Loading...</div>;
+  if (!profile) return <div className="min-h-screen bg-slate-500 p-4 text-sm text-slate-300">Loading...</div>;
 
   return (
-    <div className="min-h-screen bg-slate-500 p-2 lg:p-3">
-      <div className="mx-auto max-w-7xl rounded-xl border border-emerald-800 bg-slate-950 p-3 shadow-sm">
+    <div className="min-h-screen bg-slate-500 p-4 lg:p-6">
+      <div className="mx-auto w-full max-w-[1600px] rounded-xl border border-emerald-800 bg-slate-950 p-4 shadow-sm">
         <PageHeader
           eyebrow="account-aware control"
           title="Account Risk Center"
           description="Source of truth for small-account buying power, risk per trade, max position size, and minimum reward/risk."
         />
 
-        <div className="mt-2 rounded-xl border border-emerald-800 bg-slate-900 p-3">
-          <div className="grid grid-cols-2 gap-2 md:grid-cols-4">
+        <div className="mt-4 rounded-xl border border-emerald-800 bg-slate-900 p-4">
+          <div className="grid grid-cols-2 gap-4 md:grid-cols-4">
             <MetricCard label="Buying Power" value={`$${profile.buying_power.toLocaleString()}`} accent />
             <MetricCard label="Account Equity" value={`$${profile.account_equity.toLocaleString()}`} />
             <MetricCard label="Cash" value={`$${profile.cash.toLocaleString()}`} />
@@ -45,8 +45,8 @@ export default function AccountRiskPage() {
             <Field label="Max position size percent" value={profile.max_position_size_percent} onChange={(v) => setProfile({ ...profile, max_position_size_percent: v })} />
             <Field label="Minimum R multiple" value={profile.min_reward_risk_ratio} onChange={(v) => setProfile({ ...profile, min_reward_risk_ratio: v })} />
           </div>
-          <button onClick={save} className="mt-2 rounded-lg bg-emerald-700 px-4 py-2 text-sm font-semibold text-slate-950">Save risk settings</button>
-          {message && <p className="mt-2 text-xs text-emerald-300">{message}</p>}
+          <button onClick={save} className="mt-4 rounded-lg bg-emerald-700 px-5 py-3 text-sm font-semibold text-slate-950">Save risk settings</button>
+          {message && <p className="mt-3 text-sm text-emerald-300">{message}</p>}
         </div>
       </div>
     </div>
@@ -56,8 +56,8 @@ export default function AccountRiskPage() {
 function Field({ label, value, onChange }: { label: string; value: number; onChange: (value: number) => void }) {
   return (
     <label className="block">
-      <span className="text-xs font-semibold text-slate-300">{label}</span>
-      <input className="mt-1 w-full rounded-lg border border-emerald-900 bg-slate-950 px-3 py-2 text-sm text-white" type="number" value={value} onChange={(e) => onChange(Number(e.target.value))} />
+      <span className="text-sm font-semibold text-slate-300">{label}</span>
+      <input className="mt-2 w-full rounded-lg border border-emerald-900 bg-slate-950 px-4 py-3 text-base text-white" type="number" value={value} onChange={(e) => onChange(Number(e.target.value))} />
     </label>
   );
 }
