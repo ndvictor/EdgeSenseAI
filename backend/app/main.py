@@ -1,16 +1,22 @@
 from datetime import datetime
+import logging
+import time
+
 from fastapi import FastAPI
 from fastapi.middleware.cors import CORSMiddleware
 
+from app.api.routes.data_sources import router as data_sources_router
+from app.api.routes.market_data import router as market_data_router
+from app.core.settings import settings
 from app.data_providers.base import MarketCandlesResponse, MarketSnapshot
 from app.data_providers.provider_factory import get_market_data_provider
+from app.metrics import REQUEST_COUNT, REQUEST_LATENCY, metrics_response
 from app.schemas import (
     AccountRiskProfile,
     AccountRiskProfileUpdate,
     AgentStatus,
     CommandCenterResponse,
     EdgeSignalsResponse,
-    HealthResponse,
     LiveWatchlistResponse,
     LiveWatchlistSummary,
 )
@@ -18,6 +24,7 @@ from app.services.account_feasibility_service import AccountFeasibilityResult, e
 from app.services.backtesting_service import BacktestingResponse, build_backtesting_summary
 from app.services.edge_signal_service import build_edge_signals
 from app.services.feature_engineering_service import EngineeredFeatures, build_features
+from app.services.health_service import get_health_snapshot
 from app.services.journal_service import JournalSummary, build_journal_summary
 from app.services.live_watchlist_service import build_live_candidates
 from app.services.market_regime_service import MarketRegimeResponse, build_market_regime
@@ -30,15 +37,40 @@ from app.services.recommendation_engine_service import (
 )
 from app.services.risk_engine_service import RiskCheckResult, evaluate_trade_risk
 
-app = FastAPI(title="EdgeSenseAI Backend", version="0.6.2")
+logger = logging.getLogger(__name__)
+
+app = FastAPI(title="EdgeSenseAI Backend", version="0.7.0", docs_url="/docs", redoc_url="/redoc")
 
 app.add_middleware(
     CORSMiddleware,
-    allow_origins=["http://localhost:3900", "http://127.0.0.1:3900"],
+    allow_origins=settings.cors_origins,
     allow_credentials=True,
     allow_methods=["*"],
     allow_headers=["*"],
 )
+
+
+@app.middleware("http")
+async def prometheus_middleware(request, call_next):
+    start = time.perf_counter()
+    status_code = 500
+    try:
+        response = await call_next(request)
+        status_code = response.status_code
+        return response
+    except Exception:
+        logger.exception("Unhandled error during request processing")
+        raise
+    finally:
+        duration = time.perf_counter() - start
+        route = request.scope.get("route")
+        endpoint = getattr(route, "path", None) or request.url.path
+        REQUEST_LATENCY.labels(request.method, endpoint).observe(duration)
+        REQUEST_COUNT.labels(request.method, endpoint, str(status_code)).inc()
+
+
+app.include_router(market_data_router, prefix="/api")
+app.include_router(data_sources_router, prefix="/api")
 
 _ACCOUNT_PROFILE = AccountRiskProfile()
 
@@ -53,9 +85,19 @@ def agents() -> list[AgentStatus]:
     ]
 
 
-@app.get("/health", response_model=HealthResponse)
+@app.get("/")
+def root():
+    return {"message": "EdgeSenseAI backend running", "product": "EdgeSenseAI", "version": "0.7.0"}
+
+
+@app.get("/health")
 def health():
-    return HealthResponse(status="ok", service="edgesenseai-backend", version="0.6.2")
+    return get_health_snapshot()
+
+
+@app.get("/metrics")
+def metrics():
+    return metrics_response()
 
 
 @app.get("/api/account-risk/profile", response_model=AccountRiskProfile)
