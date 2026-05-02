@@ -1,4 +1,4 @@
-from app.data_providers.base import MarketSnapshot
+from app.data_providers.base import MarketCandle, MarketCandlesResponse, MarketSnapshot
 
 
 class MockMarketDataProvider:
@@ -51,6 +51,29 @@ class MockMarketDataProvider:
 
     def get_snapshot(self, symbol: str, asset_class: str = "stock") -> MarketSnapshot:
         return self.snapshots.get(symbol, self.snapshots["AMD"])
+
+    def get_candles(self, symbol: str, period: str = "1mo", interval: str = "1d", asset_class: str = "stock") -> MarketCandlesResponse:
+        snapshot = self.get_snapshot(symbol, asset_class)
+        closes = [snapshot.current_price * (0.94 + i * 0.0035) for i in range(24)]
+        candles = [
+            MarketCandle(
+                time=f"2026-01-{index + 1:02d}T00:00:00",
+                open=round(close * 0.995, 4),
+                high=round(close * 1.012, 4),
+                low=round(close * 0.988, 4),
+                close=round(close, 4),
+                volume=max(1, int(snapshot.volume * (0.65 + index * 0.015))),
+            )
+            for index, close in enumerate(closes)
+        ]
+        return MarketCandlesResponse(
+            symbol=snapshot.symbol,
+            asset_class=snapshot.asset_class,
+            interval=interval,
+            period=period,
+            data_mode="synthetic_prototype",
+            candles=candles,
+        )
 
     def get_watchlist_snapshots(self) -> list[MarketSnapshot]:
         return list(self.snapshots.values())
