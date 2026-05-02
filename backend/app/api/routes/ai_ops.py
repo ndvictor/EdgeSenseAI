@@ -3,12 +3,15 @@ from typing import Any
 
 from fastapi import APIRouter
 
+from app.agents.registry import get_agent_registry_summary
 from app.orchestration.schedulers.edge_scheduler import list_scheduler_jobs
 from app.orchestration.workflows.small_account_edge_radar import build_langgraph_definition
+from app.services.auto_run_control_service import get_auto_run_state
 from app.services.feature_store_service import get_feature_store_status
 from app.services.llm_gateway_service import get_gateway_summary
 from app.services.model_orchestrator_service import get_model_registry
 from app.services.platform_workflows import get_agent_scorecards
+from app.strategies.registry import list_strategies
 
 router = APIRouter()
 
@@ -24,6 +27,8 @@ def get_ai_ops_summary() -> dict[str, Any]:
     feature_store = get_feature_store_status()
     model_registry = get_model_registry()
     llm_gateway = get_gateway_summary()
+    agent_registry = get_agent_registry_summary()
+    auto_run = get_auto_run_state()
     return {
         "data_source": "source_backed",
         "status": "foundation_installed",
@@ -42,6 +47,13 @@ def get_ai_ops_summary() -> dict[str, Any]:
             "placeholder_model_count": model_registry["placeholder_model_count"],
         },
         "llm_gateway": llm_gateway,
+        "strategy_registry_count": len(list_strategies()),
+        "available_agents_count": agent_registry["available_agents_count"],
+        "placeholder_agents_count": agent_registry["placeholder_agents_count"],
+        "auto_run_enabled": auto_run.auto_run_enabled,
+        "market_scanner_status": "configured",
+        "live_trading_enabled": auto_run.live_trading_enabled,
+        "require_human_approval": auto_run.require_human_approval,
         "agent_scorecards_available": len(scorecards),
         "live_trading_allowed": False,
         "paper_trading_requires_approval": True,

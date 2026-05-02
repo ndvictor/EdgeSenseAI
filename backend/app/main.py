@@ -7,6 +7,7 @@ from fastapi.middleware.cors import CORSMiddleware
 
 from app.api.routes.agent_scorecards import router as agent_scorecards_router
 from app.api.routes.ai_ops import router as ai_ops_router
+from app.api.routes.auto_run import router as auto_run_router
 from app.api.routes.data_quality import router as data_quality_router
 from app.api.routes.data_sources import router as data_sources_router
 from app.api.routes.edge_radar import router as edge_radar_router
@@ -15,10 +16,12 @@ from app.api.routes.historical_analogs import router as historical_analogs_route
 from app.api.routes.llm_gateway import router as llm_gateway_router
 from app.api.routes.market_data import router as market_data_router
 from app.api.routes.market_radar import router as market_radar_router
+from app.api.routes.market_scanner import router as market_scanner_router
 from app.api.routes.model_runs import router as model_runs_router
 from app.api.routes.paper_trading_lifecycle import router as paper_trading_lifecycle_router
 from app.api.routes.recommendation_lifecycle import router as recommendation_lifecycle_router
 from app.api.routes.signal_orchestration import router as signal_orchestration_router
+from app.api.routes.strategies import router as strategies_router
 from app.api.routes.trade_quality import router as trade_quality_router
 from app.api.routes.watchlists import router as watchlists_router
 from app.core.settings import settings
@@ -102,6 +105,9 @@ app.include_router(data_quality_router, prefix="/api")
 app.include_router(feature_store_router, prefix="/api")
 app.include_router(model_runs_router, prefix="/api")
 app.include_router(llm_gateway_router, prefix="/api")
+app.include_router(strategies_router, prefix="/api")
+app.include_router(market_scanner_router, prefix="/api")
+app.include_router(auto_run_router, prefix="/api")
 
 _ACCOUNT_PROFILE = AccountRiskProfile()
 _MARKET_DATA = MarketDataService()

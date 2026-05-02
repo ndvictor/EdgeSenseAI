@@ -321,3 +321,57 @@ def test_edge_radar_records_dry_run_llm_usage():
     records = usage.json()
     assert any(record["agent"] in {"Risk Manager Agent", "Portfolio Manager Agent", "Cost Controller Agent"} for record in records)
     assert all(record["dry_run"] is True for record in records if record["agent"] in {"Risk Manager Agent", "Portfolio Manager Agent", "Cost Controller Agent"})
+
+
+def test_agent_strategy_rules_scanner_and_auto_run_contracts():
+    agents = client.get("/api/agents/registry")
+    assert agents.status_code == 200
+    agent_payload = agents.json()
+    assert len(agent_payload) >= 14
+    assert any(agent["agent_key"] == "data_quality" for agent in agent_payload)
+
+    strategies = client.get("/api/strategies")
+    assert strategies.status_code == 200
+    strategy_payload = strategies.json()
+    assert len(strategy_payload) >= 9
+    assert any(strategy["strategy_key"] == "stock_day_trading" for strategy in strategy_payload)
+
+    stock_day = client.get("/api/strategies/stock_day_trading")
+    assert stock_day.status_code == 200
+    assert stock_day.json()["live_trading_supported"] is False
+
+    rules = client.get("/api/edge-signal-rules")
+    assert rules.status_code == 200
+    assert any(rule["signal_key"] == "rvol_spike" for rule in rules.json())
+
+    scan = client.post(
+        "/api/market-scanner/scan",
+        json={"strategy_key": "stock_day_trading", "symbols": ["AMD"], "data_source": "mock", "auto_run": True},
+    )
+    assert scan.status_code == 200
+    scan_payload = scan.json()
+    assert scan_payload["strategy_key"] == "stock_day_trading"
+    assert scan_payload["recommended_workflow_key"]
+    assert scan_payload["safety_state"]["live_trading_enabled"] is False
+    assert scan_payload["safety_state"]["require_human_approval"] is True
+
+    auto_status = client.get("/api/auto-run/status")
+    assert auto_status.status_code == 200
+    assert auto_status.json()["live_trading_enabled"] is False
+
+    updated = client.put("/api/auto-run/status", json={"auto_run_enabled": True, "live_trading_enabled": True})
+    assert updated.status_code == 200
+    updated_payload = updated.json()
+    assert updated_payload["auto_run_enabled"] is True
+    assert updated_payload["live_trading_enabled"] is False
+
+    assert client.post("/api/agents/edge-radar/run", json={"symbols": ["AMD"], "data_source": "mock"}).status_code == 200
+    assert client.get("/api/llm-gateway/status").status_code == 200
+    assert client.get("/api/model-runs/registry").status_code == 200
+
+    summary = client.get("/api/ai-ops/summary")
+    assert summary.status_code == 200
+    summary_payload = summary.json()
+    assert summary_payload["strategy_registry_count"] >= 9
+    assert summary_payload["available_agents_count"] >= 1
+    assert summary_payload["market_scanner_status"] == "configured"
