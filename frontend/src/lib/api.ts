@@ -345,7 +345,7 @@ export type TradeRecommendation = {
   final_reason: string;
   invalidation_rules: string[];
   risk_factors: string[];
-  data_mode: "synthetic_prototype" | "paper" | "live";
+  data_mode: "synthetic_prototype" | "paper" | "live" | "source_unavailable";
   execution_enabled: boolean;
   research_only: boolean;
 };
@@ -364,12 +364,22 @@ export type Recommendation = {
   risk_factors: string[];
 };
 
+export type SourceDataStatus = {
+  symbol: string;
+  provider?: string | null;
+  data_quality?: string | null;
+  is_mock: boolean;
+  error?: string | null;
+};
+
 export type CommandCenterResponse = {
   account_profile: AccountRiskProfile;
-  top_action: TradeRecommendation;
+  top_action: TradeRecommendation | null;
   top_recommendations: Recommendation[];
   urgent_edge_alerts: EdgeSignal[];
   agents: { name: string; role: string; status: string; status_label: string; last_checked: string }[];
+  source_data_status: SourceDataStatus[];
+  dashboard_mode: string;
   cost_usage_message: string;
 };
 
