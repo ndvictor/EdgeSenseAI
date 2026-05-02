@@ -51,10 +51,21 @@ class YFinanceProvider:
     def get_candles(self, symbol: str, period: str = "1mo", interval: str = "1d", asset_class: str = "stock") -> MarketCandlesResponse:
         import yfinance as yf
 
-        ticker = yf.Ticker(symbol)
-        hist = ticker.history(period=period, interval=interval)
-        if hist.empty:
-            raise ValueError(f"No candle data returned for {symbol}")
+        try:
+            ticker = yf.Ticker(symbol)
+            hist = ticker.history(period=period, interval=interval)
+        except Exception:
+            hist = None
+
+        if hist is None or hist.empty:
+            return MarketCandlesResponse(
+                symbol=symbol,
+                asset_class=asset_class,
+                interval=interval,
+                period=period,
+                data_mode="yfinance_no_data",
+                candles=[],
+            )
 
         candles = [
             MarketCandle(
