@@ -162,6 +162,30 @@ export type BacktestingResponse = {
   profiles: BacktestProfile[];
 };
 
+export type JournalEntry = {
+  id: string;
+  symbol: string;
+  asset_class: string;
+  setup: string;
+  planned_action: string;
+  entry_zone: string;
+  stop: string;
+  target: string;
+  status: string;
+  outcome_label: string;
+  lesson: string;
+};
+
+export type JournalSummary = {
+  mode: string;
+  total_entries: number;
+  pending_reviews: number;
+  winning_labels: number;
+  losing_labels: number;
+  entries: JournalEntry[];
+  next_steps: string[];
+};
+
 export type PricePlan = {
   current_price: number;
   buy_zone_low: number;
@@ -274,4 +298,5 @@ export const api = {
   getRiskCheck: (symbol: string) => request<RiskCheckResult>(`/api/risk-check/${symbol}`),
   getMarketRegime: () => request<MarketRegimeResponse>("/api/market-regime"),
   getBacktestingSummary: () => request<BacktestingResponse>("/api/backtesting/summary"),
+  getJournalSummary: () => request<JournalSummary>("/api/journal/summary"),
 };
