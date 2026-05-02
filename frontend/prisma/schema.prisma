@@ -1,0 +1,438 @@
+generator client {
+  provider = "prisma-client-js"
+}
+
+datasource db {
+  provider  = "postgresql"
+  url       = env("DATABASE_URL")
+  directUrl = env("DIRECT_URL")
+}
+
+enum MembershipRole {
+  org_owner
+  org_admin
+  security_admin
+  engineer
+  viewer
+  billing_admin
+}
+
+enum MemberStatus {
+  invited
+  active
+  suspended
+  deprovisioned
+}
+
+enum AuthProviderType {
+  local
+  google
+  oidc
+  saml
+  scim
+}
+
+enum WorkspaceModuleKey {
+  command_center
+  actionable_insights
+  market_regime
+  stocks
+  options
+  crypto
+  risk_center
+  market_impact_radar
+  trade_quality
+  recommendation_lifecycle
+  watchlists
+  agent_scorecards
+  historical_analogs
+  model_lab
+  backtesting
+  paper_trading
+  journal
+  data_sources
+  admin
+  settings
+}
+
+enum IntegrationKey {
+  market_data
+  broker_api
+  yahoo_finance
+  alpha_vantage
+  polygon_io
+  alpaca
+  tradier
+  twitter
+  news_api
+  finnhub
+  fred
+  sec_edgar
+  openai
+  bedrock
+}
+
+enum IntegrationStatus {
+  not_connected
+  pending
+  connected
+  degraded
+  failed
+}
+
+enum RecommendationStatus {
+  generated
+  risk_review
+  approved_for_paper
+  paper_open
+  paper_closed
+  invalidated
+  archived
+}
+
+enum PaperTradeStatus {
+  planned
+  open
+  closed
+  cancelled
+}
+
+enum OutcomeLabel {
+  pending
+  target_before_stop
+  stop_before_target
+  timed_exit
+  invalidated_before_entry
+}
+
+model User {
+  id            String   @id @default(cuid())
+  email         String   @unique
+  name          String?
+  avatarUrl     String?
+  isGlobalAdmin Boolean  @default(false)
+  createdAt     DateTime @default(now())
+  updatedAt     DateTime @updatedAt
+
+  identities    UserIdentity[]
+  memberships   OrganizationMembership[]
+  auditLogs     AuditLog[]
+}
+
+model UserIdentity {
+  id             String           @id @default(cuid())
+  userId         String
+  providerType   AuthProviderType
+  providerName   String
+  providerUserId String
+  email          String?
+  createdAt      DateTime         @default(now())
+  updatedAt      DateTime         @updatedAt
+
+  user           User             @relation(fields: [userId], references: [id], onDelete: Cascade)
+
+  @@unique([providerName, providerUserId])
+}
+
+model Organization {
+  id                 String   @id @default(cuid())
+  name               String
+  slug               String   @unique
+  primaryDomain      String?
+  ssoEnforced        Boolean  @default(false)
+  scimEnabled        Boolean  @default(false)
+  createdAt          DateTime @default(now())
+  updatedAt          DateTime @updatedAt
+
+  memberships        OrganizationMembership[]
+  auditLogs          AuditLog[]
+  tenantProfile      TenantProfile?
+  enabledModules     TenantEnabledModule[]
+  integrations       TenantIntegration[]
+  featureRows        FeatureStoreRow[]
+  modelOutputs       ModelOutput[]
+  recommendations    Recommendation[]
+  watchlists         Watchlist[]
+  paperTrades        PaperTrade[]
+  agentScorecards    AgentScorecard[]
+  marketRadarEvents  MarketRadarEvent[]
+  tradeQualityRows   TradeQualityReview[]
+  historicalAnalogs  HistoricalAnalog[]
+}
+
+model OrganizationMembership {
+  id              String         @id @default(cuid())
+  organizationId  String
+  userId          String
+  role            MembershipRole
+  status          MemberStatus   @default(active)
+  invitedByUserId String?
+  createdAt       DateTime       @default(now())
+  updatedAt       DateTime       @updatedAt
+
+  organization    Organization   @relation(fields: [organizationId], references: [id], onDelete: Cascade)
+  user            User           @relation(fields: [userId], references: [id], onDelete: Cascade)
+
+  @@unique([organizationId, userId])
+}
+
+model AuditLog {
+  id              String   @id @default(cuid())
+  organizationId  String
+  userId          String?
+  action          String
+  targetType      String?
+  targetId        String?
+  metadataJson    Json?
+  createdAt       DateTime @default(now())
+
+  organization    Organization @relation(fields: [organizationId], references: [id], onDelete: Cascade)
+  user            User?        @relation(fields: [userId], references: [id], onDelete: SetNull)
+}
+
+model TenantProfile {
+  id                  String             @id @default(cuid())
+  organizationId      String             @unique
+  displayName         String?
+  industry            String?
+  teamSize            String?
+  primaryUserType     String?
+  deploymentModel     String             @default("saas")
+  defaultLandingModule WorkspaceModuleKey @default(command_center)
+  onboardingStatus    String             @default("not_started")
+  createdAt           DateTime           @default(now())
+  updatedAt           DateTime           @updatedAt
+
+  organization        Organization       @relation(fields: [organizationId], references: [id], onDelete: Cascade)
+}
+
+model TenantEnabledModule {
+  id              String             @id @default(cuid())
+  organizationId  String
+  moduleKey       WorkspaceModuleKey
+  enabled         Boolean            @default(true)
+  source          String             @default("default")
+  createdAt       DateTime           @default(now())
+  updatedAt       DateTime           @updatedAt
+
+  organization    Organization       @relation(fields: [organizationId], references: [id], onDelete: Cascade)
+
+  @@unique([organizationId, moduleKey])
+}
+
+model TenantIntegration {
+  id              String            @id @default(cuid())
+  organizationId  String
+  integrationKey  IntegrationKey
+  status          IntegrationStatus @default(not_connected)
+  configJson      Json?
+  lastSyncAt      DateTime?
+  createdAt       DateTime          @default(now())
+  updatedAt       DateTime          @updatedAt
+
+  organization    Organization      @relation(fields: [organizationId], references: [id], onDelete: Cascade)
+
+  @@unique([organizationId, integrationKey])
+}
+
+model FeatureStoreRow {
+  id              String   @id @default(cuid())
+  organizationId  String
+  ticker          String
+  assetClass      String
+  horizon         String
+  timestamp       DateTime @default(now())
+  dataSource      String
+  dataQuality     String
+  technicalScore  Float?
+  momentumScore   Float?
+  volumeScore     Float?
+  optionsScore    Float?
+  sentimentScore  Float?
+  volatilityScore Float?
+  macroScore      Float?
+  regimeScore     Float?
+  liquidityScore  Float?
+  confidence      Float?
+  rawFeaturesJson Json?
+  createdAt       DateTime @default(now())
+
+  organization    Organization @relation(fields: [organizationId], references: [id], onDelete: Cascade)
+
+  @@index([organizationId, ticker, timestamp])
+  @@index([organizationId, horizon, timestamp])
+}
+
+model ModelOutput {
+  id              String   @id @default(cuid())
+  organizationId  String
+  ticker          String
+  modelName       String
+  horizon         String
+  signal          String
+  confidence      Float
+  score           Float?
+  expectedReturn  Float?
+  inputFeatureIds String[]
+  outputJson      Json?
+  createdAt       DateTime @default(now())
+
+  organization    Organization @relation(fields: [organizationId], references: [id], onDelete: Cascade)
+
+  @@index([organizationId, ticker, modelName, createdAt])
+}
+
+model Recommendation {
+  id              String               @id @default(cuid())
+  organizationId  String
+  ticker          String
+  assetClass      String
+  action          String
+  status          RecommendationStatus @default(generated)
+  score           Float
+  probability     Float?
+  entryLow        Float?
+  entryHigh       Float?
+  stopPrice       Float?
+  targetPrice     Float?
+  holdTime        String?
+  reasonJson      Json?
+  riskJson        Json?
+  provenanceJson  Json?
+  createdAt       DateTime             @default(now())
+  updatedAt       DateTime             @updatedAt
+
+  organization    Organization         @relation(fields: [organizationId], references: [id], onDelete: Cascade)
+  paperTrades     PaperTrade[]
+
+  @@index([organizationId, status, createdAt])
+  @@index([organizationId, ticker, createdAt])
+}
+
+model Watchlist {
+  id              String   @id @default(cuid())
+  organizationId  String
+  name            String
+  description     String?
+  createdAt       DateTime @default(now())
+  updatedAt       DateTime @updatedAt
+
+  organization    Organization @relation(fields: [organizationId], references: [id], onDelete: Cascade)
+  items           WatchlistItem[]
+
+  @@unique([organizationId, name])
+}
+
+model WatchlistItem {
+  id              String   @id @default(cuid())
+  watchlistId     String
+  ticker          String
+  assetClass      String
+  notes           String?
+  addedAt         DateTime @default(now())
+
+  watchlist       Watchlist @relation(fields: [watchlistId], references: [id], onDelete: Cascade)
+
+  @@unique([watchlistId, ticker])
+}
+
+model PaperTrade {
+  id               String           @id @default(cuid())
+  organizationId   String
+  recommendationId String?
+  ticker           String
+  assetClass       String
+  side             String
+  status           PaperTradeStatus @default(planned)
+  plannedEntryLow  Float?
+  plannedEntryHigh Float?
+  entryPrice       Float?
+  stopPrice        Float?
+  targetPrice      Float?
+  exitPrice        Float?
+  quantity         Float?
+  realizedR        Float?
+  outcomeLabel     OutcomeLabel     @default(pending)
+  openedAt         DateTime?
+  closedAt         DateTime?
+  createdAt        DateTime         @default(now())
+  updatedAt        DateTime         @updatedAt
+
+  organization     Organization     @relation(fields: [organizationId], references: [id], onDelete: Cascade)
+  recommendation   Recommendation?  @relation(fields: [recommendationId], references: [id], onDelete: SetNull)
+
+  @@index([organizationId, ticker, status])
+}
+
+model AgentScorecard {
+  id              String   @id @default(cuid())
+  organizationId  String
+  agentKey        String
+  agentName       String
+  runCount        Int      @default(0)
+  successRate     Float?
+  averageLatencyMs Float?
+  lastRunAt       DateTime?
+  driftStatus     String   @default("unknown")
+  scorecardJson   Json?
+  createdAt       DateTime @default(now())
+  updatedAt       DateTime @updatedAt
+
+  organization    Organization @relation(fields: [organizationId], references: [id], onDelete: Cascade)
+
+  @@unique([organizationId, agentKey])
+}
+
+model MarketRadarEvent {
+  id              String   @id @default(cuid())
+  organizationId  String
+  ticker          String?
+  eventType       String
+  severity        String
+  title           String
+  summary         String?
+  source          String
+  impactScore     Float?
+  eventJson       Json?
+  detectedAt      DateTime @default(now())
+
+  organization    Organization @relation(fields: [organizationId], references: [id], onDelete: Cascade)
+
+  @@index([organizationId, detectedAt])
+  @@index([organizationId, ticker, detectedAt])
+}
+
+model TradeQualityReview {
+  id              String   @id @default(cuid())
+  organizationId  String
+  recommendationId String?
+  paperTradeId    String?
+  ticker          String
+  setupQuality    Float?
+  entryQuality    Float?
+  riskQuality     Float?
+  thesisQuality   Float?
+  overallGrade    String?
+  reviewJson      Json?
+  createdAt       DateTime @default(now())
+
+  organization    Organization @relation(fields: [organizationId], references: [id], onDelete: Cascade)
+
+  @@index([organizationId, ticker, createdAt])
+}
+
+model HistoricalAnalog {
+  id              String   @id @default(cuid())
+  organizationId  String
+  ticker          String
+  analogTicker    String?
+  analogDate      DateTime?
+  similarityScore Float
+  outcomeSummary  String?
+  featureJson     Json?
+  createdAt       DateTime @default(now())
+
+  organization    Organization @relation(fields: [organizationId], references: [id], onDelete: Cascade)
+
+  @@index([organizationId, ticker, similarityScore])
+}
