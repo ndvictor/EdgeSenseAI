@@ -1,0 +1,29 @@
+groups:
+  - name: edgesenseai-alerts
+    rules:
+      - alert: BackendDown
+        expr: up{job="backend"} == 0
+        for: 15s
+        labels:
+          severity: critical
+        annotations:
+          summary: "EdgeSenseAI backend is down"
+          description: "Prometheus cannot scrape the backend service."
+
+      - alert: BlackboxProbeFail
+        expr: probe_success == 0
+        for: 15s
+        labels:
+          severity: critical
+        annotations:
+          summary: "Blackbox probe failed"
+          description: "A probed EdgeSenseAI target is unavailable."
+
+      - alert: BackendHighLatency
+        expr: histogram_quantile(0.95, sum(rate(edgesenseai_backend_request_latency_seconds_bucket[1m])) by (le, endpoint)) > 1
+        for: 30s
+        labels:
+          severity: warning
+        annotations:
+          summary: "Backend p95 latency is high"
+          description: "Backend p95 latency is above 1 second."
