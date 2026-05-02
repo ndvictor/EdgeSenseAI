@@ -4,6 +4,7 @@ import yfinance as yf
 
 from app.core.settings import settings
 from app.services.market_data_providers.alpaca_provider import AlpacaMarketDataProvider
+from app.services.market_data_providers.mock_provider import MockMarketDataProvider
 from app.services.market_data_providers.yfinance_provider import YFinanceMarketDataProvider
 
 
@@ -15,10 +16,16 @@ class MarketDataService:
         self.providers = providers or {
             "alpaca": AlpacaMarketDataProvider(),
             "yfinance": YFinanceMarketDataProvider(),
+            "mock": MockMarketDataProvider(),
         }
 
-    def get_quote(self, symbol: str) -> Dict[str, Any]:
-        snapshot = self.get_market_snapshot(symbol)
+    def _priority_for_source(self, source: str | None = None) -> list[str]:
+        if not source or source == "auto":
+            return self.provider_priority
+        return [source.lower().strip()]
+
+    def get_quote(self, symbol: str, source: str | None = None) -> Dict[str, Any]:
+        snapshot = self.get_market_snapshot(symbol, source=source)
         if snapshot.get("data_quality") in {"unavailable", "not_configured"}:
             return self._get_unavailable_quote(symbol, error=snapshot.get("error"))
         return {
@@ -32,7 +39,7 @@ class MarketDataService:
             "volume": snapshot.get("volume"),
             "provider": snapshot.get("provider"),
             "source": snapshot.get("source"),
-            "is_mock": False,
+            "is_mock": snapshot.get("is_mock", False),
             "data_quality": snapshot.get("data_quality"),
             "unavailable_fields": snapshot.get("unavailable_fields", []),
             "not_configured_fields": snapshot.get("not_configured_fields", []),
@@ -56,11 +63,17 @@ class MarketDataService:
         except Exception as exc:
             return self._get_unavailable_profile(symbol, error=str(exc))
 
-    def get_price_history(self, symbol: str, period: str = "6mo", interval: str = "1d") -> Dict[str, Any]:
+    def get_price_history(self, symbol: str, period: str = "6mo", interval: str = "1d", source: str | None = None) -> Dict[str, Any]:
+        requested_source = (source or "auto").lower().strip()
+        if requested_source == "mock":
+            return self._get_mock_history(symbol, period, interval)
+
         try:
             ticker = yf.Ticker(symbol)
             hist = ticker.history(period=period, interval=interval)
             if hist.empty:
+                if requested_source == "auto":
+                    return self._get_mock_history(symbol, period, interval, data_quality="mock_fallback", error="yfinance returned no data")
                 return self._get_unavailable_history(symbol, period, interval, error="No data returned")
 
             data = []
@@ -84,12 +97,14 @@ class MarketDataService:
                 "data_quality": "real",
             }
         except Exception as exc:
+            if requested_source == "auto":
+                return self._get_mock_history(symbol, period, interval, data_quality="mock_fallback", error=str(exc))
             return self._get_unavailable_history(symbol, period, interval, error=str(exc))
 
-    def get_market_snapshot(self, symbol: str) -> Dict[str, Any]:
+    def get_market_snapshot(self, symbol: str, source: str | None = None) -> Dict[str, Any]:
         provider_statuses = []
 
-        for provider_name in self.provider_priority:
+        for provider_name in self._priority_for_source(source):
             provider = self.providers.get(provider_name)
             if provider is None:
                 provider_statuses.append({"provider": provider_name, "data_quality": "not_configured", "error": "Provider is not registered"})
@@ -104,7 +119,7 @@ class MarketDataService:
                 "not_configured_fields": snapshot.get("not_configured_fields", []),
             })
 
-            if snapshot.get("data_quality") == "real" and snapshot.get("price") is not None:
+            if snapshot.get("price") is not None and snapshot.get("data_quality") not in {"unavailable", "not_configured"}:
                 snapshot["provider_statuses"] = provider_statuses
                 return snapshot
 
@@ -115,6 +130,31 @@ class MarketDataService:
         snapshot = self._get_unavailable_snapshot(symbol, error=final_error or "No provider returned market data")
         snapshot["provider_statuses"] = provider_statuses
         return snapshot
+
+    def _get_mock_history(self, symbol: str, period: str, interval: str, data_quality: str = "mock", error: str | None = None) -> Dict[str, Any]:
+        snapshot = self.providers["mock"].get_snapshot(symbol)
+        start = float(snapshot.get("price") or 100.0)
+        data = []
+        for i in range(30):
+            close = start * (0.94 + i * 0.004)
+            data.append({
+                "date": f"2026-01-{i + 1:02d}T00:00:00",
+                "open": round(close * 0.995, 4),
+                "high": round(close * 1.012, 4),
+                "low": round(close * 0.988, 4),
+                "close": round(close, 4),
+                "volume": int((snapshot.get("volume") or 1000000) * (0.7 + i * 0.01)),
+            })
+        return {
+            "symbol": symbol.upper(),
+            "period": period,
+            "interval": interval,
+            "data": data,
+            "provider": "mock",
+            "is_mock": True,
+            "data_quality": data_quality,
+            "error": error,
+        }
 
     def _get_unavailable_quote(self, symbol: str, error: str | None = None) -> Dict[str, Any]:
         return {
