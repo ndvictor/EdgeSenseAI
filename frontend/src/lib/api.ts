@@ -422,6 +422,185 @@ export type LiveWatchlistResponse = {
   disclaimer: string;
 };
 
+export type DataSourceKind = "demo" | "placeholder" | "source_backed" | string;
+
+export type AiOpsSummaryResponse = {
+  data_source: DataSourceKind;
+  status: string;
+  generated_at?: string;
+  orchestration?: Record<string, unknown>;
+  agent_scorecards_available?: number;
+  live_trading_allowed?: boolean;
+  paper_trading_requires_approval?: boolean;
+};
+
+export type AiOpsWorkflow = {
+  name?: string;
+  workflow_name?: string;
+  status?: string;
+  trigger?: string;
+  mode?: string;
+  data_source?: DataSourceKind;
+  agents?: string[] | number;
+  last_run?: string | null;
+  last_run_at?: string | null;
+  next_step?: string;
+  entrypoint?: string;
+  live_trading_allowed?: boolean;
+  langgraph?: Record<string, unknown>;
+};
+
+export type AiOpsWorkflowListResponse = {
+  data_source: DataSourceKind;
+  workflows: AiOpsWorkflow[];
+};
+
+export type AiOpsAgentScorecard = {
+  agent_key?: string;
+  agent_name?: string;
+  name?: string;
+  role?: string;
+  status?: string;
+  run_count?: number;
+  success_rate?: number | null;
+  average_latency_ms?: number | null;
+  drift_status?: string;
+  last_run_at?: string | null;
+  scorecard_notes?: string[];
+  notes?: string[];
+  data_source?: DataSourceKind;
+};
+
+export type AiOpsAgentStatusResponse = {
+  data_source: DataSourceKind;
+  existing_scorecards?: AiOpsAgentScorecard[];
+  foundation_agents?: AiOpsAgentScorecard[];
+};
+
+export type AiOpsLlmUsageRow = {
+  provider?: string;
+  model?: string;
+  model_name?: string;
+  agent?: string;
+  workflow?: string;
+  tokens?: number;
+  estimated_tokens?: number;
+  cost?: number;
+  estimated_cost?: number;
+  status?: string;
+};
+
+export type AiOpsLlmUsageResponse = {
+  data_source: DataSourceKind;
+  status: string;
+  provider?: string;
+  total_estimated_cost?: number;
+  total_estimated_tokens?: number;
+  cost_today?: number;
+  cost_limit?: number;
+  tokens_today?: number;
+  models?: AiOpsLlmUsageRow[];
+  usage?: AiOpsLlmUsageRow[];
+  notes?: string[];
+};
+
+export type AiOpsSchedulerJob = {
+  id: string;
+  name?: string;
+  trigger?: string;
+  schedule?: string;
+  workflow?: string;
+  status?: string;
+  last_run?: string | null;
+  last_run_at?: string | null;
+  next_run?: string | null;
+  next_run_at?: string | null;
+  description?: string;
+  data_source?: DataSourceKind;
+};
+
+export type AiOpsSchedulerJobsResponse = {
+  data_source: DataSourceKind;
+  scheduler?: string;
+  status: string;
+  apscheduler_available?: boolean;
+  auto_start_enabled?: boolean;
+  jobs_configured?: number;
+  running_jobs?: number;
+  failed_jobs_today?: number;
+  updated_at?: string;
+  jobs: AiOpsSchedulerJob[];
+};
+
+export type AiOpsAuditEvent = {
+  id?: string;
+  time?: string;
+  created_at?: string;
+  event_type?: string;
+  actor?: string;
+  object?: string;
+  status?: string;
+  summary?: string;
+  details?: string;
+  severity?: string;
+  data_source?: DataSourceKind;
+};
+
+export type AiOpsAuditEventsResponse = {
+  data_source: DataSourceKind;
+  events: AiOpsAuditEvent[];
+  notes?: string[];
+};
+
+export type EdgeRadarRunRequest = {
+  symbols: string[];
+  asset_classes?: string[] | null;
+  horizon: "intraday" | "day_trade" | "swing" | "one_month" | string;
+  account_size?: number | null;
+  max_risk_per_trade?: number | null;
+  strategy_preference?: string | null;
+  data_source: "auto" | "yfinance" | "mock" | string;
+};
+
+export type EdgeRadarTraceEvent = {
+  run_id: string;
+  workflow_name: string;
+  agent_name: string;
+  status: string;
+  started_at: string;
+  completed_at?: string | null;
+  duration_ms?: number | null;
+  confidence?: number | null;
+  input_summary?: string | null;
+  output_summary?: string | null;
+  warnings: string[];
+  errors: string[];
+  metadata: Record<string, unknown>;
+  data_source: DataSourceKind;
+};
+
+export type EdgeRadarRunResponse = {
+  run_id: string;
+  workflow_name: string;
+  status: string;
+  data_source: DataSourceKind;
+  message: string;
+  detected_signals: Array<Record<string, unknown>>;
+  regime_context: Record<string, unknown>;
+  risk_review: Record<string, unknown>;
+  portfolio_manager_decision: Record<string, unknown>;
+  approval_required: boolean;
+  paper_trade_allowed: boolean;
+  live_trading_allowed: boolean;
+  cost_estimate: Record<string, unknown>;
+  agent_trace: EdgeRadarTraceEvent[];
+  warnings: string[];
+  errors: string[];
+  started_at: string;
+  completed_at: string;
+  duration_ms: number;
+};
+
 export const api = {
   getCommandCenter: () => request<CommandCenterResponse>("/api/command-center"),
   getAccountRisk: () => request<AccountRiskProfile>("/api/account-risk/profile"),
@@ -443,4 +622,11 @@ export const api = {
   getBacktestingSummary: () => request<BacktestingResponse>("/api/backtesting/summary"),
   getJournalSummary: () => request<JournalSummary>("/api/journal/summary"),
   runModelLab: (payload: ModelLabRunRequest) => request<ModelLabRunResponse>("/api/model-lab/run", { method: "POST", body: JSON.stringify(payload) }),
+  getAiOpsSummary: () => request<AiOpsSummaryResponse>("/api/ai-ops/summary"),
+  getAiOpsWorkflows: () => request<AiOpsWorkflowListResponse>("/api/ai-ops/workflows"),
+  getAiOpsAgentStatus: () => request<AiOpsAgentStatusResponse>("/api/ai-ops/agents/status"),
+  getAiOpsLlmUsage: () => request<AiOpsLlmUsageResponse>("/api/ai-ops/llm-usage"),
+  getAiOpsSchedulerJobs: () => request<AiOpsSchedulerJobsResponse>("/api/ai-ops/scheduler/jobs"),
+  getAiOpsAuditEvents: () => request<AiOpsAuditEventsResponse>("/api/ai-ops/audit-events"),
+  runEdgeRadar: (payload: EdgeRadarRunRequest) => request<EdgeRadarRunResponse>("/api/agents/edge-radar/run", { method: "POST", body: JSON.stringify(payload) }),
 };

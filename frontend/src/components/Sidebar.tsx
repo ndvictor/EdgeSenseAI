@@ -22,6 +22,7 @@ import {
 const items = [
   { label: "Account Risk Center", href: "/account-risk", icon: WalletCards },
   { label: "Command Center", href: "/command-center", icon: Gauge },
+  { label: "Agent Ops Center", href: "/ai-ops", icon: BrainCircuit },
   { label: "Live Watchlist", href: "/live-watchlist", icon: BellRing },
   { label: "Edge Signals", href: "/edge-signals", icon: Activity },
   { label: "Model Lab", href: "/model-lab", icon: FlaskConical },

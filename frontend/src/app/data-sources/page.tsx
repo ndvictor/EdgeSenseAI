@@ -21,8 +21,8 @@ export default function DataSourcesPage() {
   }, []);
 
   const byType = useMemo(() => {
-    if (!data) return {} as Record<string, typeof data.sources>;
-    return data.sources.reduce<Record<string, typeof data.sources>>((acc, source) => {
+    if (!data) return {} as Record<string, DataSourcesStatusResponse["sources"]>;
+    return data.sources.reduce<Record<string, DataSourcesStatusResponse["sources"]>>((acc, source) => {
       acc[source.type] = acc[source.type] ?? [];
       acc[source.type].push(source);
       return acc;

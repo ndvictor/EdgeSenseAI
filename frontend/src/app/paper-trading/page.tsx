@@ -27,6 +27,10 @@ export default function PaperTradingPage() {
         {error && <div className="rounded-xl border border-amber-500/30 bg-amber-500/10 px-4 py-3 text-sm text-amber-200">{error}</div>}
         {!data ? (
           <div className="py-8 text-center text-sm text-slate-300">Loading paper validation...</div>
+        ) : !data.top_action ? (
+          <div className="rounded-xl border border-amber-500/30 bg-amber-500/10 px-4 py-8 text-center text-sm text-amber-200">
+            No source-backed paper candidate is available yet.
+          </div>
         ) : (
           <div className="space-y-4">
             <section className="rounded-xl border border-emerald-800 bg-slate-950 p-4 shadow-sm">
