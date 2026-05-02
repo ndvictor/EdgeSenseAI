@@ -10,6 +10,7 @@ import {
   BookOpen,
   BrainCircuit,
   ClipboardList,
+  DatabaseZap,
   FlaskConical,
   Gauge,
   LineChart,
@@ -24,6 +25,7 @@ const items = [
   { label: "Live Watchlist", href: "/live-watchlist", icon: BellRing },
   { label: "Edge Signals", href: "/edge-signals", icon: Activity },
   { label: "Model Lab", href: "/model-lab", icon: FlaskConical },
+  { label: "Data Sources", href: "/data-sources", icon: DatabaseZap },
   { label: "Stocks", href: "/stocks", icon: TrendingUp },
   { label: "Options", href: "/options", icon: LineChart },
   { label: "Bitcoin / Crypto", href: "/crypto", icon: Bitcoin },
@@ -76,11 +78,6 @@ export function Sidebar() {
           );
         })}
       </nav>
-
-      <div className="absolute bottom-6 left-4 right-4 rounded-2xl border border-emerald-900 bg-slate-800 p-1 text-xs text-emerald-500">
-        <div className="font-bold text-emerald-500">Research / paper mode</div>
-        <p className="mt-0 text-slate-400">No live execution. Agents notify; risk layer validates.</p>
-      </div>
     </aside>
   );
 }
