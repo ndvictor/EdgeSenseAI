@@ -69,6 +69,62 @@ export type ModelStatusResponse = {
   models: ModelStatus[];
 };
 
+export type MarketSnapshot = {
+  symbol: string;
+  asset_class: string;
+  current_price: number;
+  previous_close: number;
+  day_change_percent: number;
+  volume: number;
+  relative_volume: number;
+  bid: number;
+  ask: number;
+  spread_percent: number;
+  vwap: number;
+  volatility_proxy: number;
+  data_mode: string;
+};
+
+export type EngineeredFeatures = {
+  symbol: string;
+  momentum_score: number;
+  rvol_score: number;
+  spread_quality_score: number;
+  trend_vs_vwap_score: number;
+  volatility_score: number;
+  composite_feature_score: number;
+  notes: string[];
+};
+
+export type ModelPipelineResult = {
+  symbol: string;
+  data_mode: string;
+  features: EngineeredFeatures;
+  directional_bias: string;
+  regime_bias: string;
+  volatility_fit: string;
+  ranker_score: number;
+  pipeline_notes: string[];
+};
+
+export type AccountFeasibilityResult = {
+  symbol: string;
+  feasibility: string;
+  max_position_size_dollars: number;
+  max_risk_dollars: number;
+  suggested_expression: string;
+  notes: string[];
+};
+
+export type RiskCheckResult = {
+  passed: boolean;
+  reward_risk_ratio: number;
+  max_dollar_risk: number;
+  stop_distance_percent: number;
+  risk_status: string;
+  blockers: string[];
+};
+
 export type PricePlan = {
   current_price: number;
   buy_zone_low: number;
@@ -174,4 +230,9 @@ export const api = {
   getLiveWatchlist: () => request<LiveWatchlistResponse>("/api/live-watchlist/latest"),
   getEdgeSignals: () => request<{ last_updated: string; alerts_enabled: boolean; account_range: string; signals: EdgeSignal[] }>("/api/edge-signals/latest"),
   getModelStatus: () => request<ModelStatusResponse>("/api/models/status"),
+  getMarketSnapshots: () => request<MarketSnapshot[]>("/api/market/snapshots"),
+  getFeatures: (symbol: string) => request<EngineeredFeatures>(`/api/features/${symbol}`),
+  getModelPipeline: (symbol: string) => request<ModelPipelineResult>(`/api/model-pipeline/${symbol}`),
+  getAccountFeasibility: (symbol: string) => request<AccountFeasibilityResult>(`/api/account-feasibility/${symbol}`),
+  getRiskCheck: (symbol: string) => request<RiskCheckResult>(`/api/risk-check/${symbol}`),
 };
