@@ -19,6 +19,9 @@ class MarketScanRun(BaseModel):
     skipped_signals_count: int
     should_trigger_workflow: bool
     recommended_workflow_key: str
+    workflow_trigger_status: str = "not_triggered"
+    workflow_run_id: str | None = None
+    cooldown_remaining_seconds: int | None = None
     required_agents: list[str]
     required_models: list[str]
     safety_state: dict[str, Any] = Field(default_factory=dict)
@@ -52,6 +55,9 @@ def record_scan_run(
     skipped_signals_count: int,
     should_trigger_workflow: bool,
     recommended_workflow_key: str,
+    workflow_trigger_status: str = "not_triggered",
+    workflow_run_id: str | None = None,
+    cooldown_remaining_seconds: int | None = None,
     required_agents: list[str],
     required_models: list[str],
     safety_state: dict[str, Any],
@@ -75,6 +81,9 @@ def record_scan_run(
         skipped_signals_count=skipped_signals_count,
         should_trigger_workflow=should_trigger_workflow,
         recommended_workflow_key=recommended_workflow_key,
+        workflow_trigger_status=workflow_trigger_status,
+        workflow_run_id=workflow_run_id,
+        cooldown_remaining_seconds=cooldown_remaining_seconds,
         required_agents=required_agents,
         required_models=required_models,
         safety_state=safety_state,
@@ -101,6 +110,16 @@ def get_latest_scan_run() -> MarketScanRun | None:
 
 def get_scan_run(run_id: str) -> MarketScanRun | None:
     return next((run for run in _SCAN_RUNS if run.run_id == run_id), None)
+
+
+def update_scan_run_workflow_result(run_id: str, workflow_trigger_status: str, workflow_run_id: str | None = None, cooldown_remaining_seconds: int | None = None) -> MarketScanRun | None:
+    run = get_scan_run(run_id)
+    if run is None:
+        return None
+    run.workflow_trigger_status = workflow_trigger_status
+    run.workflow_run_id = workflow_run_id
+    run.cooldown_remaining_seconds = cooldown_remaining_seconds
+    return run
 
 
 def get_scan_run_summary(limit: int = 25) -> MarketScanRunSummary:

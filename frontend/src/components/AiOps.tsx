@@ -17,6 +17,7 @@ import {
   type AiOpsWorkflowListResponse,
   type DataSourceKind,
   type EdgeRadarRunResponse,
+  type StrategyWorkflowRunResult,
   type StrategyConfig,
 } from "@/lib/api";
 
@@ -279,6 +280,40 @@ function StrategyRegistryTable({ strategies }: { strategies: StrategyConfig[] })
   );
 }
 
+function recommendationAction(run: StrategyWorkflowRunResult) {
+  const action = run.recommendation?.action;
+  return typeof action === "string" ? action : "watch_only";
+}
+
+function StrategyWorkflowRunsTable({ runs }: { runs: StrategyWorkflowRunResult[] }) {
+  if (!runs.length) return <EmptyState label="strategy workflow runs" />;
+  return (
+    <div className="overflow-x-auto rounded-xl border border-slate-800 bg-slate-900">
+      <table className="w-full min-w-[1240px] text-left text-sm">
+        <thead className="text-xs uppercase tracking-wide text-emerald-600">
+          <tr><th className="px-4 py-3">Run ID</th><th className="px-4 py-3">Strategy</th><th className="px-4 py-3">Symbol</th><th className="px-4 py-3">Matched Signal</th><th className="px-4 py-3">Status</th><th className="px-4 py-3">Recommendation</th><th className="px-4 py-3">Approval</th><th className="px-4 py-3">Paper</th><th className="px-4 py-3">Live</th><th className="px-4 py-3">Completed</th></tr>
+        </thead>
+        <tbody className="divide-y divide-slate-800">
+          {runs.map((run) => (
+            <tr key={run.workflow_run_id} className="hover:bg-emerald-950/20">
+              <td className="px-4 py-3 font-mono text-xs text-white">{run.workflow_run_id.slice(0, 12)}</td>
+              <td className="px-4 py-3 text-slate-300">{run.strategy_key}</td>
+              <td className="px-4 py-3 font-bold text-white">{run.symbol}</td>
+              <td className="px-4 py-3 text-slate-300">{run.matched_signal_name || run.matched_signal_key || "manual"}</td>
+              <td className="px-4 py-3"><StatusBadge status={run.status} /></td>
+              <td className="px-4 py-3"><StatusBadge status={recommendationAction(run)} /></td>
+              <td className="px-4 py-3"><StatusBadge status={run.approval_required ? "required" : "not_required"} /></td>
+              <td className="px-4 py-3"><StatusBadge status={run.paper_trade_allowed ? "allowed" : "not_allowed"} /></td>
+              <td className="px-4 py-3"><StatusBadge status={run.live_trading_allowed ? "enabled" : "disabled"} /></td>
+              <td className="px-4 py-3 text-slate-300">{formatDate(run.completed_at)}</td>
+            </tr>
+          ))}
+        </tbody>
+      </table>
+    </div>
+  );
+}
+
 function AutoRunPanel({ state, onToggle, loading, error }: { state: AutoRunControlState | null; onToggle: () => void; loading: boolean; error: string | null }) {
   if (error) return <ErrorState error={error} />;
   if (!state) return <LoadingState label="auto-run status" />;
@@ -421,6 +456,7 @@ export function AiOpsOverviewPage() {
   const [scheduler, setScheduler] = useState<AiOpsSchedulerJobsResponse | null>(null);
   const [coreRegistry, setCoreRegistry] = useState<CoreAgentRegistryItem[]>([]);
   const [strategies, setStrategies] = useState<StrategyConfig[]>([]);
+  const [strategyWorkflowRuns, setStrategyWorkflowRuns] = useState<StrategyWorkflowRunResult[]>([]);
   const [autoRun, setAutoRun] = useState<AutoRunControlState | null>(null);
   const [error, setError] = useState<string | null>(null);
   const [autoRunError, setAutoRunError] = useState<string | null>(null);
@@ -428,8 +464,8 @@ export function AiOpsOverviewPage() {
   const loading = !summary && !error;
 
   useEffect(() => {
-    Promise.all([api.getAiOpsSummary(), api.getAiOpsWorkflows(), api.getAiOpsAgentStatus(), api.getAiOpsLlmUsage(), api.getAiOpsSchedulerJobs(), api.getAgentRegistry(), api.getStrategies(), api.getAutoRunStatus()])
-      .then(([summaryData, workflowData, agentData, llmData, schedulerData, registryData, strategyData, autoRunData]) => {
+    Promise.all([api.getAiOpsSummary(), api.getAiOpsWorkflows(), api.getAiOpsAgentStatus(), api.getAiOpsLlmUsage(), api.getAiOpsSchedulerJobs(), api.getAgentRegistry(), api.getStrategies(), api.getAutoRunStatus(), api.getStrategyWorkflowRuns()])
+      .then(([summaryData, workflowData, agentData, llmData, schedulerData, registryData, strategyData, autoRunData, strategyWorkflowData]) => {
         setSummary(summaryData);
         setWorkflows(workflowData);
         setAgents(agentData);
@@ -437,6 +473,7 @@ export function AiOpsOverviewPage() {
         setScheduler(schedulerData);
         setCoreRegistry(registryData);
         setStrategies(strategyData);
+        setStrategyWorkflowRuns(strategyWorkflowData);
         setAutoRun(autoRunData);
       })
       .catch((err) => setError(err instanceof Error ? err.message : "AI Ops summary failed"));
@@ -478,6 +515,19 @@ export function AiOpsOverviewPage() {
           <Panel title="Agent Health"><AgentHealthTable agents={agentList} /></Panel>
           <Panel title="Core Agent Registry"><CoreAgentRegistryTable agents={coreRegistry} /></Panel>
           <Panel title="Strategy Registry Summary"><StrategyRegistryTable strategies={strategies} /></Panel>
+          <Panel title="Strategy Workflow Runs">
+            {strategyWorkflowRuns[0] && (
+              <div className="mb-4 grid grid-cols-2 gap-4 lg:grid-cols-6">
+                <MetricCard label="Latest Run" value={strategyWorkflowRuns[0].workflow_run_id.slice(0, 12)} accent />
+                <MetricCard label="Strategy" value={strategyWorkflowRuns[0].strategy_key} />
+                <MetricCard label="Symbol" value={strategyWorkflowRuns[0].symbol} />
+                <MetricCard label="Status" value={strategyWorkflowRuns[0].status} />
+                <MetricCard label="Approval" value={strategyWorkflowRuns[0].approval_required ? "Required" : "None"} />
+                <MetricCard label="Live Allowed" value={strategyWorkflowRuns[0].live_trading_allowed ? "Yes" : "No"} />
+              </div>
+            )}
+            <StrategyWorkflowRunsTable runs={strategyWorkflowRuns} />
+          </Panel>
           <Panel title="Auto-run Status"><AutoRunPanel state={autoRun} onToggle={toggleAutoRun} loading={autoRunLoading} error={autoRunError} /></Panel>
           <Panel title="Safety Guardrails"><GuardrailGrid summary={summary} llm={llm} /></Panel>
           <EdgeRadarPanel />

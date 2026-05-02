@@ -437,3 +437,85 @@ def test_scheduled_market_scan_respects_auto_run_controls():
     assert summary_payload["scan_runs_today"] >= 1
     assert summary_payload["last_scheduled_scan_status"] in {"completed", "skipped"}
     assert summary_payload["scanner_status"] == "configured"
+
+
+def test_strategy_workflow_run_contract_and_scanner_trigger_safety():
+    manual = client.post(
+        "/api/strategy-workflows/run",
+        json={
+            "strategy_key": "stock_day_trading",
+            "symbol": "AMD",
+            "asset_class": "stock",
+            "horizon": "day_trade",
+            "matched_signal_key": "rvol_spike",
+            "trigger_type": "manual",
+            "data_source": "mock",
+        },
+    )
+    assert manual.status_code == 200
+    manual_payload = manual.json()
+    assert manual_payload["workflow_run_id"]
+    assert manual_payload["approval_required"] is True
+    assert manual_payload["live_trading_allowed"] is False
+    assert manual_payload["recommendation"]["paper_only"] is True
+
+    runs = client.get("/api/strategy-workflows/runs")
+    assert runs.status_code == 200
+    assert any(run["workflow_run_id"] == manual_payload["workflow_run_id"] for run in runs.json())
+
+    latest = client.get("/api/strategy-workflows/runs/latest")
+    assert latest.status_code == 200
+    assert latest.json()["workflow_run_id"] == manual_payload["workflow_run_id"]
+
+    client.put("/api/auto-run/status", json={"auto_run_enabled": False})
+    skipped = client.post("/api/market-scanner/run-scheduled-once")
+    assert skipped.status_code == 200
+    assert skipped.json()["scan_run"]["workflow_trigger_status"] == "not_triggered"
+
+    scan = client.post(
+        "/api/market-scanner/scan",
+        json={
+            "strategy_key": "stock_day_trading",
+            "symbols": ["COOL"],
+            "data_source": "mock",
+            "auto_run": False,
+            "trigger_workflow": True,
+        },
+    )
+    assert scan.status_code == 200
+    scan_payload = scan.json()
+    assert "workflow_trigger_status" in scan_payload
+    assert scan_payload["workflow_trigger_status"] == "triggered"
+    assert scan_payload["workflow_run_id"]
+    assert scan_payload["safety_state"]["live_trading_enabled"] is False
+
+    duplicate_scan = client.post(
+        "/api/market-scanner/scan",
+        json={
+            "strategy_key": "stock_day_trading",
+            "symbols": ["COOL"],
+            "data_source": "mock",
+            "auto_run": False,
+            "trigger_workflow": True,
+        },
+    )
+    assert duplicate_scan.status_code == 200
+    duplicate_payload = duplicate_scan.json()
+    assert duplicate_payload["workflow_trigger_status"] == "skipped_cooldown_active"
+    assert duplicate_payload["workflow_run_id"] is None
+    assert duplicate_payload["cooldown_remaining_seconds"] > 0
+
+    client.put("/api/auto-run/status", json={"auto_run_enabled": True})
+    scheduled = client.post("/api/market-scanner/run-scheduled-once")
+    assert scheduled.status_code == 200
+    scheduled_payload = scheduled.json()
+    if scheduled_payload.get("scan", {}).get("should_trigger_workflow"):
+        assert scheduled_payload["scan"]["workflow_trigger_status"] in {"triggered", "skipped_cooldown_active"}
+        if scheduled_payload["scan"]["workflow_trigger_status"] == "triggered":
+            assert scheduled_payload["scan"]["workflow_run_id"]
+        else:
+            assert scheduled_payload["scan"]["cooldown_remaining_seconds"] > 0
+
+    assert client.post("/api/market-scanner/scan", json={"strategy_key": "stock_day_trading", "symbols": ["AMD"], "data_source": "mock"}).status_code == 200
+    assert client.post("/api/agents/edge-radar/run", json={"symbols": ["AMD"], "data_source": "mock"}).status_code == 200
+    assert client.get("/api/llm-gateway/status").status_code == 200

@@ -972,6 +972,7 @@ export type MarketScannerRequest = {
   data_source: "auto" | "yfinance" | "mock" | string;
   auto_run: boolean;
   trigger_type?: "manual" | "scheduled";
+  trigger_workflow?: boolean;
   account_size?: number | null;
   max_risk_per_trade?: number | null;
 };
@@ -985,6 +986,9 @@ export type MarketScannerResponse = {
   skipped_signals: MarketScannerSignal[];
   should_trigger_workflow: boolean;
   recommended_workflow_key: string;
+  workflow_trigger_status: string;
+  workflow_run_id?: string | null;
+  cooldown_remaining_seconds?: number | null;
   required_agents: string[];
   required_models: string[];
   safety_state: AutoRunControlState;
@@ -1003,6 +1007,9 @@ export type MarketScanRun = {
   skipped_signals_count: number;
   should_trigger_workflow: boolean;
   recommended_workflow_key: string;
+  workflow_trigger_status: string;
+  workflow_run_id?: string | null;
+  cooldown_remaining_seconds?: number | null;
   required_agents: string[];
   required_models: string[];
   safety_state: Record<string, unknown>;
@@ -1020,6 +1027,71 @@ export type MarketScanRunSummary = {
   scan_runs_today: number;
   latest_run?: MarketScanRun | null;
   runs: MarketScanRun[];
+};
+
+export type StrategyWorkflowTraceStep = {
+  step_name: string;
+  status: string;
+  started_at: string;
+  completed_at: string;
+  duration_ms: number;
+  summary: string;
+  data_source: DataSourceKind;
+  metadata?: Record<string, unknown>;
+  warnings: string[];
+  errors: string[];
+};
+
+export type StrategyWorkflowRunRequest = {
+  strategy_key: string;
+  symbol: string;
+  asset_class?: string;
+  horizon?: string;
+  matched_signal_key?: string | null;
+  matched_signal_name?: string | null;
+  source_scan_run_id?: string | null;
+  trigger_type?: "manual" | "scheduled" | "scanner_match";
+  data_source?: string;
+  account_size?: number | null;
+  max_risk_per_trade?: number | null;
+};
+
+export type StrategyWorkflowRunResult = {
+  workflow_run_id: string;
+  source_scan_run_id?: string | null;
+  trigger_type: "manual" | "scheduled" | "scanner_match";
+  strategy_key: string;
+  symbol: string;
+  asset_class: string;
+  horizon: string;
+  matched_signal_key?: string | null;
+  matched_signal_name?: string | null;
+  required_agents: string[];
+  required_models: string[];
+  data_quality: Record<string, unknown>;
+  feature_row: Record<string, unknown>;
+  model_plan: Record<string, unknown>;
+  model_outputs: Record<string, unknown>[];
+  risk_review: Record<string, unknown>;
+  portfolio_decision: Record<string, unknown>;
+  recommendation: Record<string, unknown>;
+  approval_required: boolean;
+  paper_trade_allowed: boolean;
+  live_trading_allowed: boolean;
+  status: string;
+  warnings: string[];
+  errors: string[];
+  trace: StrategyWorkflowTraceStep[];
+  started_at: string;
+  completed_at: string;
+  duration_ms: number;
+};
+
+export type StrategyWorkflowRunSummary = {
+  total_runs: number;
+  workflow_runs_today: number;
+  latest_run?: StrategyWorkflowRunResult | null;
+  runs: StrategyWorkflowRunResult[];
 };
 
 export const api = {
@@ -1077,6 +1149,10 @@ export const api = {
   getLatestMarketScanRun: () => request<MarketScanRun | null>("/api/market-scanner/runs/latest"),
   getMarketScanRun: (runId: string) => request<MarketScanRun>(`/api/market-scanner/runs/${runId}`),
   runScheduledMarketScanOnce: () => request<Record<string, unknown>>("/api/market-scanner/run-scheduled-once", { method: "POST" }),
+  getStrategyWorkflowRuns: (limit = 25) => request<StrategyWorkflowRunResult[]>(`/api/strategy-workflows/runs?limit=${limit}`),
+  getLatestStrategyWorkflowRun: () => request<StrategyWorkflowRunResult | null>("/api/strategy-workflows/runs/latest"),
+  getStrategyWorkflowRun: (id: string) => request<StrategyWorkflowRunResult>(`/api/strategy-workflows/runs/${id}`),
+  runStrategyWorkflow: (payload: StrategyWorkflowRunRequest) => request<StrategyWorkflowRunResult>("/api/strategy-workflows/run", { method: "POST", body: JSON.stringify(payload) }),
   getAutoRunStatus: () => request<AutoRunControlState>("/api/auto-run/status"),
   updateAutoRunStatus: (payload: AutoRunControlUpdate) => request<AutoRunControlState>("/api/auto-run/status", { method: "PUT", body: JSON.stringify(payload) }),
 };

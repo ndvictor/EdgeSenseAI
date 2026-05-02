@@ -12,6 +12,7 @@ from app.services.llm_gateway_service import get_gateway_summary
 from app.services.market_scan_run_service import get_scan_run_summary
 from app.services.model_orchestrator_service import get_model_registry
 from app.services.platform_workflows import get_agent_scorecards
+from app.services.strategy_workflow_run_service import get_strategy_workflow_run_summary
 from app.strategies.registry import list_strategies
 
 router = APIRouter()
@@ -32,6 +33,8 @@ def get_ai_ops_summary() -> dict[str, Any]:
     auto_run = get_auto_run_state()
     scan_summary = get_scan_run_summary()
     last_scheduled_scan = get_last_scheduled_scan_result()
+    workflow_summary = get_strategy_workflow_run_summary()
+    latest_workflow = workflow_summary.latest_run
     return {
         "data_source": "source_backed",
         "status": "foundation_installed",
@@ -59,6 +62,10 @@ def get_ai_ops_summary() -> dict[str, Any]:
         "latest_market_scan": scan_summary.latest_run.model_dump() if scan_summary.latest_run else None,
         "scan_runs_today": scan_summary.scan_runs_today,
         "last_scheduled_scan_status": last_scheduled_scan["status"] if last_scheduled_scan else "not_run",
+        "latest_strategy_workflow_run": latest_workflow.model_dump() if latest_workflow else None,
+        "strategy_workflow_runs_today": workflow_summary.workflow_runs_today,
+        "last_workflow_trigger_status": scan_summary.latest_run.workflow_trigger_status if scan_summary.latest_run else "not_triggered",
+        "latest_recommendation_status": latest_workflow.recommendation.get("action") if latest_workflow else "none",
         "live_trading_enabled": auto_run.live_trading_enabled,
         "require_human_approval": auto_run.require_human_approval,
         "agent_scorecards_available": len(scorecards),

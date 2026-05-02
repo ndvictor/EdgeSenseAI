@@ -1,4 +1,4 @@
-from datetime import datetime
+from datetime import datetime, timedelta
 from typing import Any, Literal
 
 from pydantic import BaseModel, Field
@@ -6,7 +6,8 @@ from pydantic import BaseModel, Field
 from app.services.auto_run_control_service import AutoRunControlState, get_auto_run_state
 from app.services.edge_signal_rules_service import EdgeSignalRule, get_rules_for_signals
 from app.services.market_data_service import MarketDataService
-from app.services.market_scan_run_service import record_scan_run
+from app.services.market_scan_run_service import record_scan_run, update_scan_run_workflow_result
+from app.services.strategy_workflow_run_service import StrategyWorkflowRunRequest, run_strategy_workflow_from_signal
 from app.strategies.registry import StrategyConfig, get_strategy
 
 
@@ -16,6 +17,7 @@ class MarketScannerRequest(BaseModel):
     data_source: str = "auto"
     auto_run: bool = False
     trigger_type: Literal["manual", "scheduled"] = "manual"
+    trigger_workflow: bool = False
     account_size: float | None = None
     max_risk_per_trade: float | None = None
 
@@ -40,6 +42,9 @@ class MarketScannerResponse(BaseModel):
     skipped_signals: list[MarketScannerSignal]
     should_trigger_workflow: bool
     recommended_workflow_key: str
+    workflow_trigger_status: str = "not_triggered"
+    workflow_run_id: str | None = None
+    cooldown_remaining_seconds: int | None = None
     required_agents: list[str]
     required_models: list[str]
     safety_state: AutoRunControlState
@@ -48,6 +53,30 @@ class MarketScannerResponse(BaseModel):
 
 
 _MARKET_DATA = MarketDataService()
+_WORKFLOW_TRIGGER_COOLDOWNS: dict[tuple[str, str, str], datetime] = {}
+_DEFAULT_WORKFLOW_TRIGGER_COOLDOWN_SECONDS = 15 * 60
+
+
+def _workflow_cooldown_key(strategy_key: str, symbol: str, matched_signal_key: str) -> tuple[str, str, str]:
+    return (strategy_key, symbol.upper(), matched_signal_key)
+
+
+def _workflow_cooldown_remaining_seconds(strategy_key: str, symbol: str, matched_signal_key: str, checked_at: datetime | None = None) -> int | None:
+    now = checked_at or datetime.utcnow()
+    key = _workflow_cooldown_key(strategy_key, symbol, matched_signal_key)
+    expires_at = _WORKFLOW_TRIGGER_COOLDOWNS.get(key)
+    if expires_at is None:
+        return None
+    remaining = int((expires_at - now).total_seconds())
+    if remaining <= 0:
+        _WORKFLOW_TRIGGER_COOLDOWNS.pop(key, None)
+        return None
+    return remaining
+
+
+def _mark_workflow_cooldown(strategy_key: str, symbol: str, matched_signal_key: str, checked_at: datetime | None = None) -> None:
+    now = checked_at or datetime.utcnow()
+    _WORKFLOW_TRIGGER_COOLDOWNS[_workflow_cooldown_key(strategy_key, symbol, matched_signal_key)] = now + timedelta(seconds=_DEFAULT_WORKFLOW_TRIGGER_COOLDOWN_SECONDS)
 
 
 def _source_label(snapshot: dict[str, Any]) -> str:
@@ -128,7 +157,7 @@ def run_market_condition_scan(request: MarketScannerRequest) -> MarketScannerRes
             started_at=started_at,
             errors=[f"Unknown strategy: {request.strategy_key}"],
         )
-        return MarketScannerResponse(run_id=run.run_id, trigger_type=request.trigger_type, strategy_key=request.strategy_key, symbols_scanned=request.symbols, matched_signals=[], skipped_signals=[], should_trigger_workflow=False, recommended_workflow_key="none", required_agents=[], required_models=[], safety_state=safety_state, next_action=next_action, data_source="placeholder")
+        return MarketScannerResponse(run_id=run.run_id, trigger_type=request.trigger_type, strategy_key=request.strategy_key, symbols_scanned=request.symbols, matched_signals=[], skipped_signals=[], should_trigger_workflow=False, recommended_workflow_key="none", workflow_trigger_status="failed", required_agents=[], required_models=[], safety_state=safety_state, next_action=next_action, data_source="placeholder")
 
     rules = get_rules_for_signals(strategy.edge_signals)
     matched: list[MarketScannerSignal] = []
@@ -148,8 +177,9 @@ def run_market_condition_scan(request: MarketScannerRequest) -> MarketScannerRes
                 skipped.append(result)
 
     safety_state = get_auto_run_state()
-    can_auto_trigger = bool(request.auto_run and safety_state.auto_run_enabled and strategy.auto_run_supported and safety_state.paper_trading_enabled and safety_state.require_human_approval)
-    should_trigger = bool(matched) and can_auto_trigger
+    can_auto_trigger = bool(request.auto_run and safety_state.auto_run_enabled and not safety_state.live_trading_enabled and strategy.auto_run_supported and safety_state.paper_trading_enabled and safety_state.require_human_approval)
+    can_manual_trigger = bool(request.trigger_workflow and not safety_state.live_trading_enabled and safety_state.paper_trading_enabled and safety_state.require_human_approval)
+    should_trigger = bool(matched) and (can_auto_trigger or can_manual_trigger)
     if not matched:
         next_action = "No deterministic edge signal matched. Continue monitoring."
     elif not can_auto_trigger:
@@ -171,6 +201,7 @@ def run_market_condition_scan(request: MarketScannerRequest) -> MarketScannerRes
         skipped_signals_count=len(skipped),
         should_trigger_workflow=should_trigger,
         recommended_workflow_key=_recommended_workflow(strategy),
+        workflow_trigger_status="not_triggered" if not should_trigger else "pending",
         required_agents=strategy.required_agents,
         required_models=strategy.required_models,
         safety_state=safety_state.model_dump(),
@@ -179,6 +210,42 @@ def run_market_condition_scan(request: MarketScannerRequest) -> MarketScannerRes
         started_at=started_at,
         warnings=warnings,
     )
+    workflow_trigger_status = "not_triggered"
+    workflow_run_id: str | None = None
+    cooldown_remaining_seconds: int | None = None
+    if matched and request.auto_run and not safety_state.auto_run_enabled:
+        workflow_trigger_status = "skipped_auto_run_disabled"
+    elif should_trigger:
+        top_signal = matched[0]
+        cooldown_remaining_seconds = _workflow_cooldown_remaining_seconds(strategy.strategy_key, top_signal.symbol, top_signal.signal_key)
+        if cooldown_remaining_seconds is not None:
+            workflow_trigger_status = "skipped_cooldown_active"
+        else:
+            try:
+                workflow_run = run_strategy_workflow_from_signal(
+                    StrategyWorkflowRunRequest(
+                        strategy_key=strategy.strategy_key,
+                        symbol=top_signal.symbol,
+                        asset_class=strategy.asset_class,
+                        horizon=strategy.timeframe,
+                        matched_signal_key=top_signal.signal_key,
+                        matched_signal_name=top_signal.display_name,
+                        source_scan_run_id=run.run_id,
+                        trigger_type="scanner_match",
+                        data_source=request.data_source,
+                        account_size=request.account_size,
+                        max_risk_per_trade=request.max_risk_per_trade,
+                    )
+                )
+                workflow_trigger_status = "triggered"
+                workflow_run_id = workflow_run.workflow_run_id
+                _mark_workflow_cooldown(strategy.strategy_key, top_signal.symbol, top_signal.signal_key)
+            except Exception as exc:
+                workflow_trigger_status = "failed"
+                warnings.append(f"Strategy workflow trigger failed: {exc}")
+        update_scan_run_workflow_result(run.run_id, workflow_trigger_status, workflow_run_id, cooldown_remaining_seconds)
+    else:
+        update_scan_run_workflow_result(run.run_id, workflow_trigger_status, workflow_run_id)
     return MarketScannerResponse(
         run_id=run.run_id,
         trigger_type=request.trigger_type,
@@ -188,6 +255,9 @@ def run_market_condition_scan(request: MarketScannerRequest) -> MarketScannerRes
         skipped_signals=skipped,
         should_trigger_workflow=should_trigger,
         recommended_workflow_key=_recommended_workflow(strategy),
+        workflow_trigger_status=workflow_trigger_status,
+        workflow_run_id=workflow_run_id,
+        cooldown_remaining_seconds=cooldown_remaining_seconds,
         required_agents=strategy.required_agents,
         required_models=strategy.required_models,
         safety_state=safety_state,

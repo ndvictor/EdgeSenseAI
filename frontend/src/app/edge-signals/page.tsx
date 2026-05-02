@@ -1,7 +1,7 @@
 "use client";
 
 import { FormEvent, useEffect, useState } from "react";
-import { api, type EdgeSignal, type EdgeSignalRule, type MarketScannerResponse, type MarketScanRun, type StrategyConfig } from "@/lib/api";
+import { api, type EdgeSignal, type EdgeSignalRule, type MarketScannerResponse, type MarketScanRun, type StrategyConfig, type StrategyWorkflowRunResult } from "@/lib/api";
 import { MetricCard, PageHeader } from "@/components/Cards";
 
 function passLabel(value: boolean) {
@@ -43,21 +43,24 @@ export default function EdgeSignalsPage() {
   const [accountSize, setAccountSize] = useState(5000);
   const [maxRisk, setMaxRisk] = useState(0.01);
   const [autoRun, setAutoRun] = useState(false);
+  const [triggerWorkflow, setTriggerWorkflow] = useState(false);
   const [scanResult, setScanResult] = useState<MarketScannerResponse | null>(null);
   const [scanRuns, setScanRuns] = useState<MarketScanRun[]>([]);
   const [latestScanRun, setLatestScanRun] = useState<MarketScanRun | null>(null);
+  const [latestWorkflowRun, setLatestWorkflowRun] = useState<StrategyWorkflowRunResult | null>(null);
   const [runLogError, setRunLogError] = useState<string | null>(null);
   const [scheduledLoading, setScheduledLoading] = useState(false);
 
   useEffect(() => {
-    Promise.all([api.getEdgeSignals(), api.getStrategies(), api.getEdgeSignalRules(), api.getMarketScanRuns(), api.getLatestMarketScanRun()])
-      .then(([data, strategiesData, rulesData, runsData, latestRunData]) => {
+    Promise.all([api.getEdgeSignals(), api.getStrategies(), api.getEdgeSignalRules(), api.getMarketScanRuns(), api.getLatestMarketScanRun(), api.getLatestStrategyWorkflowRun()])
+      .then(([data, strategiesData, rulesData, runsData, latestRunData, latestWorkflowData]) => {
         setSignals(data.signals);
         setLastUpdated(data.last_updated);
         setStrategies(strategiesData);
         setRules(rulesData);
         setScanRuns(runsData);
         setLatestScanRun(latestRunData);
+        setLatestWorkflowRun(latestWorkflowData);
         if (strategiesData[0]?.strategy_key) setStrategyKey(strategiesData[0].strategy_key);
       })
       .catch((err) => setError(err.message));
@@ -66,9 +69,10 @@ export default function EdgeSignalsPage() {
   async function refreshScanRuns() {
     setRunLogError(null);
     try {
-      const [runsData, latestRunData] = await Promise.all([api.getMarketScanRuns(), api.getLatestMarketScanRun()]);
+      const [runsData, latestRunData, latestWorkflowData] = await Promise.all([api.getMarketScanRuns(), api.getLatestMarketScanRun(), api.getLatestStrategyWorkflowRun()]);
       setScanRuns(runsData);
       setLatestScanRun(latestRunData);
+      setLatestWorkflowRun(latestWorkflowData);
     } catch (err) {
       setRunLogError(err instanceof Error ? err.message : "Unable to load scan run history");
     }
@@ -84,6 +88,7 @@ export default function EdgeSignalsPage() {
         symbols: scannerSymbols.split(",").map((symbol) => symbol.trim()).filter(Boolean),
         data_source: scannerSource,
         auto_run: autoRun,
+        trigger_workflow: triggerWorkflow,
         account_size: accountSize,
         max_risk_per_trade: maxRisk,
       });
@@ -231,6 +236,10 @@ export default function EdgeSignalsPage() {
               <input type="checkbox" checked={autoRun} onChange={(event) => setAutoRun(event.target.checked)} />
               auto-run request
             </label>
+            <label className="flex items-center gap-3 self-end text-sm font-semibold text-slate-300">
+              <input type="checkbox" checked={triggerWorkflow} onChange={(event) => setTriggerWorkflow(event.target.checked)} />
+              trigger paper workflow
+            </label>
             <button disabled={scannerLoading} className="self-end rounded-lg border border-emerald-500 bg-emerald-500/10 px-4 py-2 text-sm font-bold text-emerald-300 disabled:opacity-60">
               {scannerLoading ? "Scanning..." : "Scan Market Conditions"}
             </button>
@@ -250,6 +259,9 @@ export default function EdgeSignalsPage() {
               <div className="rounded-xl border border-slate-800 bg-slate-900 p-4">
                 <div className="flex flex-wrap gap-2">
                   <Badge value={scanResult.recommended_workflow_key} />
+                  <Badge value={scanResult.workflow_trigger_status} />
+                  {scanResult.workflow_run_id && <Badge value={scanResult.workflow_run_id} />}
+                  {scanResult.cooldown_remaining_seconds !== null && scanResult.cooldown_remaining_seconds !== undefined && <Badge value={`${scanResult.cooldown_remaining_seconds}s cooldown`} />}
                   <Badge value={scanResult.safety_state.auto_run_enabled ? "auto_run_on" : "auto_run_off"} />
                   <Badge value={scanResult.safety_state.live_trading_enabled ? "live_enabled" : "live_disabled"} />
                   <Badge value={scanResult.safety_state.require_human_approval ? "human_approval_required" : "approval_not_required"} />
@@ -259,6 +271,30 @@ export default function EdgeSignalsPage() {
               </div>
               <ScannerTable title="Matched Signals" rows={scanResult.matched_signals} />
               <ScannerTable title="Skipped Signals" rows={scanResult.skipped_signals} />
+            </div>
+          )}
+        </section>
+
+        <section className="rounded-xl border border-emerald-800 bg-slate-950 p-4 shadow-sm">
+          <h2 className="mb-3 text-lg font-semibold text-emerald-500">Latest Strategy Workflow Run</h2>
+          {!latestWorkflowRun ? <EmptyState label="strategy workflow run" /> : (
+            <div className="space-y-4">
+              <div className="grid grid-cols-2 gap-4 lg:grid-cols-6">
+                <MetricCard label="Workflow Run" value={latestWorkflowRun.workflow_run_id.slice(0, 12)} accent />
+                <MetricCard label="Strategy" value={latestWorkflowRun.strategy_key} />
+                <MetricCard label="Symbol" value={latestWorkflowRun.symbol} />
+                <MetricCard label="Signal" value={latestWorkflowRun.matched_signal_name || latestWorkflowRun.matched_signal_key || "manual"} />
+                <MetricCard label="Status" value={latestWorkflowRun.status} />
+                <MetricCard label="Live Allowed" value={latestWorkflowRun.live_trading_allowed ? "Yes" : "No"} />
+              </div>
+              <div className="rounded-xl border border-slate-800 bg-slate-900 p-4">
+                <div className="flex flex-wrap gap-2">
+                  <Badge value={latestWorkflowRun.approval_required ? "approval_required" : "approval_not_required"} />
+                  <Badge value={latestWorkflowRun.paper_trade_allowed ? "paper_allowed" : "paper_not_allowed"} />
+                  <Badge value={String(latestWorkflowRun.recommendation?.action || "watch_only")} />
+                </div>
+                <p className="mt-3 text-sm leading-relaxed text-slate-300">{String(latestWorkflowRun.recommendation?.next_action || "Review workflow result before any paper action.")}</p>
+              </div>
             </div>
           )}
         </section>
@@ -290,6 +326,8 @@ export default function EdgeSignalsPage() {
                 <div className="flex flex-wrap gap-2">
                   <Badge value={latestScanRun.data_source} />
                   <Badge value={latestScanRun.should_trigger_workflow ? "workflow_trigger_ready" : "workflow_not_triggered"} />
+                  <Badge value={latestScanRun.workflow_trigger_status} />
+                  {latestScanRun.cooldown_remaining_seconds !== null && latestScanRun.cooldown_remaining_seconds !== undefined && <Badge value={`${latestScanRun.cooldown_remaining_seconds}s cooldown`} />}
                   <Badge value={latestScanRun.auto_run_enabled ? "auto_run_enabled" : "auto_run_disabled"} />
                 </div>
                 <p className="mt-3 text-sm leading-relaxed text-slate-300">{latestScanRun.next_action}</p>
@@ -390,7 +428,7 @@ function ScanRunsTable({ runs }: { runs: MarketScanRun[] }) {
               <td className="px-4 py-3 text-slate-300">{run.matched_signals_count}</td>
               <td className="px-4 py-3 text-slate-300">{run.skipped_signals_count}</td>
               <td className="px-4 py-3"><Badge value={run.should_trigger_workflow ? "yes" : "no"} /></td>
-              <td className="max-w-md px-4 py-3 text-slate-400">{run.next_action}</td>
+              <td className="max-w-md px-4 py-3 text-slate-400">{run.next_action}{run.cooldown_remaining_seconds ? ` Cooldown: ${run.cooldown_remaining_seconds}s.` : ""}</td>
               <td className="px-4 py-3"><Badge value={run.status} /></td>
               <td className="px-4 py-3 text-slate-300">{run.started_at ? new Date(run.started_at).toLocaleString() : "N/A"}</td>
               <td className="px-4 py-3 text-slate-300">{run.completed_at ? new Date(run.completed_at).toLocaleString() : "N/A"}</td>

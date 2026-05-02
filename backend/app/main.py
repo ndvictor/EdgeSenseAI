@@ -22,6 +22,7 @@ from app.api.routes.paper_trading_lifecycle import router as paper_trading_lifec
 from app.api.routes.recommendation_lifecycle import router as recommendation_lifecycle_router
 from app.api.routes.signal_orchestration import router as signal_orchestration_router
 from app.api.routes.strategies import router as strategies_router
+from app.api.routes.strategy_workflows import router as strategy_workflows_router
 from app.api.routes.trade_quality import router as trade_quality_router
 from app.api.routes.watchlists import router as watchlists_router
 from app.core.settings import settings
@@ -106,6 +107,7 @@ app.include_router(feature_store_router, prefix="/api")
 app.include_router(model_runs_router, prefix="/api")
 app.include_router(llm_gateway_router, prefix="/api")
 app.include_router(strategies_router, prefix="/api")
+app.include_router(strategy_workflows_router, prefix="/api")
 app.include_router(market_scanner_router, prefix="/api")
 app.include_router(auto_run_router, prefix="/api")
 
