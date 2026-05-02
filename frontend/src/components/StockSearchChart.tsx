@@ -2,7 +2,7 @@
 
 import { useEffect, useMemo, useRef, useState } from "react";
 import { createChart, ColorType, type IChartApi, type ISeriesApi, type UTCTimestamp, CandlestickSeries } from "lightweight-charts";
-import { api, type MarketDataSnapshot, type PriceHistory } from "@/lib/api";
+import { api, type MarketDataSnapshot, type MarketDataSource, type PriceHistory } from "@/lib/api";
 
 const QUICK_SYMBOLS = ["AMD", "NVDA", "AAPL", "MSFT", "TSLA", "META", "GOOGL", "BTC-USD"];
 
@@ -42,6 +42,7 @@ export function StockSearchChart() {
   const seriesRef = useRef<ISeriesApi<"Candlestick"> | null>(null);
 
   const [symbol, setSymbol] = useState("AMD");
+  const [dataSource, setDataSource] = useState<MarketDataSource>("auto");
   const [period, setPeriod] = useState("1mo");
   const [interval, setIntervalValue] = useState("1d");
   const [snapshot, setSnapshot] = useState<MarketDataSnapshot | null>(null);
@@ -58,8 +59,8 @@ export function StockSearchChart() {
     setError(null);
     try {
       const [nextSnapshot, nextHistory] = await Promise.all([
-        api.getMarketDataSnapshot(normalizedSymbol),
-        api.getMarketDataHistory(normalizedSymbol, period, interval),
+        api.getMarketDataSnapshot(normalizedSymbol, dataSource),
+        api.getMarketDataHistory(normalizedSymbol, period, interval, dataSource),
       ]);
       setSymbol(normalizedSymbol);
       setSnapshot(nextSnapshot);
@@ -133,7 +134,7 @@ export function StockSearchChart() {
   useEffect(() => {
     load(symbol);
     // eslint-disable-next-line react-hooks/exhaustive-deps
-  }, [period, interval]);
+  }, [dataSource, period, interval]);
 
   return (
     <section className="rounded-xl border border-emerald-800 bg-slate-950 p-4 shadow-sm">
@@ -142,11 +143,11 @@ export function StockSearchChart() {
           <p className="text-xs font-semibold uppercase tracking-[0.22em] text-emerald-500">Live market chart</p>
           <h2 className="mt-1 text-2xl font-black text-white">Search ticker and visualize price action</h2>
           <p className="mt-2 max-w-4xl text-sm leading-relaxed text-slate-400">
-            This chart now uses the migrated market-data service route with provider priority and data-quality reporting.
+            Select the data source explicitly or use Auto to follow provider priority: Alpaca, yfinance, then mock fallback.
           </p>
         </div>
 
-        <div className="grid grid-cols-1 gap-3 md:grid-cols-4 xl:min-w-[620px]">
+        <div className="grid grid-cols-1 gap-3 md:grid-cols-5 xl:min-w-[760px]">
           <label className="md:col-span-2">
             <span className="text-xs font-semibold uppercase tracking-wide text-slate-400">Ticker</span>
             <input
@@ -158,6 +159,15 @@ export function StockSearchChart() {
               className="mt-2 w-full rounded-lg border border-emerald-900 bg-slate-900 px-4 py-3 text-sm font-bold text-white"
               placeholder="Search ticker, e.g. AAPL"
             />
+          </label>
+          <label>
+            <span className="text-xs font-semibold uppercase tracking-wide text-slate-400">Data Source</span>
+            <select value={dataSource} onChange={(event) => setDataSource(event.target.value as MarketDataSource)} className="mt-2 w-full rounded-lg border border-emerald-900 bg-slate-900 px-3 py-3 text-sm text-white">
+              <option value="auto">Auto</option>
+              <option value="yfinance">YFinance</option>
+              <option value="alpaca">Alpaca</option>
+              <option value="mock">Mock</option>
+            </select>
           </label>
           <label>
             <span className="text-xs font-semibold uppercase tracking-wide text-slate-400">Period</span>
