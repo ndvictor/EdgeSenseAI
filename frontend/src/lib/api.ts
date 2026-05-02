@@ -882,6 +882,113 @@ export type LlmGatewayTestCallResponse = {
   warnings: string[];
 };
 
+export type CoreAgentRegistryItem = {
+  agent_key: string;
+  agent_name: string;
+  category: string;
+  purpose: string;
+  supported_asset_classes: string[];
+  supported_timeframes: string[];
+  required_inputs: string[];
+  output_fields: string[];
+  status: "available" | "partial" | "placeholder" | "not_configured" | string;
+  uses_llm: boolean;
+  uses_models: boolean;
+  safe_for_auto_run: boolean;
+  notes: string[];
+};
+
+export type CoreAgentRegistryResponse = CoreAgentRegistryItem[];
+
+export type StrategyConfig = {
+  strategy_key: string;
+  display_name: string;
+  asset_class: string;
+  timeframe: string;
+  description: string;
+  edge_signals: string[];
+  required_agents: string[];
+  optional_agents: string[];
+  required_models: string[];
+  optional_models: string[];
+  required_data_sources: string[];
+  validation_rules: string[];
+  risk_rules: string[];
+  action_rules: string[];
+  default_weights: Record<string, number>;
+  auto_run_supported: boolean;
+  live_trading_supported: boolean;
+  paper_trading_supported: boolean;
+  requires_human_approval: boolean;
+  metadata?: Record<string, unknown>;
+};
+
+export type StrategyRegistryResponse = StrategyConfig[];
+
+export type EdgeSignalRule = {
+  signal_key: string;
+  display_name: string;
+  signal_to_look_for: string;
+  validation_method: string;
+  condition_to_take_action: string;
+  required_metrics: string[];
+  supported_asset_classes: string[];
+  supported_timeframes: string[];
+  minimum_data_quality: string;
+  uses_llm: boolean;
+  scan_interval_seconds: number;
+  enabled_by_default: boolean;
+};
+
+export type EdgeSignalRulesResponse = EdgeSignalRule[];
+
+export type AutoRunControlState = {
+  auto_run_enabled: boolean;
+  live_trading_enabled: boolean;
+  paper_trading_enabled: boolean;
+  require_human_approval: boolean;
+  max_daily_agent_runs: number;
+  max_daily_llm_cost: number;
+  status: string;
+  data_source: DataSourceKind;
+};
+
+export type AutoRunControlUpdate = Partial<Pick<AutoRunControlState, "auto_run_enabled" | "live_trading_enabled" | "paper_trading_enabled" | "require_human_approval" | "max_daily_agent_runs" | "max_daily_llm_cost">>;
+
+export type MarketScannerSignal = {
+  symbol: string;
+  signal_key: string;
+  display_name: string;
+  status: string;
+  reason: string;
+  confidence?: number | null;
+  data_source: DataSourceKind;
+  metadata?: Record<string, unknown>;
+};
+
+export type MarketScannerRequest = {
+  strategy_key: string;
+  symbols: string[];
+  data_source: "auto" | "yfinance" | "mock" | string;
+  auto_run: boolean;
+  account_size?: number | null;
+  max_risk_per_trade?: number | null;
+};
+
+export type MarketScannerResponse = {
+  strategy_key: string;
+  symbols_scanned: string[];
+  matched_signals: MarketScannerSignal[];
+  skipped_signals: MarketScannerSignal[];
+  should_trigger_workflow: boolean;
+  recommended_workflow_key: string;
+  required_agents: string[];
+  required_models: string[];
+  safety_state: AutoRunControlState;
+  next_action: string;
+  data_source: DataSourceKind;
+};
+
 export const api = {
   getCommandCenter: () => request<CommandCenterResponse>("/api/command-center"),
   getAccountRisk: () => request<AccountRiskProfile>("/api/account-risk/profile"),
@@ -928,4 +1035,11 @@ export const api = {
   getLlmGatewayAgentModelMap: () => request<AgentModelMapping[]>("/api/llm-gateway/agent-model-map"),
   estimateLlmCost: (payload: LlmCostEstimateRequest) => request<LlmCostEstimateResponse>("/api/llm-gateway/estimate", { method: "POST", body: JSON.stringify(payload) }),
   testLlmGatewayCall: (payload: LlmGatewayTestCallRequest) => request<LlmGatewayTestCallResponse>("/api/llm-gateway/test-call", { method: "POST", body: JSON.stringify(payload) }),
+  getAgentRegistry: () => request<CoreAgentRegistryResponse>("/api/agents/registry"),
+  getStrategies: () => request<StrategyRegistryResponse>("/api/strategies"),
+  getStrategy: (strategyKey: string) => request<StrategyConfig>(`/api/strategies/${strategyKey}`),
+  getEdgeSignalRules: () => request<EdgeSignalRulesResponse>("/api/edge-signal-rules"),
+  scanMarketConditions: (payload: MarketScannerRequest) => request<MarketScannerResponse>("/api/market-scanner/scan", { method: "POST", body: JSON.stringify(payload) }),
+  getAutoRunStatus: () => request<AutoRunControlState>("/api/auto-run/status"),
+  updateAutoRunStatus: (payload: AutoRunControlUpdate) => request<AutoRunControlState>("/api/auto-run/status", { method: "PUT", body: JSON.stringify(payload) }),
 };

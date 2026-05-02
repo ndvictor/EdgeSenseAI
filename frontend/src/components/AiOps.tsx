@@ -4,6 +4,8 @@ import { FormEvent, useEffect, useMemo, useState } from "react";
 import { MetricCard, PageHeader } from "@/components/Cards";
 import {
   api,
+  type AutoRunControlState,
+  type CoreAgentRegistryItem,
   type AiOpsAgentScorecard,
   type AiOpsAgentStatusResponse,
   type AiOpsAuditEvent,
@@ -15,6 +17,7 @@ import {
   type AiOpsWorkflowListResponse,
   type DataSourceKind,
   type EdgeRadarRunResponse,
+  type StrategyConfig,
 } from "@/lib/api";
 
 function SourceBadge({ source }: { source?: DataSourceKind | null }) {
@@ -218,6 +221,87 @@ function GuardrailGrid({ summary, llm }: { summary?: AiOpsSummaryResponse | null
   );
 }
 
+function boolText(value: boolean) {
+  return value ? "Yes" : "No";
+}
+
+function CoreAgentRegistryTable({ agents }: { agents: CoreAgentRegistryItem[] }) {
+  if (!agents.length) return <EmptyState label="core agent registry entries" />;
+  return (
+    <div className="overflow-x-auto rounded-xl border border-slate-800 bg-slate-900">
+      <table className="w-full min-w-[1280px] text-left text-sm">
+        <thead className="text-xs uppercase tracking-wide text-emerald-600">
+          <tr><th className="px-4 py-3">Agent</th><th className="px-4 py-3">Category</th><th className="px-4 py-3">Status</th><th className="px-4 py-3">Uses LLM</th><th className="px-4 py-3">Uses Models</th><th className="px-4 py-3">Safe Auto-run</th><th className="px-4 py-3">Asset Classes</th><th className="px-4 py-3">Timeframes</th></tr>
+        </thead>
+        <tbody className="divide-y divide-slate-800">
+          {agents.map((agent) => (
+            <tr key={agent.agent_key} className="hover:bg-emerald-950/20">
+              <td className="px-4 py-3"><p className="font-bold text-white">{agent.agent_name}</p><p className="mt-1 max-w-md text-xs text-slate-400">{agent.purpose}</p></td>
+              <td className="px-4 py-3 text-slate-300">{agent.category.replace(/_/g, " ")}</td>
+              <td className="px-4 py-3"><StatusBadge status={agent.status} /></td>
+              <td className="px-4 py-3"><StatusBadge status={boolText(agent.uses_llm)} /></td>
+              <td className="px-4 py-3"><StatusBadge status={boolText(agent.uses_models)} /></td>
+              <td className="px-4 py-3"><StatusBadge status={agent.safe_for_auto_run ? "safe" : "manual"} /></td>
+              <td className="px-4 py-3 text-slate-300">{agent.supported_asset_classes.join(", ")}</td>
+              <td className="px-4 py-3 text-slate-300">{agent.supported_timeframes.join(", ")}</td>
+            </tr>
+          ))}
+        </tbody>
+      </table>
+    </div>
+  );
+}
+
+function StrategyRegistryTable({ strategies }: { strategies: StrategyConfig[] }) {
+  if (!strategies.length) return <EmptyState label="strategy registry entries" />;
+  return (
+    <div className="overflow-x-auto rounded-xl border border-slate-800 bg-slate-900">
+      <table className="w-full min-w-[1280px] text-left text-sm">
+        <thead className="text-xs uppercase tracking-wide text-emerald-600">
+          <tr><th className="px-4 py-3">Strategy</th><th className="px-4 py-3">Asset</th><th className="px-4 py-3">Timeframe</th><th className="px-4 py-3">Required Agents</th><th className="px-4 py-3">Required Models</th><th className="px-4 py-3">Paper</th><th className="px-4 py-3">Approval</th><th className="px-4 py-3">Live</th></tr>
+        </thead>
+        <tbody className="divide-y divide-slate-800">
+          {strategies.map((strategy) => (
+            <tr key={strategy.strategy_key} className="hover:bg-emerald-950/20">
+              <td className="px-4 py-3"><p className="font-bold text-white">{strategy.display_name}</p><p className="mt-1 max-w-md text-xs text-slate-400">{strategy.description}</p></td>
+              <td className="px-4 py-3 text-slate-300">{strategy.asset_class}</td>
+              <td className="px-4 py-3 text-slate-300">{strategy.timeframe}</td>
+              <td className="max-w-md px-4 py-3 text-slate-300">{strategy.required_agents.join(", ")}</td>
+              <td className="px-4 py-3 text-slate-300">{strategy.required_models.join(", ")}</td>
+              <td className="px-4 py-3"><StatusBadge status={strategy.paper_trading_supported ? "supported" : "disabled"} /></td>
+              <td className="px-4 py-3"><StatusBadge status={strategy.requires_human_approval ? "required" : "not_required"} /></td>
+              <td className="px-4 py-3"><StatusBadge status={strategy.live_trading_supported ? "enabled" : "disabled"} /></td>
+            </tr>
+          ))}
+        </tbody>
+      </table>
+    </div>
+  );
+}
+
+function AutoRunPanel({ state, onToggle, loading, error }: { state: AutoRunControlState | null; onToggle: () => void; loading: boolean; error: string | null }) {
+  if (error) return <ErrorState error={error} />;
+  if (!state) return <LoadingState label="auto-run status" />;
+  return (
+    <div className="space-y-4">
+      <div className="grid grid-cols-2 gap-4 lg:grid-cols-6">
+        <MetricCard label="Auto-run" value={state.auto_run_enabled ? "On" : "Off"} accent />
+        <MetricCard label="Live Trading" value={state.live_trading_enabled ? "Enabled" : "Disabled"} />
+        <MetricCard label="Paper Trading" value={state.paper_trading_enabled ? "Enabled" : "Disabled"} />
+        <MetricCard label="Human Approval" value={state.require_human_approval ? "Required" : "Not required"} />
+        <MetricCard label="Max Agent Runs" value={state.max_daily_agent_runs} />
+        <MetricCard label="Max LLM Cost" value={money(state.max_daily_llm_cost)} />
+      </div>
+      <div className="flex flex-wrap items-center gap-3">
+        <button onClick={onToggle} disabled={loading} className="rounded-lg border border-emerald-500 bg-emerald-500/10 px-4 py-2 text-sm font-bold text-emerald-300 disabled:opacity-60">
+          {loading ? "Updating..." : state.auto_run_enabled ? "Turn Auto-run Off" : "Turn Auto-run On"}
+        </button>
+        <span className="text-sm text-slate-300">Live trading is read-only here and remains disabled unless the backend explicitly allows it. Paper/research workflows still require human approval.</span>
+      </div>
+    </div>
+  );
+}
+
 function EdgeRadarPanel() {
   const [symbols, setSymbols] = useState("AMD,NVDA,AAPL,MSFT,BTC-USD");
   const [horizon, setHorizon] = useState("swing");
@@ -335,20 +419,42 @@ export function AiOpsOverviewPage() {
   const [agents, setAgents] = useState<AiOpsAgentStatusResponse | null>(null);
   const [llm, setLlm] = useState<AiOpsLlmUsageResponse | null>(null);
   const [scheduler, setScheduler] = useState<AiOpsSchedulerJobsResponse | null>(null);
+  const [coreRegistry, setCoreRegistry] = useState<CoreAgentRegistryItem[]>([]);
+  const [strategies, setStrategies] = useState<StrategyConfig[]>([]);
+  const [autoRun, setAutoRun] = useState<AutoRunControlState | null>(null);
   const [error, setError] = useState<string | null>(null);
+  const [autoRunError, setAutoRunError] = useState<string | null>(null);
+  const [autoRunLoading, setAutoRunLoading] = useState(false);
   const loading = !summary && !error;
 
   useEffect(() => {
-    Promise.all([api.getAiOpsSummary(), api.getAiOpsWorkflows(), api.getAiOpsAgentStatus(), api.getAiOpsLlmUsage(), api.getAiOpsSchedulerJobs()])
-      .then(([summaryData, workflowData, agentData, llmData, schedulerData]) => {
+    Promise.all([api.getAiOpsSummary(), api.getAiOpsWorkflows(), api.getAiOpsAgentStatus(), api.getAiOpsLlmUsage(), api.getAiOpsSchedulerJobs(), api.getAgentRegistry(), api.getStrategies(), api.getAutoRunStatus()])
+      .then(([summaryData, workflowData, agentData, llmData, schedulerData, registryData, strategyData, autoRunData]) => {
         setSummary(summaryData);
         setWorkflows(workflowData);
         setAgents(agentData);
         setLlm(llmData);
         setScheduler(schedulerData);
+        setCoreRegistry(registryData);
+        setStrategies(strategyData);
+        setAutoRun(autoRunData);
       })
       .catch((err) => setError(err instanceof Error ? err.message : "AI Ops summary failed"));
   }, []);
+
+  async function toggleAutoRun() {
+    if (!autoRun) return;
+    setAutoRunLoading(true);
+    setAutoRunError(null);
+    try {
+      const response = await api.updateAutoRunStatus({ auto_run_enabled: !autoRun.auto_run_enabled });
+      setAutoRun(response);
+    } catch (err) {
+      setAutoRunError(err instanceof Error ? err.message : "Auto-run update failed");
+    } finally {
+      setAutoRunLoading(false);
+    }
+  }
 
   const agentList = allAgents(agents);
   return (
@@ -370,6 +476,9 @@ export function AiOpsOverviewPage() {
           <Panel title="Orchestration Status"><OrchestrationStatus summary={summary} /></Panel>
           <Panel title="Recent Workflow Runs"><WorkflowsTable workflows={workflowRows(workflows)} /></Panel>
           <Panel title="Agent Health"><AgentHealthTable agents={agentList} /></Panel>
+          <Panel title="Core Agent Registry"><CoreAgentRegistryTable agents={coreRegistry} /></Panel>
+          <Panel title="Strategy Registry Summary"><StrategyRegistryTable strategies={strategies} /></Panel>
+          <Panel title="Auto-run Status"><AutoRunPanel state={autoRun} onToggle={toggleAutoRun} loading={autoRunLoading} error={autoRunError} /></Panel>
           <Panel title="Safety Guardrails"><GuardrailGrid summary={summary} llm={llm} /></Panel>
           <EdgeRadarPanel />
         </div>
