@@ -210,3 +210,60 @@ def test_journal_contract():
     assert payload["total_entries"] >= 1
     assert payload["entries"]
     assert payload["next_steps"]
+
+
+def test_data_quality_contract():
+    response = client.get("/api/data-quality/AMD?asset_class=stock&source=mock")
+    assert response.status_code == 200
+    payload = response.json()
+    assert payload["ticker"] == "AMD"
+    assert payload["quality_status"] in {"pass", "warn", "fail"}
+    assert payload["data_source"] in {"demo", "placeholder", "source_backed"}
+    assert "missing_fields" in payload
+    assert "checked_at" in payload
+
+
+def test_feature_store_run_contract():
+    response = client.post(
+        "/api/feature-store/run",
+        json={"symbol": "AMD", "asset_class": "stock", "horizon": "swing", "source": "mock"},
+    )
+    assert response.status_code == 200
+    payload = response.json()
+    assert payload["storage_mode"] == "in_memory"
+    assert payload["row"]["ticker"] == "AMD"
+    assert payload["row"]["feature_version"] == "foundation_v1"
+    assert payload["quality_report"]["quality_status"] in {"pass", "warn", "fail"}
+
+
+def test_model_runs_registry_and_run_contract():
+    registry_response = client.get("/api/model-runs/registry")
+    assert registry_response.status_code == 200
+    registry = registry_response.json()
+    assert registry["available_model_count"] >= 1
+    assert registry["placeholder_model_count"] >= 1
+    model_keys = {model["key"] for model in registry["models"]}
+    assert "weighted_ranker" in model_keys
+    assert "finbert_sentiment" in model_keys
+
+    run_response = client.post(
+        "/api/model-runs/run",
+        json={"symbols": ["AMD"], "asset_class": "stock", "horizon": "swing", "source": "mock"},
+    )
+    assert run_response.status_code == 200
+    run = run_response.json()
+    assert run["status"] == "completed"
+    assert run["feature_rows"]
+    assert run["plan"]["models"]
+    assert any(result["model"] == "weighted_ranker" for result in run["results"])
+
+
+def test_foundation_routes_preserve_existing_agent_endpoints():
+    assert client.post("/api/signal-agents/run", json={"symbols": ["AMD"], "agents": ["technical"]}).status_code == 200
+    assert client.post("/api/agents/edge-radar/run", json={"symbols": ["AMD"], "data_source": "mock"}).status_code == 200
+    summary = client.get("/api/ai-ops/summary")
+    assert summary.status_code == 200
+    payload = summary.json()
+    assert payload["data_quality"]["status"] == "configured"
+    assert payload["feature_store"]["status"] == "configured"
+    assert payload["model_orchestrator"]["status"] == "configured"

@@ -5,6 +5,8 @@ from fastapi import APIRouter
 
 from app.orchestration.schedulers.edge_scheduler import list_scheduler_jobs
 from app.orchestration.workflows.small_account_edge_radar import build_langgraph_definition
+from app.services.feature_store_service import get_feature_store_status
+from app.services.model_orchestrator_service import get_model_registry
 from app.services.platform_workflows import get_agent_scorecards
 
 router = APIRouter()
@@ -18,6 +20,8 @@ def _now() -> str:
 def get_ai_ops_summary() -> dict[str, Any]:
     scorecards = get_agent_scorecards()
     scheduler = list_scheduler_jobs()
+    feature_store = get_feature_store_status()
+    model_registry = get_model_registry()
     return {
         "data_source": "source_backed",
         "status": "foundation_installed",
@@ -27,6 +31,13 @@ def get_ai_ops_summary() -> dict[str, Any]:
             "deepagents": {"installed_via_requirements": True, "status": "not_wired"},
             "litellm": {"installed_via_requirements": True, "status": "placeholder_cost_estimates_only"},
             "apscheduler": scheduler,
+        },
+        "data_quality": {"agent": "Data Quality Agent", "status": "configured", "data_source": "source_backed"},
+        "feature_store": feature_store,
+        "model_orchestrator": {"agent": "Model Orchestrator Agent", "status": "configured", "data_source": "source_backed"},
+        "model_registry_summary": {
+            "available_model_count": model_registry["available_model_count"],
+            "placeholder_model_count": model_registry["placeholder_model_count"],
         },
         "agent_scorecards_available": len(scorecards),
         "live_trading_allowed": False,
@@ -54,6 +65,20 @@ def get_ai_ops_workflows() -> dict[str, Any]:
                 "entrypoint": "POST /api/signal-agents/run",
                 "live_trading_allowed": False,
             },
+            {
+                "name": "feature_store_pipeline",
+                "status": "configured",
+                "mode": "quality_normalize_feature_store",
+                "entrypoint": "POST /api/feature-store/run",
+                "live_trading_allowed": False,
+            },
+            {
+                "name": "model_orchestrator",
+                "status": "configured",
+                "mode": "model_selection_and_research_scoring",
+                "entrypoint": "POST /api/model-runs/run",
+                "live_trading_allowed": False,
+            },
         ],
     }
 
@@ -67,11 +92,15 @@ def get_ai_ops_agents_status() -> dict[str, Any]:
         {"agent_name": "Risk Manager Agent", "status": "configured", "data_source": "source_backed"},
         {"agent_name": "Portfolio Manager Agent", "status": "configured", "data_source": "placeholder"},
         {"agent_name": "Cost Controller Agent", "status": "configured", "data_source": "placeholder"},
+        {"agent_name": "Data Quality Agent", "status": "configured", "data_source": "source_backed"},
+        {"agent_name": "Model Orchestrator Agent", "status": "configured", "data_source": "source_backed"},
     ]
     return {
         "data_source": "source_backed",
         "existing_scorecards": existing_scorecards,
         "foundation_agents": foundation_agents,
+        "feature_store_status": get_feature_store_status(),
+        "model_registry_summary": get_model_registry(),
     }
 
 
