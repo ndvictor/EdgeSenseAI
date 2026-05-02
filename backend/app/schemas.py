@@ -112,6 +112,52 @@ class EdgeSignalsResponse(BaseModel):
     signals: List[EdgeSignal]
 
 
+class ModelVote(BaseModel):
+    model: str
+    status: Literal["prototype", "active", "disabled"] = "prototype"
+    signal: Literal["bullish", "bearish", "neutral", "risk_off"]
+    confidence: float
+    explanation: str
+
+
+class PricePlan(BaseModel):
+    current_price: float
+    buy_zone_low: float
+    buy_zone_high: float
+    stop_loss: float
+    target_price: float
+    target_2_price: float | None = None
+
+
+class RiskPlan(BaseModel):
+    position_size_dollars: float
+    max_dollar_risk: float
+    max_loss_percent: float
+    expected_return_percent: float
+    reward_risk_ratio: float
+    account_fit: str
+
+
+class TradeRecommendation(BaseModel):
+    symbol: str
+    asset_class: Literal["stock", "option", "crypto"]
+    action: Literal["buy", "watch", "avoid"]
+    action_label: str
+    horizon: Literal["intraday", "day_trade", "swing", "one_month"]
+    confidence: float
+    final_score: int
+    urgency: Literal["low", "medium", "high", "critical"]
+    price_plan: PricePlan
+    risk_plan: RiskPlan
+    model_votes: List[ModelVote]
+    final_reason: str
+    invalidation_rules: List[str]
+    risk_factors: List[str]
+    data_mode: Literal["synthetic_prototype", "paper", "live"] = "synthetic_prototype"
+    execution_enabled: bool = False
+    research_only: bool = True
+
+
 class Recommendation(BaseModel):
     symbol: str
     asset_class: Literal["stock", "option", "crypto"]
@@ -128,6 +174,7 @@ class Recommendation(BaseModel):
 
 class CommandCenterResponse(BaseModel):
     account_profile: AccountRiskProfile
+    top_action: TradeRecommendation
     top_recommendations: List[Recommendation]
     urgent_edge_alerts: List[EdgeSignal]
     agents: List[AgentStatus]
