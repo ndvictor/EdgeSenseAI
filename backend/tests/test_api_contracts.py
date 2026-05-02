@@ -267,3 +267,35 @@ def test_foundation_routes_preserve_existing_agent_endpoints():
     assert payload["data_quality"]["status"] == "configured"
     assert payload["feature_store"]["status"] == "configured"
     assert payload["model_orchestrator"]["status"] == "configured"
+
+
+def test_llm_gateway_contracts_and_dry_run_safety():
+    assert client.get("/api/llm-gateway/status").status_code == 200
+    providers = client.get("/api/llm-gateway/providers")
+    assert providers.status_code == 200
+    provider_names = {provider["provider"] for provider in providers.json()}
+    assert {"openai", "anthropic", "bedrock", "local"}.issubset(provider_names)
+    assert client.get("/api/llm-gateway/models").status_code == 200
+    assert client.get("/api/llm-gateway/routing-rules").status_code == 200
+    assert client.get("/api/llm-gateway/usage").status_code == 200
+    costs = client.get("/api/llm-gateway/costs")
+    assert costs.status_code == 200
+    assert costs.json()["data_source"] == "placeholder"
+    assert client.get("/api/llm-gateway/agent-model-map").status_code == 200
+
+    estimate = client.post("/api/llm-gateway/estimate", json={"model": "gpt-4o-mini", "prompt_tokens": 1000, "completion_tokens": 500})
+    assert estimate.status_code == 200
+    assert estimate.json()["pricing_source"] == "placeholder_estimate"
+
+    test_call = client.post(
+        "/api/llm-gateway/test-call",
+        json={"provider": "openai", "model": "gpt-4o-mini", "prompt": "safe test", "allow_paid_call": False},
+    )
+    assert test_call.status_code == 200
+    payload = test_call.json()
+    assert payload["dry_run"] is True
+    assert payload["paid_call_attempted"] is False
+
+    summary = client.get("/api/ai-ops/summary").json()
+    assert summary["llm_gateway"]["data_source"] == "placeholder"
+    assert "gateway_status" in summary["llm_gateway"]

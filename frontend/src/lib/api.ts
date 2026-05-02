@@ -755,6 +755,133 @@ export type ModelRunResponse = {
   next_action?: string;
 };
 
+export type LlmProviderStatus = {
+  provider: string;
+  status: "configured" | "not_configured" | "placeholder" | "error" | string;
+  configured: boolean;
+  required_env_vars: string[];
+  configured_env_vars: string[];
+  message: string;
+  data_source: DataSourceKind;
+};
+
+export type LlmModelConfig = {
+  model_name: string;
+  provider: string;
+  role: string;
+  context_window?: number | null;
+  pricing_source: string;
+  input_cost_per_1k_tokens: number;
+  output_cost_per_1k_tokens: number;
+  status: string;
+  data_source: DataSourceKind;
+};
+
+export type LlmRoutingRule = {
+  task_type: string;
+  preferred_provider: string;
+  preferred_model: string;
+  fallback_model: string;
+  max_cost_per_call: number;
+  max_tokens: number;
+  enabled: boolean;
+  data_source: DataSourceKind;
+};
+
+export type LlmUsageRecord = {
+  id: string;
+  timestamp: string;
+  provider: string;
+  model: string;
+  agent: string;
+  workflow: string;
+  prompt_tokens: number;
+  completion_tokens: number;
+  estimated_cost: number;
+  latency_ms?: number | null;
+  status: string;
+  dry_run: boolean;
+  data_source: DataSourceKind;
+};
+
+export type LlmCostSummary = {
+  data_source: DataSourceKind;
+  cost_today: number;
+  daily_budget: number;
+  budget_remaining: number;
+  tokens_today: number;
+  calls_today: number;
+  cost_by_provider: Record<string, number>;
+  cost_by_model: Record<string, number>;
+  cost_by_agent: Record<string, number>;
+  cost_by_workflow: Record<string, number>;
+  most_used_model?: string | null;
+  most_expensive_agent?: string | null;
+  pricing_source: string;
+};
+
+export type AgentModelMapping = {
+  agent_name: string;
+  default_model: string;
+  fallback_model: string;
+  max_daily_cost: number;
+  max_calls_per_day: number;
+  current_cost_today: number;
+  calls_today: number;
+  status: string;
+  data_source: DataSourceKind;
+};
+
+export type LlmGatewayStatusResponse = {
+  status: string;
+  litellm_available: boolean;
+  litellm_api_base_configured: boolean;
+  litellm_master_key_configured: boolean;
+  configured_providers_count: number;
+  budget_status: string;
+  daily_budget: number;
+  cost_today: number;
+  budget_remaining: number;
+  data_source: DataSourceKind;
+};
+
+export type LlmCostEstimateRequest = {
+  model: string;
+  prompt_tokens: number;
+  completion_tokens: number;
+};
+
+export type LlmCostEstimateResponse = {
+  model: string;
+  prompt_tokens: number;
+  completion_tokens: number;
+  estimated_cost: number;
+  input_cost: number;
+  output_cost: number;
+  pricing_source: string;
+  data_source: DataSourceKind;
+};
+
+export type LlmGatewayTestCallRequest = {
+  provider: string;
+  model: string;
+  prompt: string;
+  allow_paid_call: boolean;
+};
+
+export type LlmGatewayTestCallResponse = {
+  id: string;
+  provider: string;
+  model: string;
+  dry_run: boolean;
+  paid_call_attempted: boolean;
+  status: string;
+  response_text: string;
+  estimated_cost: number;
+  data_source: DataSourceKind;
+  warnings: string[];
+};
+
 export const api = {
   getCommandCenter: () => request<CommandCenterResponse>("/api/command-center"),
   getAccountRisk: () => request<AccountRiskProfile>("/api/account-risk/profile"),
@@ -792,4 +919,13 @@ export const api = {
   getModelRunRegistry: () => request<ModelRegistryResponse>("/api/model-runs/registry"),
   planModelRun: (payload: ModelRunPlanRequest) => request<ModelRunPlanResponse>("/api/model-runs/plan", { method: "POST", body: JSON.stringify(payload) }),
   runModelRun: (payload: ModelRunRequest) => request<ModelRunResponse>("/api/model-runs/run", { method: "POST", body: JSON.stringify(payload) }),
+  getLlmGatewayStatus: () => request<LlmGatewayStatusResponse>("/api/llm-gateway/status"),
+  getLlmGatewayProviders: () => request<LlmProviderStatus[]>("/api/llm-gateway/providers"),
+  getLlmGatewayModels: () => request<LlmModelConfig[]>("/api/llm-gateway/models"),
+  getLlmGatewayRoutingRules: () => request<LlmRoutingRule[]>("/api/llm-gateway/routing-rules"),
+  getLlmGatewayUsage: () => request<LlmUsageRecord[]>("/api/llm-gateway/usage"),
+  getLlmGatewayCosts: () => request<LlmCostSummary>("/api/llm-gateway/costs"),
+  getLlmGatewayAgentModelMap: () => request<AgentModelMapping[]>("/api/llm-gateway/agent-model-map"),
+  estimateLlmCost: (payload: LlmCostEstimateRequest) => request<LlmCostEstimateResponse>("/api/llm-gateway/estimate", { method: "POST", body: JSON.stringify(payload) }),
+  testLlmGatewayCall: (payload: LlmGatewayTestCallRequest) => request<LlmGatewayTestCallResponse>("/api/llm-gateway/test-call", { method: "POST", body: JSON.stringify(payload) }),
 };

@@ -6,6 +6,7 @@ from fastapi import APIRouter
 from app.orchestration.schedulers.edge_scheduler import list_scheduler_jobs
 from app.orchestration.workflows.small_account_edge_radar import build_langgraph_definition
 from app.services.feature_store_service import get_feature_store_status
+from app.services.llm_gateway_service import get_gateway_summary
 from app.services.model_orchestrator_service import get_model_registry
 from app.services.platform_workflows import get_agent_scorecards
 
@@ -22,6 +23,7 @@ def get_ai_ops_summary() -> dict[str, Any]:
     scheduler = list_scheduler_jobs()
     feature_store = get_feature_store_status()
     model_registry = get_model_registry()
+    llm_gateway = get_gateway_summary()
     return {
         "data_source": "source_backed",
         "status": "foundation_installed",
@@ -39,6 +41,7 @@ def get_ai_ops_summary() -> dict[str, Any]:
             "available_model_count": model_registry["available_model_count"],
             "placeholder_model_count": model_registry["placeholder_model_count"],
         },
+        "llm_gateway": llm_gateway,
         "agent_scorecards_available": len(scorecards),
         "live_trading_allowed": False,
         "paper_trading_requires_approval": True,
