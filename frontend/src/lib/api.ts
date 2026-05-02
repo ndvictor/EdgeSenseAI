@@ -85,6 +85,24 @@ export type MarketSnapshot = {
   data_mode: string;
 };
 
+export type MarketCandle = {
+  time: string;
+  open: number;
+  high: number;
+  low: number;
+  close: number;
+  volume: number;
+};
+
+export type MarketCandlesResponse = {
+  symbol: string;
+  asset_class: string;
+  interval: string;
+  period: string;
+  data_mode: string;
+  candles: MarketCandle[];
+};
+
 export type EngineeredFeatures = {
   symbol: string;
   momentum_score: number;
@@ -342,6 +360,8 @@ export const api = {
   getEdgeSignals: () => request<{ last_updated: string; alerts_enabled: boolean; account_range: string; signals: EdgeSignal[] }>("/api/edge-signals/latest"),
   getModelStatus: () => request<ModelStatusResponse>("/api/models/status"),
   getMarketSnapshots: () => request<MarketSnapshot[]>("/api/market/snapshots"),
+  getMarketSnapshot: (symbol: string, provider = "mock") => request<MarketSnapshot>(`/api/market/${symbol}/snapshot?provider=${provider}`),
+  getMarketCandles: (symbol: string, provider = "mock", period = "1mo", interval = "1d") => request<MarketCandlesResponse>(`/api/market/${symbol}/candles?provider=${provider}&period=${period}&interval=${interval}`),
   getFeatures: (symbol: string) => request<EngineeredFeatures>(`/api/features/${symbol}`),
   getModelPipeline: (symbol: string) => request<ModelPipelineResult>(`/api/model-pipeline/${symbol}`),
   getAccountFeasibility: (symbol: string) => request<AccountFeasibilityResult>(`/api/account-feasibility/${symbol}`),
