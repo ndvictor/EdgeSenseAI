@@ -18,7 +18,9 @@ export type DataSourceStatus = {
   status: string;
   type: string;
   configured: boolean;
+  connected: boolean;
   used_for: string[];
+  required_for?: string[];
   last_checked: string;
   message: string;
 };
