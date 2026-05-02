@@ -186,6 +186,56 @@ export type JournalSummary = {
   next_steps: string[];
 };
 
+export type RankerScore = {
+  symbol: string;
+  score: number;
+  rank: number;
+  model_used: string;
+  explanation: string;
+};
+
+export type ModelLabRunRequest = {
+  data_source: "mock" | "yfinance";
+  model: "xgboost_ranker" | "weighted_ranker";
+  symbols: string[];
+  train_split_percent: number;
+  test_split_percent: number;
+  feature_set: "prototype_v1";
+};
+
+export type ModelLabRunResponse = {
+  workflow_status: string;
+  data_source: string;
+  model: string;
+  feature_set: string;
+  split: {
+    total_rows: number;
+    train_rows: number;
+    test_rows: number;
+    train_split_percent: number;
+    test_split_percent: number;
+  };
+  features: Array<{
+    symbol: string;
+    asset_class: string;
+    current_price: number;
+    feature_score: number;
+    momentum_score: number;
+    rvol_score: number;
+    spread_quality_score: number;
+    trend_vs_vwap_score: number;
+    volatility_score: number;
+  }>;
+  ranker_result: {
+    model_name: string;
+    model_available: boolean;
+    rows_scored: number;
+    scores: RankerScore[];
+    notes: string[];
+  };
+  next_steps: string[];
+};
+
 export type PricePlan = {
   current_price: number;
   buy_zone_low: number;
@@ -299,4 +349,5 @@ export const api = {
   getMarketRegime: () => request<MarketRegimeResponse>("/api/market-regime"),
   getBacktestingSummary: () => request<BacktestingResponse>("/api/backtesting/summary"),
   getJournalSummary: () => request<JournalSummary>("/api/journal/summary"),
+  runModelLab: (payload: ModelLabRunRequest) => request<ModelLabRunResponse>("/api/model-lab/run", { method: "POST", body: JSON.stringify(payload) }),
 };
