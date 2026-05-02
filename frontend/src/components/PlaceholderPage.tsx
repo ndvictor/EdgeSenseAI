@@ -12,16 +12,18 @@ export function PlaceholderPage({
   bullets: string[];
 }) {
   return (
-    <div className="p-6">
-      <PageHeader eyebrow={eyebrow} title={title} description={description} />
-      <div className="rounded-2xl border border-white/10 bg-white p-6">
-        <h2 className="text-xl font-black text-white">Build scope</h2>
-        <div className="mt-4 grid grid-cols-1 gap-3 md:grid-cols-2">
-          {bullets.map((bullet) => (
-            <div key={bullet} className="rounded-xl border border-white/10 bg-white p-4 text-sm text-slate-300">
-              {bullet}
-            </div>
-          ))}
+    <div className="min-h-screen bg-slate-500 p-2 lg:p-3">
+      <div className="mx-auto max-w-7xl">
+        <PageHeader eyebrow={eyebrow} title={title} description={description} />
+        <div className="rounded-xl border border-emerald-800 bg-slate-950 p-3 shadow-sm">
+          <h2 className="mb-2 text-sm font-semibold text-emerald-500">Build scope</h2>
+          <div className="grid grid-cols-1 gap-2 md:grid-cols-2">
+            {bullets.map((bullet) => (
+              <div key={bullet} className="rounded-lg border border-slate-800 bg-slate-900 px-3 py-2 text-xs leading-snug text-slate-300">
+                {bullet}
+              </div>
+            ))}
+          </div>
         </div>
       </div>
     </div>
