@@ -27,7 +27,6 @@ from app.schemas import (
     EdgeSignalsResponse,
     LiveWatchlistResponse,
     LiveWatchlistSummary,
-    ModelStatusResponse,
     ModelVote,
     PricePlan,
     Recommendation,
@@ -46,7 +45,7 @@ from app.services.market_data_service import MarketDataService
 from app.services.market_regime_service import MarketRegimeResponse, build_market_regime
 from app.services.model_lab_service import ModelLabRunRequest, ModelLabRunResponse, run_model_lab_workflow
 from app.services.model_pipeline_service import ModelPipelineResult, run_model_pipeline
-from app.services.model_status_service import build_model_status_response
+from app.services.model_status_service import ModelStatusResponse, build_model_status_response
 from app.services.risk_engine_service import RiskCheckResult, evaluate_trade_risk
 
 logger = logging.getLogger(__name__)
