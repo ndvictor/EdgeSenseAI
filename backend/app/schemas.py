@@ -1,6 +1,6 @@
 from datetime import datetime
 from typing import List, Literal
-from pydantic import BaseModel, Field
+from pydantic import BaseModel, ConfigDict, Field
 
 
 class HealthResponse(BaseModel):
@@ -139,6 +139,8 @@ class RiskPlan(BaseModel):
 
 
 class TradeRecommendation(BaseModel):
+    model_config = ConfigDict(protected_namespaces=())
+
     symbol: str
     asset_class: Literal["stock", "option", "crypto"]
     action: Literal["buy", "watch", "avoid"]
@@ -159,6 +161,8 @@ class TradeRecommendation(BaseModel):
 
 
 class Recommendation(BaseModel):
+    model_config = ConfigDict(protected_namespaces=())
+
     symbol: str
     asset_class: Literal["stock", "option", "crypto"]
     horizon: str
