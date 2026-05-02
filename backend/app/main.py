@@ -5,8 +5,16 @@ import time
 from fastapi import FastAPI
 from fastapi.middleware.cors import CORSMiddleware
 
+from app.api.routes.agent_scorecards import router as agent_scorecards_router
 from app.api.routes.data_sources import router as data_sources_router
+from app.api.routes.historical_analogs import router as historical_analogs_router
 from app.api.routes.market_data import router as market_data_router
+from app.api.routes.market_radar import router as market_radar_router
+from app.api.routes.paper_trading_lifecycle import router as paper_trading_lifecycle_router
+from app.api.routes.recommendation_lifecycle import router as recommendation_lifecycle_router
+from app.api.routes.signal_orchestration import router as signal_orchestration_router
+from app.api.routes.trade_quality import router as trade_quality_router
+from app.api.routes.watchlists import router as watchlists_router
 from app.core.settings import settings
 from app.data_providers.base import MarketCandlesResponse, MarketSnapshot
 from app.data_providers.provider_factory import get_market_data_provider
@@ -39,7 +47,7 @@ from app.services.risk_engine_service import RiskCheckResult, evaluate_trade_ris
 
 logger = logging.getLogger(__name__)
 
-app = FastAPI(title="EdgeSenseAI Backend", version="0.7.0", docs_url="/docs", redoc_url="/redoc")
+app = FastAPI(title="EdgeSenseAI Backend", version="0.8.0", docs_url="/docs", redoc_url="/redoc")
 
 app.add_middleware(
     CORSMiddleware,
@@ -71,6 +79,14 @@ async def prometheus_middleware(request, call_next):
 
 app.include_router(market_data_router, prefix="/api")
 app.include_router(data_sources_router, prefix="/api")
+app.include_router(watchlists_router, prefix="/api")
+app.include_router(paper_trading_lifecycle_router, prefix="/api")
+app.include_router(recommendation_lifecycle_router, prefix="/api")
+app.include_router(agent_scorecards_router, prefix="/api")
+app.include_router(historical_analogs_router, prefix="/api")
+app.include_router(market_radar_router, prefix="/api")
+app.include_router(trade_quality_router, prefix="/api")
+app.include_router(signal_orchestration_router, prefix="/api")
 
 _ACCOUNT_PROFILE = AccountRiskProfile()
 
@@ -87,7 +103,7 @@ def agents() -> list[AgentStatus]:
 
 @app.get("/")
 def root():
-    return {"message": "EdgeSenseAI backend running", "product": "EdgeSenseAI", "version": "0.7.0"}
+    return {"message": "EdgeSenseAI backend running", "product": "EdgeSenseAI", "version": "0.8.0"}
 
 
 @app.get("/health")
@@ -136,7 +152,7 @@ def get_live_watchlist():
         ),
         agents=agents(),
         candidates=candidates,
-        disclaimer="Prototype candidates only. Not live market-triggered alerts. No live execution.",
+        disclaimer="Prototype candidates only. Not live market-triggered alerts.",
     )
 
 
