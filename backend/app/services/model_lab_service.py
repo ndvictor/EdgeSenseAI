@@ -49,9 +49,7 @@ class ModelLabRunResponse(BaseModel):
 
 
 def run_model_lab_workflow(request: ModelLabRunRequest) -> ModelLabRunResponse:
-    # Provider is currently selected globally through MARKET_DATA_PROVIDER.
-    # The selected data_source is carried through the response and should later be passed into provider_factory explicitly.
-    provider = get_market_data_provider()
+    provider = get_market_data_provider(request.data_source)
     feature_rows: list[FeatureRow] = []
     ranker_rows: list[RankerInputRow] = []
 
