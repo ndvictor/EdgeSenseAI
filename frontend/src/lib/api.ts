@@ -46,6 +46,52 @@ export type EdgeSignal = {
   risk_factors: string[];
 };
 
+export type ModelVote = {
+  model: string;
+  status: "prototype" | "active" | "disabled";
+  signal: "bullish" | "bearish" | "neutral" | "risk_off";
+  confidence: number;
+  explanation: string;
+};
+
+export type PricePlan = {
+  current_price: number;
+  buy_zone_low: number;
+  buy_zone_high: number;
+  stop_loss: number;
+  target_price: number;
+  target_2_price?: number | null;
+};
+
+export type RiskPlan = {
+  position_size_dollars: number;
+  max_dollar_risk: number;
+  max_loss_percent: number;
+  expected_return_percent: number;
+  reward_risk_ratio: number;
+  account_fit: string;
+};
+
+export type TradeRecommendation = {
+  symbol: string;
+  asset_class: "stock" | "option" | "crypto";
+  action: "buy" | "watch" | "avoid";
+  action_label: string;
+  horizon: "intraday" | "day_trade" | "swing" | "one_month";
+  confidence: number;
+  final_score: number;
+  urgency: "low" | "medium" | "high" | "critical";
+  price_plan: PricePlan;
+  risk_plan: RiskPlan;
+  model_votes: ModelVote[];
+  final_reason: string;
+  invalidation_rules: string[];
+  risk_factors: string[];
+  data_mode: "synthetic_prototype" | "paper" | "live";
+  execution_enabled: boolean;
+  research_only: boolean;
+};
+
 export type Recommendation = {
   symbol: string;
   asset_class: "stock" | "option" | "crypto";
@@ -62,6 +108,7 @@ export type Recommendation = {
 
 export type CommandCenterResponse = {
   account_profile: AccountRiskProfile;
+  top_action: TradeRecommendation;
   top_recommendations: Recommendation[];
   urgent_edge_alerts: EdgeSignal[];
   agents: { name: string; role: string; status: string; status_label: string; last_checked: string }[];
