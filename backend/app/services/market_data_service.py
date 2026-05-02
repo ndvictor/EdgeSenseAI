@@ -9,7 +9,12 @@ from app.services.market_data_providers.yfinance_provider import YFinanceMarketD
 
 
 class MarketDataService:
-    """Read-only market data service using configured provider priority."""
+    """Read-only market data service using configured provider priority.
+
+    Important product rule:
+    - source=mock is allowed for explicit UI/testing workflows.
+    - source=auto must never silently fall back to mock, because that can make fake data look real.
+    """
 
     def __init__(self, provider_priority: Optional[list[str]] = None, providers: Optional[Dict[str, Any]] = None):
         self.provider_priority = provider_priority or settings.market_data_provider_priority
@@ -21,7 +26,7 @@ class MarketDataService:
 
     def _priority_for_source(self, source: str | None = None) -> list[str]:
         if not source or source == "auto":
-            return self.provider_priority
+            return [provider for provider in self.provider_priority if provider != "mock"]
         return [source.lower().strip()]
 
     def get_quote(self, symbol: str, source: str | None = None) -> Dict[str, Any]:
@@ -72,9 +77,7 @@ class MarketDataService:
             ticker = yf.Ticker(symbol)
             hist = ticker.history(period=period, interval=interval)
             if hist.empty:
-                if requested_source == "auto":
-                    return self._get_mock_history(symbol, period, interval, data_quality="mock_fallback", error="yfinance returned no data")
-                return self._get_unavailable_history(symbol, period, interval, error="No data returned")
+                return self._get_unavailable_history(symbol, period, interval, error=f"No data returned from {requested_source} source")
 
             data = []
             for date, row in hist.iterrows():
@@ -97,8 +100,6 @@ class MarketDataService:
                 "data_quality": "real",
             }
         except Exception as exc:
-            if requested_source == "auto":
-                return self._get_mock_history(symbol, period, interval, data_quality="mock_fallback", error=str(exc))
             return self._get_unavailable_history(symbol, period, interval, error=str(exc))
 
     def get_market_snapshot(self, symbol: str, source: str | None = None) -> Dict[str, Any]:
@@ -127,7 +128,7 @@ class MarketDataService:
             f"{status['provider']}: {status.get('data_quality')} {status.get('error') or ''}".strip()
             for status in provider_statuses
         )
-        snapshot = self._get_unavailable_snapshot(symbol, error=final_error or "No provider returned market data")
+        snapshot = self._get_unavailable_snapshot(symbol, error=final_error or "No configured real provider returned market data")
         snapshot["provider_statuses"] = provider_statuses
         return snapshot
 
