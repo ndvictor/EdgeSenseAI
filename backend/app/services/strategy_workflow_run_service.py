@@ -117,6 +117,8 @@ def _record(result: StrategyWorkflowRunResult) -> StrategyWorkflowRunResult:
 
 def _best_model_score(model_outputs: list[dict[str, Any]], symbol: str) -> float | None:
     for output in model_outputs:
+        if output.get("model_name") == "weighted_ranker_v1" and output.get("rank_score") is not None:
+            return float(output.get("rank_score") or 0)
         if output.get("model") == "weighted_ranker":
             for score in output.get("scores", []):
                 if score.get("ticker") == symbol.upper():

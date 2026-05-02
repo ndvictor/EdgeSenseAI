@@ -256,6 +256,16 @@ def test_model_runs_registry_and_run_contract():
     assert run["feature_rows"]
     assert run["plan"]["models"]
     assert any(result["model"] == "weighted_ranker" for result in run["results"])
+    weighted = next(result for result in run["model_outputs"] if result.get("model_name") == "weighted_ranker_v1")
+    assert weighted["status"] == "completed"
+    assert 0 <= weighted["prediction_score"] <= 1
+    assert 0 <= weighted["probability_score"] <= 1
+    assert weighted["pricing"] is None
+    assert weighted["feature_contributions"]
+    xgboost_outputs = [result for result in run["model_outputs"] if result.get("model") == "xgboost_ranker"]
+    assert xgboost_outputs
+    assert xgboost_outputs[0]["status"] in {"not_trained", "not_available"}
+    assert all(result["status"] != "completed" for result in run["placeholder_models"])
 
 
 def test_foundation_routes_preserve_existing_agent_endpoints():

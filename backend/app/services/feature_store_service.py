@@ -95,6 +95,10 @@ def get_feature_rows_for_symbol(symbol: str) -> list[FeatureStoreRow]:
     return [row for row in get_latest_feature_rows() if row.ticker == ticker]
 
 
+def get_feature_row_by_id(feature_row_id: str) -> FeatureStoreRow | None:
+    return next((row for row in _FEATURE_ROWS if row.id == feature_row_id), None)
+
+
 def get_feature_store_status() -> dict[str, Any]:
     return {
         "storage_mode": "in_memory",

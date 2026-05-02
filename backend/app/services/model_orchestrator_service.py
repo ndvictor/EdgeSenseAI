@@ -2,8 +2,9 @@ from typing import Any, Literal
 
 from pydantic import BaseModel, Field
 
-from app.services.feature_store_service import FeatureStoreRow, FeatureStoreRunRequest, run_feature_store_pipeline
-from app.services.xgboost_ranker_service import RankerInputRow, run_xgboost_ranker
+from app.services.feature_store_service import FeatureStoreRow, get_feature_row_by_id, get_feature_rows_for_symbol
+from app.services.model_runner_service import run_selected_models
+from app.strategies.registry import StrategyConfig, get_strategy
 
 
 class ModelRegistryItem(BaseModel):
@@ -19,6 +20,9 @@ class ModelRunPlanRequest(BaseModel):
     asset_class: str = "stock"
     horizon: Literal["intraday", "day_trade", "swing", "one_month"] | str = "swing"
     source: str = "auto"
+    strategy_key: str | None = None
+    feature_row_id: str | None = None
+    selected_models: list[str] | None = None
     feature_rows: list[FeatureStoreRow] | None = None
 
 
@@ -47,6 +51,12 @@ class ModelRunResponse(BaseModel):
     plan: ModelRunPlanResponse
     feature_rows: list[FeatureStoreRow]
     results: list[dict[str, Any]]
+    model_outputs: list[dict[str, Any]] = Field(default_factory=list)
+    completed_models: list[dict[str, Any]] = Field(default_factory=list)
+    blocked_models: list[dict[str, Any]] = Field(default_factory=list)
+    placeholder_models: list[dict[str, Any]] = Field(default_factory=list)
+    not_trained_models: list[dict[str, Any]] = Field(default_factory=list)
+    next_action: str = "Review model outputs with risk filter before recommendation."
     warnings: list[str] = Field(default_factory=list)
 
 
@@ -73,7 +83,7 @@ def get_model_registry() -> dict[str, Any]:
             key="xgboost_ranker",
             name="XGBoost Ranker",
             status="available_if_xgboost_installed" if xgboost_available else "unavailable_dependency_missing",
-            should_run_when=["xgboost installed", "feature row exists", "sufficient feature fields exist"],
+            should_run_when=["xgboost installed", "feature row exists", "trained model artifact exists", "walk-forward validation complete"],
             data_source="source_backed" if xgboost_available else "placeholder",
         ),
         ModelRegistryItem(key="garch_volatility", name="GARCH Volatility", status="placeholder", should_run_when=["sufficient historical candles exist"]),
@@ -110,15 +120,15 @@ def plan_model_runs(request: ModelRunPlanRequest) -> ModelRunPlanResponse:
         PlannedModel(
             key="weighted_ranker",
             status="available",
-            should_run=bool(usable_rows),
-            reason="Runs when feature rows pass or warn and core technical fields are present.",
+            should_run=bool(has_rows and usable_rows),
+            reason="Runs when a feature row exists, quality is pass or warn, and core technical fields are present.",
             data_source="source_backed" if usable_rows else "placeholder",
         ),
         PlannedModel(
             key="xgboost_ranker",
             status="available_if_xgboost_installed" if _xgboost_installed() else "unavailable_dependency_missing",
             should_run=bool(usable_rows and _xgboost_installed()),
-            reason="Runs only when xgboost is installed and feature rows have sufficient fields.",
+            reason="Eligible for wrapper execution when xgboost is installed and feature rows have sufficient fields; inference still requires a trained artifact.",
             data_source="source_backed" if usable_rows and _xgboost_installed() else "placeholder",
         ),
         PlannedModel(key="garch_volatility", status="placeholder", should_run=False, reason="Requires sufficient historical candles.", data_source="placeholder"),
@@ -137,74 +147,77 @@ def plan_model_runs(request: ModelRunPlanRequest) -> ModelRunPlanResponse:
     )
 
 
-def _run_weighted_ranker(rows: list[FeatureStoreRow]) -> dict[str, Any]:
-    scored = sorted(
-        [
-            {
-                "ticker": row.ticker,
-                "score": round(
-                    float(row.technical_score or 0) * 0.35
-                    + float(row.momentum_score or 0) * 0.25
-                    + float(row.rvol_score or 0) * 0.15
-                    + float(row.liquidity_score or 0) * 0.15
-                    + float(row.volatility_score or 0) * 0.10,
-                    2,
-                ),
-                "data_quality": row.data_quality,
-            }
-            for row in rows
-        ],
-        key=lambda item: item["score"],
-        reverse=True,
-    )
-    return {
-        "model": "weighted_ranker",
-        "status": "completed",
-        "data_source": "source_backed",
-        "scores": [{**item, "rank": index + 1} for index, item in enumerate(scored)],
-    }
+def _strategy_for_request(request: ModelRunRequest) -> StrategyConfig:
+    if request.strategy_key:
+        strategy = get_strategy(request.strategy_key)
+        if strategy:
+            return strategy
+    fallback_key = "stock_day_trading" if request.horizon == "day_trade" else "stock_swing"
+    return get_strategy(fallback_key) or get_strategy("stock_swing")  # type: ignore[return-value]
+
+
+def _rows_for_request(request: ModelRunRequest) -> list[FeatureStoreRow]:
+    if request.feature_rows:
+        return request.feature_rows
+    if request.feature_row_id:
+        row = get_feature_row_by_id(request.feature_row_id)
+        return [row] if row else []
+    rows: list[FeatureStoreRow] = []
+    for symbol in request.symbols:
+        symbol_rows = get_feature_rows_for_symbol(symbol)
+        if symbol_rows:
+            rows.append(symbol_rows[0])
+    return rows
 
 
 def run_model_orchestrator(request: ModelRunRequest) -> ModelRunResponse:
-    rows = request.feature_rows or []
+    rows = _rows_for_request(request)
     warnings: list[str] = []
     if not rows:
-        for symbol in request.symbols:
-            run = run_feature_store_pipeline(
-                FeatureStoreRunRequest(symbol=symbol, asset_class=request.asset_class, horizon=request.horizon, source=request.source)
-            )
-            rows.append(run.row)
-            warnings.extend(run.warnings)
+        plan = plan_model_runs(ModelRunPlanRequest(**request.model_dump(exclude={"feature_rows"}), feature_rows=[]))
+        return ModelRunResponse(
+            status="blocked",
+            data_source="placeholder",
+            plan=plan,
+            feature_rows=[],
+            results=[],
+            blocked_models=[{"model": "model_orchestrator", "status": "blocked", "reason": "No feature row exists. Run /api/feature-store/run first or provide feature_row_id.", "data_source": "placeholder"}],
+            next_action="Run feature-store pipeline before model execution.",
+            warnings=warnings + ["No feature rows available for model execution."],
+        )
 
     plan = plan_model_runs(ModelRunPlanRequest(**request.model_dump(exclude={"feature_rows"}), feature_rows=rows))
     usable_rows = [row for row in rows if row.data_quality in {"pass", "warn"} and _feature_fields_available(row)]
-    results: list[dict[str, Any]] = []
-    if any(model.key == "weighted_ranker" and model.should_run for model in plan.models):
-        results.append(_run_weighted_ranker(usable_rows))
-    if any(model.key == "xgboost_ranker" and model.should_run for model in plan.models):
-        ranker_rows = [
-            RankerInputRow(
-                symbol=row.ticker,
-                feature_score=float(row.technical_score or 0),
-                momentum_score=float(row.momentum_score or 0),
-                rvol_score=float(row.rvol_score or 0),
-                spread_quality_score=float(row.liquidity_score or 0),
-                trend_vs_vwap_score=float(row.regime_score or row.technical_score or 0),
-                volatility_score=float(row.volatility_score or 0),
-            )
-            for row in usable_rows
-        ]
-        results.append({"model": "xgboost_ranker", "status": "completed", "data_source": "source_backed", "result": run_xgboost_ranker(ranker_rows).model_dump()})
+    selected_models = request.selected_models or [model.key for model in plan.models if model.should_run]
+    if "weighted_ranker" not in selected_models and usable_rows:
+        selected_models.insert(0, "weighted_ranker")
+    strategy = _strategy_for_request(request)
+    runner_outputs = {"completed_models": [], "blocked_models": [], "placeholder_models": [], "not_trained_models": [], "model_outputs": []}
+    for row in usable_rows:
+        row_outputs = run_selected_models(row, strategy, selected_models)
+        for key, values in row_outputs.items():
+            runner_outputs[key].extend(values)
 
     for model in plan.models:
         if not model.should_run and model.status == "placeholder":
-            results.append({"model": model.key, "status": "placeholder_not_run", "reason": model.reason, "data_source": "placeholder"})
+            runner_outputs["placeholder_models"].append({"model": model.key, "model_name": model.key, "status": "placeholder_not_run", "reason": model.reason, "data_source": "placeholder"})
+
+    model_outputs = runner_outputs["model_outputs"] + runner_outputs["placeholder_models"]
+    completed = runner_outputs["completed_models"]
+    not_trained = runner_outputs["not_trained_models"]
+    next_action = "Review weighted_ranker_v1 with risk filter before recommendation." if completed else "Resolve blocked model inputs before treating outputs as actionable."
 
     return ModelRunResponse(
         status="completed",
         data_source="source_backed" if any(row.data_source == "source_backed" for row in rows) else "placeholder",
         plan=plan,
         feature_rows=rows,
-        results=results,
+        results=model_outputs,
+        model_outputs=model_outputs,
+        completed_models=completed,
+        blocked_models=runner_outputs["blocked_models"],
+        placeholder_models=runner_outputs["placeholder_models"],
+        not_trained_models=not_trained,
+        next_action=next_action,
         warnings=warnings + plan.warnings,
     )

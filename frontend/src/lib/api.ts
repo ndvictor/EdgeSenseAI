@@ -699,6 +699,9 @@ export type ModelRunPlanRequest = {
   asset_class: string;
   horizon: "intraday" | "day_trade" | "swing" | "one_month" | string;
   source: "auto" | "yfinance" | "mock" | string;
+  strategy_key?: string | null;
+  feature_row_id?: string | null;
+  selected_models?: string[] | null;
   feature_rows?: FeatureStoreRow[] | null;
 };
 
@@ -722,17 +725,28 @@ export type ModelRunRequest = ModelRunPlanRequest;
 export type ModelOutput = {
   model?: string;
   model_name?: string;
+  model_type?: string;
   status?: string;
   prediction?: string | number | null;
+  prediction_score?: number | null;
   probability?: number | null;
+  probability_score?: number | null;
+  expected_return_score?: number | null;
+  expected_return_score_source?: string | null;
+  volatility_adjusted_score?: number | null;
+  rank_score?: number | null;
+  confidence_score?: number | null;
   score?: number | null;
   confidence?: number | null;
   scores?: Array<Record<string, unknown>>;
   result?: Record<string, unknown>;
   notes?: string[];
+  warnings?: string[];
+  feature_contributions?: Array<Record<string, unknown>>;
   feature_importance?: Array<Record<string, unknown>> | Record<string, unknown> | null;
   data_source?: DataSourceKind;
   reason?: string;
+  next_steps?: string[];
 };
 
 export type BlockedOrPlaceholderModel = {
@@ -751,6 +765,11 @@ export type ModelRunResponse = {
   plan?: ModelRunPlanResponse;
   feature_rows?: FeatureStoreRow[];
   results?: Array<ModelOutput | BlockedOrPlaceholderModel>;
+  model_outputs?: Array<ModelOutput | BlockedOrPlaceholderModel>;
+  completed_models?: ModelOutput[];
+  blocked_models?: BlockedOrPlaceholderModel[];
+  placeholder_models?: BlockedOrPlaceholderModel[];
+  not_trained_models?: BlockedOrPlaceholderModel[];
   warnings?: string[];
   next_action?: string;
 };

@@ -24,7 +24,7 @@ function statusClass(status?: string | null) {
   if (["pass", "completed", "available", "source_backed"].includes(value) || value.includes("configured")) {
     return "border-emerald-500 bg-emerald-500/10 text-emerald-300";
   }
-  if (["warn", "demo", "placeholder", "placeholder_not_run"].includes(value) || value.includes("missing")) {
+  if (["warn", "demo", "placeholder", "placeholder_not_run", "not_trained", "not_available"].includes(value) || value.includes("missing")) {
     return "border-amber-500 bg-amber-500/10 text-amber-300";
   }
   if (["fail", "blocked", "error", "not_configured"].includes(value) || value.includes("unavailable")) {
@@ -103,7 +103,10 @@ function outputName(output: ModelOutput | BlockedOrPlaceholderModel) {
 }
 
 function outputScore(output: ModelOutput | BlockedOrPlaceholderModel) {
+  if ("prediction_score" in output && output.prediction_score !== undefined && output.prediction_score !== null) return `${Math.round(output.prediction_score * 100)}%`;
+  if ("rank_score" in output && output.rank_score !== undefined && output.rank_score !== null) return `${Math.round(output.rank_score * 100)}%`;
   if ("score" in output && output.score !== undefined && output.score !== null) return metricValue(output.score);
+  if ("probability_score" in output && output.probability_score !== undefined && output.probability_score !== null) return `${Math.round(output.probability_score * 100)}%`;
   if ("probability" in output && output.probability !== undefined && output.probability !== null) return `${Math.round(output.probability * 100)}%`;
   if ("prediction" in output && output.prediction !== undefined && output.prediction !== null) return String(output.prediction);
   if ("scores" in output && output.scores?.length) {
@@ -118,7 +121,7 @@ function nextAction(quality?: DataQualityReport | null, row?: FeatureStoreRow | 
   if (quality?.quality_status === "fail") return "Fix data source or provider before model run.";
   if (!row) return "Run feature-store pipeline first.";
   if (plan && !plan.models.some((model) => model.should_run)) return "Enable required model/data provider before treating outputs as actionable.";
-  if (run?.results?.some((output) => ["weighted_ranker", "xgboost_ranker"].includes(outputName(output)))) return "Review risk filter before recommendation.";
+  if ((run?.completed_models ?? run?.results ?? []).some((output) => ["weighted_ranker_v1", "weighted_ranker", "xgboost_ranker"].includes(outputName(output)))) return "Review risk filter before recommendation.";
   return "Run model plan or model pipeline after the feature row is available.";
 }
 
@@ -258,7 +261,7 @@ function ModelPlanPanel({ plan, registry, row, quality, loading }: { plan: Model
 
 function ModelOutputsPanel({ run, loading }: { run: ModelRunResponse | null; loading: boolean }) {
   if (loading) return <LoadingNote label="Running model pipeline..." />;
-  const outputs = (run?.results ?? []).filter((output) => !["placeholder_not_run", "blocked", "missing_inputs", "not_configured"].includes(output.status || ""));
+  const outputs = (run?.completed_models?.length ? run.completed_models : run?.results ?? []).filter((output) => !["placeholder_not_run", "blocked", "missing_inputs", "not_configured", "not_trained", "not_available"].includes(output.status || ""));
   if (!outputs.length) return <EmptyState message="Run Model Pipeline to see model outputs." />;
   return (
     <div className="grid grid-cols-1 gap-4 xl:grid-cols-3">
@@ -274,7 +277,11 @@ function ModelOutputsPanel({ run, loading }: { run: ModelRunResponse | null; loa
             {"confidence" in output && output.confidence !== undefined && <Badge value={`confidence ${Math.round((output.confidence ?? 0) * 100)}%`} />}
           </div>
           {"scores" in output && output.scores?.length ? <p className="mt-3 text-sm text-slate-300">Scores returned: {output.scores.length}</p> : null}
+          {"probability_score" in output && output.probability_score !== undefined && output.probability_score !== null ? <p className="mt-3 text-sm text-slate-300">Probability: {Math.round(output.probability_score * 100)}% · Confidence: {Math.round((output.confidence_score ?? 0) * 100)}%</p> : null}
+          {"expected_return_score" in output && output.expected_return_score !== undefined && output.expected_return_score !== null ? <p className="mt-2 text-sm text-slate-400">Expected return estimate: {Math.round(output.expected_return_score * 10000) / 100}% ({output.expected_return_score_source || "estimate"})</p> : null}
+          {"feature_contributions" in output && output.feature_contributions?.length ? <ContributionList contributions={output.feature_contributions} /> : null}
           {"result" in output && output.result ? <p className="mt-3 text-sm text-slate-400">Nested result returned from model service.</p> : null}
+          {"warnings" in output && output.warnings?.length ? <InfoList title="Warnings" items={output.warnings} /> : null}
           {"notes" in output && output.notes?.length ? <InfoList title="Notes" items={output.notes} /> : null}
         </article>
       ))}
@@ -282,8 +289,25 @@ function ModelOutputsPanel({ run, loading }: { run: ModelRunResponse | null; loa
   );
 }
 
+function ContributionList({ contributions }: { contributions: Array<Record<string, unknown>> }) {
+  return (
+    <div className="mt-3 rounded-lg border border-slate-800 bg-slate-950 p-3">
+      <p className="text-xs font-semibold uppercase tracking-wide text-slate-500">Feature Contributions</p>
+      <div className="mt-2 space-y-2">
+        {contributions.slice(0, 6).map((item, index) => (
+          <div key={`${String(item.feature)}-${index}`} className="flex items-center justify-between gap-3 text-xs text-slate-300">
+            <span>{String(item.feature || "feature").replace(/_/g, " ")}</span>
+            <span className="font-mono text-emerald-300">{metricValue(typeof item.contribution === "number" ? item.contribution : String(item.contribution ?? "N/A"))}</span>
+          </div>
+        ))}
+      </div>
+    </div>
+  );
+}
+
 function BlockedModelsPanel({ run, plan }: { run: ModelRunResponse | null; plan: ModelRunPlanResponse | null }) {
-  const fromRun = (run?.results ?? []).filter((output) => ["placeholder_not_run", "blocked", "missing_inputs", "not_configured"].includes(output.status || ""));
+  const fromRun = [...(run?.not_trained_models ?? []), ...(run?.blocked_models ?? []), ...(run?.placeholder_models ?? [])];
+  const fallbackFromRun = (run?.results ?? []).filter((output) => ["placeholder_not_run", "blocked", "missing_inputs", "not_configured", "not_trained", "not_available"].includes(output.status || ""));
   const fromPlan = (plan?.models ?? []).filter((model) => !model.should_run && model.status !== "available").map<BlockedOrPlaceholderModel>((model) => ({
     model: model.key,
     status: model.status === "placeholder" ? "placeholder_not_run" : model.status,
@@ -292,7 +316,7 @@ function BlockedModelsPanel({ run, plan }: { run: ModelRunResponse | null; plan:
     next_step: "Wire the required data provider or production model before using this output.",
     data_source: model.data_source,
   }));
-  const rows = fromRun.length ? fromRun : fromPlan;
+  const rows = fromRun.length ? fromRun : fallbackFromRun.length ? fallbackFromRun : fromPlan;
   if (!rows.length) return <EmptyState message="No blocked or placeholder models yet." />;
   return (
     <div className="overflow-x-auto rounded-xl border border-slate-800 bg-slate-900">
