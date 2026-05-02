@@ -120,3 +120,33 @@ def test_risk_check_contract():
     assert payload["reward_risk_ratio"] > 0
     assert payload["max_dollar_risk"] > 0
     assert payload["risk_status"] in {"passed", "blocked_or_review"}
+
+
+def test_market_regime_contract():
+    response = client.get("/api/market-regime")
+    assert response.status_code == 200
+    payload = response.json()
+    assert payload["regime_state"]
+    assert 0 <= payload["confidence"] <= 1
+    assert payload["allowed_strategies"]
+    assert payload["blocked_strategies"]
+    assert payload["factors"]
+
+
+def test_backtesting_contract():
+    response = client.get("/api/backtesting/summary")
+    assert response.status_code == 200
+    payload = response.json()
+    assert payload["mode"] == "prototype_contract"
+    assert payload["profiles"]
+    assert payload["profiles"][0]["metrics"]
+
+
+def test_journal_contract():
+    response = client.get("/api/journal/summary")
+    assert response.status_code == 200
+    payload = response.json()
+    assert payload["mode"] == "prototype_contract"
+    assert payload["total_entries"] >= 1
+    assert payload["entries"]
+    assert payload["next_steps"]
