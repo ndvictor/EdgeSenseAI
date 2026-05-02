@@ -1,6 +1,6 @@
 from __future__ import annotations
 
-from app.data_providers.base import MarketSnapshot
+from app.data_providers.base import MarketCandle, MarketCandlesResponse, MarketSnapshot
 
 
 class YFinanceProvider:
@@ -46,6 +46,35 @@ class YFinanceProvider:
             vwap=round(vwap, 2),
             volatility_proxy=round(volatility_proxy, 3),
             data_mode="yfinance_research",
+        )
+
+    def get_candles(self, symbol: str, period: str = "1mo", interval: str = "1d", asset_class: str = "stock") -> MarketCandlesResponse:
+        import yfinance as yf
+
+        ticker = yf.Ticker(symbol)
+        hist = ticker.history(period=period, interval=interval)
+        if hist.empty:
+            raise ValueError(f"No candle data returned for {symbol}")
+
+        candles = [
+            MarketCandle(
+                time=index.isoformat(),
+                open=round(float(row["Open"]), 4),
+                high=round(float(row["High"]), 4),
+                low=round(float(row["Low"]), 4),
+                close=round(float(row["Close"]), 4),
+                volume=int(row["Volume"]),
+            )
+            for index, row in hist.iterrows()
+        ]
+
+        return MarketCandlesResponse(
+            symbol=symbol,
+            asset_class=asset_class,
+            interval=interval,
+            period=period,
+            data_mode="yfinance_research",
+            candles=candles,
         )
 
     def get_watchlist_snapshots(self) -> list[MarketSnapshot]:
