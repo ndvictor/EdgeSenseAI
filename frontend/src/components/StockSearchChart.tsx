@@ -2,7 +2,7 @@
 
 import { useEffect, useMemo, useRef, useState } from "react";
 import { createChart, ColorType, type IChartApi, type ISeriesApi, type UTCTimestamp, CandlestickSeries } from "lightweight-charts";
-import { api, type MarketCandlesResponse, type MarketSnapshot } from "@/lib/api";
+import { api, type MarketDataSnapshot, type PriceHistory } from "@/lib/api";
 
 const QUICK_SYMBOLS = ["AMD", "NVDA", "AAPL", "MSFT", "TSLA", "META", "GOOGL", "BTC-USD"];
 
@@ -14,19 +14,26 @@ type ChartPoint = {
   close: number;
 };
 
-function toChartData(response: MarketCandlesResponse): ChartPoint[] {
-  return response.candles.map((candle) => ({
-    time: Math.floor(new Date(candle.time).getTime() / 1000) as UTCTimestamp,
-    open: candle.open,
-    high: candle.high,
-    low: candle.low,
-    close: candle.close,
-  }));
+function toChartData(response: PriceHistory): ChartPoint[] {
+  return response.data
+    .filter((candle) => candle.open !== null && candle.high !== null && candle.low !== null && candle.close !== null)
+    .map((candle) => ({
+      time: Math.floor(new Date(candle.date).getTime() / 1000) as UTCTimestamp,
+      open: Number(candle.open),
+      high: Number(candle.high),
+      low: Number(candle.low),
+      close: Number(candle.close),
+    }));
 }
 
-function money(value?: number) {
-  if (value === undefined || Number.isNaN(value)) return "—";
+function money(value?: number | null) {
+  if (value === undefined || value === null || Number.isNaN(value)) return "—";
   return `$${value.toLocaleString(undefined, { maximumFractionDigits: 2 })}`;
+}
+
+function formatPercent(value?: number | null) {
+  if (value === undefined || value === null || Number.isNaN(value)) return "—";
+  return `${value.toFixed(2)}%`;
 }
 
 export function StockSearchChart() {
@@ -35,15 +42,14 @@ export function StockSearchChart() {
   const seriesRef = useRef<ISeriesApi<"Candlestick"> | null>(null);
 
   const [symbol, setSymbol] = useState("AMD");
-  const [provider, setProvider] = useState<"mock" | "yfinance">("yfinance");
   const [period, setPeriod] = useState("1mo");
   const [interval, setIntervalValue] = useState("1d");
-  const [snapshot, setSnapshot] = useState<MarketSnapshot | null>(null);
-  const [candles, setCandles] = useState<MarketCandlesResponse | null>(null);
+  const [snapshot, setSnapshot] = useState<MarketDataSnapshot | null>(null);
+  const [history, setHistory] = useState<PriceHistory | null>(null);
   const [loading, setLoading] = useState(false);
   const [error, setError] = useState<string | null>(null);
 
-  const chartData = useMemo(() => (candles ? toChartData(candles) : []), [candles]);
+  const chartData = useMemo(() => (history ? toChartData(history) : []), [history]);
 
   async function load(nextSymbol = symbol) {
     const normalizedSymbol = nextSymbol.trim().toUpperCase();
@@ -51,13 +57,16 @@ export function StockSearchChart() {
     setLoading(true);
     setError(null);
     try {
-      const [nextSnapshot, nextCandles] = await Promise.all([
-        api.getMarketSnapshot(normalizedSymbol, provider),
-        api.getMarketCandles(normalizedSymbol, provider, period, interval),
+      const [nextSnapshot, nextHistory] = await Promise.all([
+        api.getMarketDataSnapshot(normalizedSymbol),
+        api.getMarketDataHistory(normalizedSymbol, period, interval),
       ]);
       setSymbol(normalizedSymbol);
       setSnapshot(nextSnapshot);
-      setCandles(nextCandles);
+      setHistory(nextHistory);
+      if (nextSnapshot.data_quality === "unavailable" || nextHistory.data_quality === "unavailable" || nextHistory.data.length === 0) {
+        setError(nextSnapshot.error || nextHistory.error || `No market data returned for ${normalizedSymbol}`);
+      }
     } catch (err) {
       setError(err instanceof Error ? err.message : "Unable to load market chart");
     } finally {
@@ -116,15 +125,15 @@ export function StockSearchChart() {
   }, []);
 
   useEffect(() => {
-    if (!seriesRef.current || !chartRef.current || chartData.length === 0) return;
+    if (!seriesRef.current || !chartRef.current) return;
     seriesRef.current.setData(chartData);
     chartRef.current.timeScale().fitContent();
   }, [chartData]);
 
   useEffect(() => {
-    load("AMD");
+    load(symbol);
     // eslint-disable-next-line react-hooks/exhaustive-deps
-  }, [provider, period, interval]);
+  }, [period, interval]);
 
   return (
     <section className="rounded-xl border border-emerald-800 bg-slate-950 p-4 shadow-sm">
@@ -133,11 +142,11 @@ export function StockSearchChart() {
           <p className="text-xs font-semibold uppercase tracking-[0.22em] text-emerald-500">Live market chart</p>
           <h2 className="mt-1 text-2xl font-black text-white">Search ticker and visualize price action</h2>
           <p className="mt-2 max-w-4xl text-sm leading-relaxed text-slate-400">
-            Use yfinance for research-grade live/recent data or mock for offline testing. This chart is for data visualization and feature workflow validation, not direct execution.
+            This chart now uses the migrated market-data service route with provider priority and data-quality reporting.
           </p>
         </div>
 
-        <div className="grid grid-cols-1 gap-3 md:grid-cols-5 xl:min-w-[760px]">
+        <div className="grid grid-cols-1 gap-3 md:grid-cols-4 xl:min-w-[620px]">
           <label className="md:col-span-2">
             <span className="text-xs font-semibold uppercase tracking-wide text-slate-400">Ticker</span>
             <input
@@ -149,13 +158,6 @@ export function StockSearchChart() {
               className="mt-2 w-full rounded-lg border border-emerald-900 bg-slate-900 px-4 py-3 text-sm font-bold text-white"
               placeholder="Search ticker, e.g. AAPL"
             />
-          </label>
-          <label>
-            <span className="text-xs font-semibold uppercase tracking-wide text-slate-400">Provider</span>
-            <select value={provider} onChange={(event) => setProvider(event.target.value as "mock" | "yfinance")} className="mt-2 w-full rounded-lg border border-emerald-900 bg-slate-900 px-3 py-3 text-sm text-white">
-              <option value="yfinance">YFinance</option>
-              <option value="mock">Mock</option>
-            </select>
           </label>
           <label>
             <span className="text-xs font-semibold uppercase tracking-wide text-slate-400">Period</span>
@@ -194,12 +196,12 @@ export function StockSearchChart() {
 
       {snapshot && (
         <div className="mt-4 grid grid-cols-2 gap-3 md:grid-cols-6">
-          <Metric label="Price" value={money(snapshot.current_price)} />
-          <Metric label="Change" value={`${snapshot.day_change_percent.toFixed(2)}%`} />
-          <Metric label="Volume" value={snapshot.volume.toLocaleString()} />
-          <Metric label="RVOL" value={`${snapshot.relative_volume.toFixed(2)}x`} />
-          <Metric label="Spread" value={`${snapshot.spread_percent.toFixed(3)}%`} />
-          <Metric label="Mode" value={snapshot.data_mode.replace(/_/g, " ")} />
+          <Metric label="Price" value={money(snapshot.price)} />
+          <Metric label="Change" value={formatPercent(snapshot.change_percent)} />
+          <Metric label="Volume" value={snapshot.volume ? snapshot.volume.toLocaleString() : "—"} />
+          <Metric label="Spread" value={formatPercent(snapshot.bid_ask_spread)} />
+          <Metric label="Provider" value={snapshot.provider ?? "—"} />
+          <Metric label="Quality" value={snapshot.data_quality ?? "—"} />
         </div>
       )}
 
