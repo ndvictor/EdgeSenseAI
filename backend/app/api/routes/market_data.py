@@ -50,15 +50,15 @@ class PriceHistory(BaseModel):
 
 
 @router.get("/market-data/quote/{symbol}", response_model=Dict[str, Any])
-def get_quote(symbol: str):
-    return market_data_service.get_quote(symbol)
+def get_quote(symbol: str, source: str = Query("auto")):
+    return market_data_service.get_quote(symbol, source=source)
 
 
 @router.get("/market-data/snapshot/{symbol}", response_model=MarketSnapshot)
-def get_market_snapshot(symbol: str):
-    return MarketSnapshot(**market_data_service.get_market_snapshot(symbol))
+def get_market_snapshot(symbol: str, source: str = Query("auto")):
+    return MarketSnapshot(**market_data_service.get_market_snapshot(symbol, source=source))
 
 
 @router.get("/market-data/history/{symbol}", response_model=PriceHistory)
-def get_price_history(symbol: str, period: str = Query("6mo"), interval: str = Query("1d")):
-    return PriceHistory(**market_data_service.get_price_history(symbol, period, interval))
+def get_price_history(symbol: str, period: str = Query("6mo"), interval: str = Query("1d"), source: str = Query("auto")):
+    return PriceHistory(**market_data_service.get_price_history(symbol, period, interval, source=source))
