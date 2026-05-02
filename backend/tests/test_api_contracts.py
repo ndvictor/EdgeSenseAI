@@ -103,6 +103,28 @@ def test_model_pipeline_contract():
     assert payload["pipeline_notes"]
 
 
+def test_model_lab_workflow_contract():
+    response = client.post(
+        "/api/model-lab/run",
+        json={
+            "data_source": "mock",
+            "model": "xgboost_ranker",
+            "symbols": ["AMD", "NVDA", "BTC-USD"],
+            "train_split_percent": 70,
+            "test_split_percent": 30,
+            "feature_set": "prototype_v1",
+        },
+    )
+    assert response.status_code == 200
+    payload = response.json()
+    assert payload["workflow_status"] == "completed"
+    assert payload["split"]["total_rows"] == 3
+    assert payload["split"]["train_rows"] == 2
+    assert payload["features"]
+    assert payload["ranker_result"]["scores"]
+    assert payload["ranker_result"]["rows_scored"] == 3
+
+
 def test_account_feasibility_contract():
     response = client.get("/api/account-feasibility/AMD")
     assert response.status_code == 200
