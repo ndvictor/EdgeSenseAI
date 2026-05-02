@@ -125,6 +125,43 @@ export type RiskCheckResult = {
   blockers: string[];
 };
 
+export type RegimeFactor = {
+  name: string;
+  value: string;
+  signal: string;
+  impact: string;
+};
+
+export type MarketRegimeResponse = {
+  regime_state: string;
+  confidence: number;
+  strategy_bias: string;
+  allowed_strategies: string[];
+  blocked_strategies: string[];
+  factors: RegimeFactor[];
+  notes: string[];
+};
+
+export type BacktestMetric = {
+  name: string;
+  value: string;
+  status: string;
+};
+
+export type BacktestProfile = {
+  profile_name: string;
+  objective: string;
+  horizon: string;
+  status: string;
+  metrics: BacktestMetric[];
+  next_steps: string[];
+};
+
+export type BacktestingResponse = {
+  mode: string;
+  profiles: BacktestProfile[];
+};
+
 export type PricePlan = {
   current_price: number;
   buy_zone_low: number;
@@ -235,4 +272,6 @@ export const api = {
   getModelPipeline: (symbol: string) => request<ModelPipelineResult>(`/api/model-pipeline/${symbol}`),
   getAccountFeasibility: (symbol: string) => request<AccountFeasibilityResult>(`/api/account-feasibility/${symbol}`),
   getRiskCheck: (symbol: string) => request<RiskCheckResult>(`/api/risk-check/${symbol}`),
+  getMarketRegime: () => request<MarketRegimeResponse>("/api/market-regime"),
+  getBacktestingSummary: () => request<BacktestingResponse>("/api/backtesting/summary"),
 };
