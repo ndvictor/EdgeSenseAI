@@ -10,6 +10,7 @@ from app.api.routes.ai_ops import router as ai_ops_router
 from app.api.routes.auto_run import router as auto_run_router
 from app.api.routes.data_quality import router as data_quality_router
 from app.api.routes.data_sources import router as data_sources_router
+from app.api.routes.decision_workflows import router as decision_workflows_router
 from app.api.routes.edge_radar import router as edge_radar_router
 from app.api.routes.feature_store import router as feature_store_router
 from app.api.routes.historical_analogs import router as historical_analogs_router
@@ -38,21 +39,16 @@ from app.schemas import (
     EdgeSignalsResponse,
     LiveWatchlistResponse,
     LiveWatchlistSummary,
-    ModelVote,
-    PricePlan,
-    Recommendation,
-    RiskPlan,
     SourceDataStatus,
-    TradeRecommendation,
 )
 from app.services.account_feasibility_service import AccountFeasibilityResult, evaluate_account_feasibility
 from app.services.backtesting_service import BacktestingResponse, build_backtesting_summary
+from app.services.decision_workflow_service import DecisionWorkflowRunRequest, run_decision_workflow
 from app.services.edge_signal_service import build_edge_signals
 from app.services.feature_engineering_service import EngineeredFeatures, build_features
 from app.services.health_service import get_health_snapshot
 from app.services.journal_service import JournalSummary, build_journal_summary
 from app.services.live_watchlist_service import build_live_candidates
-from app.services.market_data_service import MarketDataService
 from app.services.market_regime_service import MarketRegimeResponse, build_market_regime
 from app.services.model_lab_service import ModelLabRunRequest, ModelLabRunResponse, run_model_lab_workflow
 from app.services.model_pipeline_service import ModelPipelineResult, run_model_pipeline
@@ -112,130 +108,53 @@ app.include_router(strategy_workflows_router, prefix="/api")
 app.include_router(market_scanner_router, prefix="/api")
 app.include_router(auto_run_router, prefix="/api")
 app.include_router(memory_router, prefix="/api")
+app.include_router(decision_workflows_router, prefix="/api")
 
 _ACCOUNT_PROFILE = AccountRiskProfile()
-_MARKET_DATA = MarketDataService()
-_COMMAND_CENTER_SYMBOLS = ["AMD", "NVDA", "AAPL", "MSFT", "BTC-USD"]
+_COMMAND_CENTER_SYMBOLS = ["AAPL", "MSFT", "NVDA", "AMD", "BTC-USD"]
 
 
 def agents() -> list[AgentStatus]:
     return [
-        AgentStatus(name="Data Quality Agent", role="data_quality", status="ok", status_label="Checking"),
-        AgentStatus(name="Edge Signal Agent", role="edge_signals", status="prototype", status_label="Prototype scan"),
-        AgentStatus(name="Feature Agent", role="feature_engineering", status="ready", status_label="Building features"),
-        AgentStatus(name="Risk Agent", role="account_risk", status="checked", status_label="Account checked"),
-        AgentStatus(name="Recommendation Engine", role="recommendation_engine", status="source_backed", status_label="Waiting for source data"),
+        AgentStatus(name="Data Quality Agent", role="data_quality", status="source_backed", status_label="Checking source quality"),
+        AgentStatus(name="Feature Store Agent", role="feature_store", status="source_backed", status_label="Building feature rows"),
+        AgentStatus(name="Model Orchestrator", role="model_orchestrator", status="source_backed", status_label="Running eligible models"),
+        AgentStatus(name="Risk Agent", role="account_risk", status="checked", status_label="Risk gate required"),
+        AgentStatus(name="Recommendation Engine", role="recommendation_engine", status="source_backed", status_label="Ranking candidates"),
     ]
 
 
-def _source_status(snapshot: dict) -> SourceDataStatus:
-    return SourceDataStatus(
-        symbol=snapshot.get("symbol", "UNKNOWN"),
-        provider=snapshot.get("provider"),
-        data_quality=snapshot.get("data_quality"),
-        is_mock=bool(snapshot.get("is_mock", False)),
-        error=snapshot.get("error"),
-    )
-
-
-def _build_recommendation_from_snapshot(snapshot: dict) -> TradeRecommendation | None:
-    price = snapshot.get("price")
-    data_quality = snapshot.get("data_quality")
-    is_mock = bool(snapshot.get("is_mock", False))
-    if price is None or is_mock or data_quality != "real":
-        return None
-
-    change_percent = float(snapshot.get("change_percent") or 0)
-    spread = float(snapshot.get("bid_ask_spread") or 0)
-    volume = float(snapshot.get("volume") or 0)
-    average_volume = float(snapshot.get("average_volume") or volume or 1)
-    rvol = volume / average_volume if average_volume else 1
-
-    raw_score = 50 + min(max(change_percent * 6, -20), 20) + min(max((rvol - 1) * 12, -10), 15) - min(spread * 2, 10)
-    final_score = int(max(0, min(100, round(raw_score))))
-    confidence = round(max(0.0, min(0.95, final_score / 100)), 2)
-    action = "watch" if final_score >= 60 else "avoid"
-    action_label = "WATCH SETUP" if action == "watch" else "NO ACTION"
-
-    stop_loss = price * 0.97
-    target_price = price * 1.06
-    buy_low = price * 0.995
-    buy_high = price * 1.005
-    reward_risk = (target_price - price) / (price - stop_loss) if price > stop_loss else 0
-
-    return TradeRecommendation(
-        symbol=snapshot.get("symbol", "UNKNOWN"),
-        asset_class="crypto" if "-USD" in snapshot.get("symbol", "") else "stock",
-        action=action,
-        action_label=action_label,
-        horizon="swing",
-        confidence=confidence,
-        final_score=final_score,
-        urgency="medium" if action == "watch" else "low",
-        price_plan=PricePlan(
-            current_price=round(price, 2),
-            buy_zone_low=round(buy_low, 2),
-            buy_zone_high=round(buy_high, 2),
-            stop_loss=round(stop_loss, 2),
-            target_price=round(target_price, 2),
-            target_2_price=None,
+def _build_decision_command_center() -> CommandCenterResponse:
+    workflow = run_decision_workflow(
+        DecisionWorkflowRunRequest(
+            symbols=_COMMAND_CENTER_SYMBOLS,
+            asset_class="stock",
+            horizon="swing",
+            source="auto",
+            max_candidates=5,
+            allow_mock=False,
         ),
-        risk_plan=RiskPlan(
-            position_size_dollars=0.0,
-            max_dollar_risk=0.0,
-            max_loss_percent=0.0,
-            expected_return_percent=round(((target_price - price) / price) * 100, 2),
-            reward_risk_ratio=round(reward_risk, 2),
-            account_fit="requires_model_and_risk_validation",
-        ),
-        model_votes=[
-            ModelVote(model="Source Data Gate", status="active", signal="neutral", confidence=1.0, explanation=f"Provider={snapshot.get('provider')} quality={data_quality}."),
-            ModelVote(model="Feature/Model Pipeline", status="disabled", signal="neutral", confidence=0.0, explanation="No hardcoded model output is displayed. Waiting for feature-store and trained model output."),
-        ],
-        final_reason="Source-backed market data is available. This is a watch candidate only until feature agents, trained meta-model, and risk filter validate the setup.",
-        invalidation_rules=[
-            "No buy action until feature-store, model output, and risk filter pass.",
-            "Do not treat source-backed chart data as a recommendation by itself.",
-            "If provider data becomes unavailable or stale, dashboard must return to no-action state.",
-        ],
-        risk_factors=[
-            "Market data alone is not enough for an actionable recommendation.",
-            "Position size remains zero until the risk filter validates the setup.",
-        ],
-        data_mode="live",
+        account_profile=_ACCOUNT_PROFILE,
     )
-
-
-def _build_source_backed_command_center() -> CommandCenterResponse:
-    snapshots = [_MARKET_DATA.get_market_snapshot(symbol, source="auto") for symbol in _COMMAND_CENTER_SYMBOLS]
-    statuses = [_source_status(snapshot) for snapshot in snapshots]
-    candidates = [recommendation for recommendation in (_build_recommendation_from_snapshot(snapshot) for snapshot in snapshots) if recommendation is not None]
-    top_action = max(candidates, key=lambda item: item.final_score) if candidates else None
-    alternatives = [
-        Recommendation(
-            symbol=item.symbol,
-            asset_class=item.asset_class,
-            horizon=item.horizon,
-            final_decision=item.action_label.lower().replace(" ", "_"),
-            final_score=item.final_score,
-            confidence=item.confidence,
-            reward_risk_ratio=item.risk_plan.reward_risk_ratio,
-            account_fit=item.risk_plan.account_fit,
-            model_stack=[vote.model for vote in item.model_votes],
-            reason=item.final_reason,
-            risk_factors=item.risk_factors,
+    source_status = [
+        SourceDataStatus(
+            symbol=candidate.symbol,
+            provider=candidate.provider,
+            data_quality=candidate.data_quality,
+            is_mock=candidate.source == "mock",
+            error="; ".join(candidate.blockers) if candidate.blockers else None,
         )
-        for item in candidates
+        for candidate in workflow.candidates
     ]
     return CommandCenterResponse(
         account_profile=_ACCOUNT_PROFILE,
-        top_action=top_action,
-        top_recommendations=alternatives,
+        top_action=workflow.top_action,
+        top_recommendations=workflow.recommendations,
         urgent_edge_alerts=[],
         agents=agents(),
-        source_data_status=statuses,
-        dashboard_mode="source_backed_no_mock",
-        cost_usage_message="Dashboard values are built only from selected source data. Mock data is available only when explicitly selected in tools/pages.",
+        source_data_status=source_status,
+        dashboard_mode=f"decision_workflow:{workflow.status}",
+        cost_usage_message=f"Decision workflow {workflow.run_id} processed {len(workflow.symbols_requested)} symbols through source data, feature store, model orchestrator, and risk-gated watch output.",
     )
 
 
@@ -380,4 +299,4 @@ def get_journal_summary():
 
 @app.get("/api/command-center", response_model=CommandCenterResponse)
 def get_command_center():
-    return _build_source_backed_command_center()
+    return _build_decision_command_center()
