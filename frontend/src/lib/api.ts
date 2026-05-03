@@ -1147,6 +1147,78 @@ export type CandidateUniverseResponse = {
   };
 };
 
+export type UniverseSelectionRequest = {
+  symbols: string[];
+  asset_class?: "stock" | "option" | "crypto";
+  horizon?: "day_trade" | "swing" | "one_month";
+  source?: "auto" | "yfinance" | "alpaca" | "polygon" | "mock";
+  strategy_key?: string;
+  max_candidates?: number;
+  min_score?: number;
+  account_equity?: number;
+  buying_power?: number;
+  max_risk_per_trade_percent?: number;
+  include_mock?: boolean;
+  promote_to_candidate_universe?: boolean;
+};
+
+export type UniverseSelectionCandidate = {
+  symbol: string;
+  asset_class: string;
+  horizon: string;
+  strategy_key?: string;
+  rank: number;
+  universe_score: number;
+  priority_score: number;
+  expected_direction: "long" | "short" | "neutral";
+  assigned_strategy: string;
+  trigger_condition: string;
+  validation_condition: string;
+  invalidation_condition: string;
+  scan_interval_seconds: number;
+  watchlist_ttl_minutes: number;
+  account_fit: number;
+  liquidity_score: number;
+  spread_score: number;
+  volatility_fit: number;
+  trend_score: number;
+  rvol_score: number;
+  sector_strength_score?: number | null;
+  data_quality: "excellent" | "good" | "fair" | "poor" | "unavailable";
+  provider: string;
+  source: string;
+  reasons: string[];
+  blockers: string[];
+  expires_at: string | null;
+};
+
+export type CadencePlan = {
+  scan_interval_seconds: number;
+  strategy_refresh_minutes: number;
+  universe_refresh_minutes: number;
+  watchlist_ttl_minutes: number;
+  llm_validation_policy: string;
+  llm_budget_mode: string;
+  scanner_depth: string;
+};
+
+export type UniverseSelectionResponse = {
+  run_id: string;
+  status: "completed" | "partial" | "failed" | "no_symbols";
+  market_phase: string;
+  active_loop: string;
+  cadence_plan: CadencePlan;
+  requested_symbols: string[];
+  ranked_candidates: UniverseSelectionCandidate[];
+  selected_watchlist: UniverseSelectionCandidate[];
+  rejected_candidates: UniverseSelectionCandidate[];
+  blockers: string[];
+  warnings: string[];
+  started_at: string;
+  completed_at: string;
+  duration_ms: number;
+};
+
 export type DecisionCandidate = {
   symbol: string;
   asset_class: string;
@@ -1288,4 +1360,16 @@ export const api = {
 
   // Command Center Run API
   runCommandCenter: () => request<CommandCenterResponse>("/api/command-center/run", { method: "POST" }),
+
+  // Universe Selection APIs
+  runUniverseSelection: (payload: UniverseSelectionRequest) =>
+    request<UniverseSelectionResponse>("/api/universe-selection/run", { method: "POST", body: JSON.stringify(payload) }),
+  getLatestUniverseSelection: () => request<UniverseSelectionResponse | { message: string; status: string }>("/api/universe-selection/runs/latest"),
+  getUniverseSelectionRuns: (limit = 20) => request<{ runs: UniverseSelectionResponse[]; count: number; total_available: number }>(`/api/universe-selection/runs?limit=${limit}`),
+  promoteLatestUniverseSelectionToCandidates: () =>
+    request<{ success: boolean; message: string; promoted_count: number; promoted_symbols: string[]; source_run_id?: string }>("/api/universe-selection/promote-latest-to-candidates", { method: "POST" }),
+
+  // Runtime/Timing APIs
+  getRuntimePhase: () => request<{ market_phase: string; current_time_et: string; is_trading_day: boolean; live_trading_allowed: boolean; human_approval_required: boolean; timestamp: string }>("/api/runtime/phase"),
+  getRuntimeCadence: () => request<{ market_phase: string; active_loop: string; cadence_plan: CadencePlan; live_trading_allowed: boolean; human_approval_required: boolean; timestamp: string }>("/api/runtime/cadence"),
 };

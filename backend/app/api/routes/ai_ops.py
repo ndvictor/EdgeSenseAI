@@ -17,6 +17,7 @@ from app.services.persistence_service import get_latest_strategy_workflow_run as
 from app.services.persistence_service import get_persistence_status
 from app.services.platform_workflows import get_agent_scorecards
 from app.services.strategy_workflow_run_service import get_strategy_workflow_run_summary
+from app.services.timing_cadence_service import get_ai_ops_summary as get_runtime_summary
 from app.services.vector_memory_service import get_vector_memory_status, list_recent_memories
 from app.strategies.registry import list_strategies
 
@@ -43,10 +44,26 @@ def get_ai_ops_summary() -> dict[str, Any]:
     persistence = get_persistence_status()
     memory = get_vector_memory_status()
     recent_memories = list_recent_memories(25)
+    runtime_summary = get_runtime_summary()
     return {
         "data_source": "source_backed",
         "status": "foundation_installed",
         "generated_at": _now(),
+        "market_phase": runtime_summary.market_phase.value,
+        "active_loop": runtime_summary.active_loop.value,
+        "cadence_plan": {
+            "scan_interval_seconds": runtime_summary.cadence_plan.scan_interval_seconds,
+            "strategy_refresh_minutes": runtime_summary.cadence_plan.strategy_refresh_minutes,
+            "universe_refresh_minutes": runtime_summary.cadence_plan.universe_refresh_minutes,
+            "watchlist_ttl_minutes": runtime_summary.cadence_plan.watchlist_ttl_minutes,
+            "llm_validation_policy": runtime_summary.cadence_plan.llm_validation_policy.value,
+            "llm_budget_mode": runtime_summary.cadence_plan.llm_budget_mode.value,
+            "scanner_depth": runtime_summary.cadence_plan.scanner_depth.value,
+        },
+        "scan_mode": runtime_summary.scan_mode.value,
+        "llm_validation_policy": runtime_summary.llm_validation_policy.value,
+        "live_trading_allowed": runtime_summary.live_trading_allowed,
+        "human_approval_required": runtime_summary.human_approval_required,
         "orchestration": {
             "langgraph": build_langgraph_definition(),
             "deepagents": {"installed_via_requirements": True, "status": "not_wired"},

@@ -8,18 +8,20 @@ from app.services.edge_signal_rules_service import EdgeSignalRule, get_rules_for
 from app.services.market_data_service import MarketDataService
 from app.services.market_scan_run_service import record_scan_run, update_scan_run_workflow_result
 from app.services.strategy_workflow_run_service import StrategyWorkflowRunRequest, run_strategy_workflow_from_signal
+from app.services.universe_selection_service import get_latest_universe_selection
 from app.strategies.registry import StrategyConfig, get_strategy
 
 
 class MarketScannerRequest(BaseModel):
-    strategy_key: str
-    symbols: list[str] = Field(default_factory=list)
+    strategy_key: str = Field(default="multi_factor", description="Strategy key to use for scanning")
+    symbols: list[str] = Field(default_factory=list, description="Explicit symbols to scan. NO defaults.")
     data_source: str = "auto"
     auto_run: bool = False
     trigger_type: Literal["manual", "scheduled"] = "manual"
     trigger_workflow: bool = False
     account_size: float | None = None
     max_risk_per_trade: float | None = None
+    use_latest_watchlist: bool = Field(default=False, description="Use symbols from latest universe selection watchlist")
 
 
 class MarketScannerSignal(BaseModel):
@@ -135,6 +137,60 @@ def _recommended_workflow(strategy: StrategyConfig) -> str:
 
 def run_market_condition_scan(request: MarketScannerRequest) -> MarketScannerResponse:
     started_at = datetime.utcnow()
+
+    # Resolve symbols to scan
+    symbols_to_scan: list[str] = []
+    scan_source = "explicit"
+
+    if request.use_latest_watchlist:
+        # Use symbols from latest universe selection
+        latest_universe = get_latest_universe_selection()
+        if latest_universe and latest_universe.selected_watchlist:
+            symbols_to_scan = [c.symbol for c in latest_universe.selected_watchlist]
+            scan_source = "latest_watchlist"
+        else:
+            # No latest watchlist available
+            safety_state = get_auto_run_state()
+            return MarketScannerResponse(
+                run_id=f"scan-{datetime.utcnow().timestamp()}",
+                trigger_type=request.trigger_type,
+                strategy_key=request.strategy_key,
+                symbols_scanned=[],
+                matched_signals=[],
+                skipped_signals=[],
+                should_trigger_workflow=False,
+                recommended_workflow_key="none",
+                workflow_trigger_status="no_watchlist_available",
+                required_agents=[],
+                required_models=[],
+                safety_state=safety_state,
+                next_action="No latest watchlist available. Run Universe Selection first or provide explicit symbols.",
+                data_source="placeholder",
+            )
+    elif request.symbols:
+        # Use explicitly provided symbols
+        symbols_to_scan = request.symbols
+        scan_source = "explicit"
+    else:
+        # No symbols provided and use_latest_watchlist not set
+        safety_state = get_auto_run_state()
+        return MarketScannerResponse(
+            run_id=f"scan-{datetime.utcnow().timestamp()}",
+            trigger_type=request.trigger_type,
+            strategy_key=request.strategy_key,
+            symbols_scanned=[],
+            matched_signals=[],
+            skipped_signals=[],
+            should_trigger_workflow=False,
+            recommended_workflow_key="none",
+            workflow_trigger_status="no_symbols_selected",
+            required_agents=[],
+            required_models=[],
+            safety_state=safety_state,
+            next_action="No symbols selected. Provide explicit symbols or set use_latest_watchlist=true.",
+            data_source="placeholder",
+        )
+
     strategy = get_strategy(request.strategy_key)
     if strategy is None:
         safety_state = get_auto_run_state()
@@ -142,7 +198,7 @@ def run_market_condition_scan(request: MarketScannerRequest) -> MarketScannerRes
         run = record_scan_run(
             trigger_type=request.trigger_type,
             strategy_key=request.strategy_key,
-            symbols=request.symbols,
+            symbols=symbols_to_scan,
             data_source="placeholder",
             auto_run_enabled=safety_state.auto_run_enabled,
             matched_signals_count=0,
@@ -157,13 +213,13 @@ def run_market_condition_scan(request: MarketScannerRequest) -> MarketScannerRes
             started_at=started_at,
             errors=[f"Unknown strategy: {request.strategy_key}"],
         )
-        return MarketScannerResponse(run_id=run.run_id, trigger_type=request.trigger_type, strategy_key=request.strategy_key, symbols_scanned=request.symbols, matched_signals=[], skipped_signals=[], should_trigger_workflow=False, recommended_workflow_key="none", workflow_trigger_status="failed", required_agents=[], required_models=[], safety_state=safety_state, next_action=next_action, data_source="placeholder")
+        return MarketScannerResponse(run_id=run.run_id, trigger_type=request.trigger_type, strategy_key=request.strategy_key, symbols_scanned=symbols_to_scan, matched_signals=[], skipped_signals=[], should_trigger_workflow=False, recommended_workflow_key="none", workflow_trigger_status="failed", required_agents=[], required_models=[], safety_state=safety_state, next_action=next_action, data_source="placeholder")
 
     rules = get_rules_for_signals(strategy.edge_signals)
     matched: list[MarketScannerSignal] = []
     skipped: list[MarketScannerSignal] = []
     sources: set[str] = set()
-    for symbol in request.symbols:
+    for symbol in symbols_to_scan:
         snapshot = _MARKET_DATA.get_market_snapshot(symbol, source=request.data_source)
         sources.add(_source_label(snapshot))
         for rule in rules:
@@ -194,7 +250,7 @@ def run_market_condition_scan(request: MarketScannerRequest) -> MarketScannerRes
     run = record_scan_run(
         trigger_type=request.trigger_type,
         strategy_key=strategy.strategy_key,
-        symbols=request.symbols,
+        symbols=symbols_to_scan,
         data_source=data_source,
         auto_run_enabled=safety_state.auto_run_enabled,
         matched_signals_count=len(matched),

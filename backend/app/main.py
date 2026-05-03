@@ -23,10 +23,12 @@ from app.api.routes.memory import router as memory_router
 from app.api.routes.model_runs import router as model_runs_router
 from app.api.routes.paper_trading_lifecycle import router as paper_trading_lifecycle_router
 from app.api.routes.recommendation_lifecycle import router as recommendation_lifecycle_router
+from app.api.routes.runtime import router as runtime_router
 from app.api.routes.signal_orchestration import router as signal_orchestration_router
 from app.api.routes.strategies import router as strategies_router
 from app.api.routes.strategy_workflows import router as strategy_workflows_router
 from app.api.routes.trade_quality import router as trade_quality_router
+from app.api.routes.universe_selection import router as universe_selection_router
 from app.api.routes.watchlists import router as watchlists_router
 from app.core.settings import settings
 from app.data_providers.base import MarketCandlesResponse, MarketSnapshot
@@ -112,6 +114,8 @@ app.include_router(auto_run_router, prefix="/api")
 app.include_router(memory_router, prefix="/api")
 app.include_router(decision_workflows_router, prefix="/api")
 app.include_router(candidate_universe_router, prefix="/api")
+app.include_router(runtime_router, prefix="/api")
+app.include_router(universe_selection_router, prefix="/api")
 
 _ACCOUNT_PROFILE = AccountRiskProfile()
 
@@ -145,7 +149,7 @@ def _build_decision_command_center() -> CommandCenterResponse:
             agents=agents(),
             source_data_status=[],
             dashboard_mode="no_symbols_selected",
-            cost_usage_message="No candidates selected. Add symbols from Stocks search, Watchlist, Scanner, or Candidate Universe before ranking.",
+            cost_usage_message="No candidates selected. Run Universe Selection to create a watchlist, or add candidates manually from Stocks, Watchlist, or Scanner.",
         )
 
     # Try to use latest stored workflow run (read-only)
@@ -161,7 +165,7 @@ def _build_decision_command_center() -> CommandCenterResponse:
             agents=agents(),
             source_data_status=[],
             dashboard_mode="candidates_ready_not_ranked",
-            cost_usage_message=f"{len(symbols)} candidate(s) ready but decision workflow has not been run. Go to Candidates page to run workflow.",
+            cost_usage_message=f"{len(symbols)} candidate(s) ready but decision workflow has not been run. Go to Candidates page to run workflow, or run Universe Selection to create a new watchlist.",
         )
 
     # Use latest stored workflow results

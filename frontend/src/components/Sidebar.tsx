@@ -13,6 +13,7 @@ import {
   DatabaseZap,
   FlaskConical,
   Gauge,
+  Globe,
   LineChart,
   Settings,
   TrendingUp,
@@ -23,6 +24,7 @@ import {
 const items = [
   { label: "Account Risk Center", href: "/account-risk", icon: WalletCards },
   { label: "Command Center", href: "/command-center", icon: Gauge },
+  { label: "Universe", href: "/universe", icon: Globe },
   { label: "Candidates", href: "/candidates", icon: Users },
   { label: "Agent Ops Center", href: "/ai-ops", icon: BrainCircuit },
   { label: "LLM Gateway", href: "/llm-gateway", icon: Gauge },
