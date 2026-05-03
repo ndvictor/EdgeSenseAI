@@ -69,12 +69,12 @@ export default function DataSourcesPage() {
                       <p className="mt-3 text-sm leading-relaxed text-slate-300">{source.message}</p>
                       <div className="mt-3 grid grid-cols-2 gap-2 text-xs">
                         <div className="rounded-lg border border-slate-800 bg-slate-950 px-3 py-2">
-                          <p className="uppercase tracking-wide text-slate-500">{source.configured_label ?? "Configured"}</p>
+                          <p className="uppercase tracking-wide text-slate-500">Configured</p>
                           <p className={source.configured ? "font-bold text-emerald-300" : "font-bold text-amber-300"}>{source.configured ? "Yes" : "No"}</p>
                         </div>
                         <div className="rounded-lg border border-slate-800 bg-slate-950 px-3 py-2">
                           <p className="uppercase tracking-wide text-slate-500">Live Connectivity</p>
-                          <p className={source.connected ? "font-bold text-emerald-300" : "font-bold text-slate-300"}>{source.connection_label ?? (source.connected ? "Yes" : "Checked during request")}</p>
+                          <p className={source.connected ? "font-bold text-emerald-300" : "font-bold text-slate-300"}>{source.connected ? "Yes" : "Checked during request"}</p>
                         </div>
                       </div>
                       <div className="mt-3 flex flex-wrap gap-2">
