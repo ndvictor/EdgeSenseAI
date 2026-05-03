@@ -14,16 +14,20 @@ from app.api.routes.data_quality import router as data_quality_router
 from app.api.routes.data_sources import router as data_sources_router
 from app.api.routes.decision_workflows import router as decision_workflows_router
 from app.api.routes.edge_radar import router as edge_radar_router
+from app.api.routes.event_scanner_models import router as event_scanner_router
 from app.api.routes.feature_store import router as feature_store_router
 from app.api.routes.historical_analogs import router as historical_analogs_router
+from app.api.routes.historical_similarity import router as historical_similarity_router
 from app.api.routes.llm_gateway import router as llm_gateway_router
 from app.api.routes.market_data import router as market_data_router
 from app.api.routes.market_radar import router as market_radar_router
 from app.api.routes.market_regime_model import router as market_regime_model_router
 from app.api.routes.market_scanner import router as market_scanner_router
 from app.api.routes.memory import router as memory_router
+from app.api.routes.meta_model_ensemble import router as meta_model_router
 from app.api.routes.model_runs import router as model_runs_router
 from app.api.routes.model_selection import router as model_selection_router
+from app.api.routes.signal_scoring import router as signal_scoring_router
 from app.api.routes.paper_trading_lifecycle import router as paper_trading_lifecycle_router
 from app.api.routes.recommendation_lifecycle import router as recommendation_lifecycle_router
 from app.api.routes.runtime import router as runtime_router
@@ -33,6 +37,7 @@ from app.api.routes.strategy_debate import router as strategy_debate_router
 from app.api.routes.strategy_ranking import router as strategy_ranking_router
 from app.api.routes.strategy_workflows import router as strategy_workflows_router
 from app.api.routes.trade_quality import router as trade_quality_router
+from app.api.routes.trigger_rules import router as trigger_rules_router
 from app.api.routes.universe_selection import router as universe_selection_router
 from app.api.routes.upper_workflow import router as upper_workflow_router
 from app.api.routes.watchlists import router as watchlists_router
@@ -128,6 +133,11 @@ app.include_router(strategy_debate_router, prefix="/api")
 app.include_router(strategy_ranking_router, prefix="/api")
 app.include_router(model_selection_router, prefix="/api")
 app.include_router(upper_workflow_router, prefix="/api")
+app.include_router(historical_similarity_router, prefix="/api")
+app.include_router(trigger_rules_router, prefix="/api")
+app.include_router(event_scanner_router, prefix="/api")
+app.include_router(signal_scoring_router, prefix="/api")
+app.include_router(meta_model_router, prefix="/api")
 
 _ACCOUNT_PROFILE = AccountRiskProfile()
 

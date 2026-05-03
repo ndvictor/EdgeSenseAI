@@ -8,7 +8,12 @@ Implements the approved Adaptive Agentic Quant Workflow sequence:
 5. Strategy ranking
 6. Model selection for top active strategy
 7. Universe selection/watchlist builder
-8. Optional promotion to candidate universe
+8. Historical similarity search (optional)
+9. Trigger rules build (optional)
+10. Event scanner (optional)
+11. Signal scoring (optional)
+12. Meta-model ensemble (optional)
+13. Optional promotion to candidate universe
 
 NO LLMs.
 NO default symbols.
@@ -28,15 +33,37 @@ from app.services.data_freshness_gate_service import (
     run_data_freshness_check,
     get_usable_symbols_from_latest_check,
 )
+from app.services.event_scanner_models_service import (
+    EventScannerMatchedEvent,
+    EventScannerRequest,
+    EventScannerResponse,
+    run_event_scanner,
+)
+from app.services.historical_similarity_service import (
+    HistoricalSimilarityRequest,
+    HistoricalSimilarityResponse,
+    run_historical_similarity_search,
+)
 from app.services.market_regime_model_service import (
     MarketRegimeRequest,
     MarketRegimeResponse,
     run_market_regime_model,
 )
+from app.services.meta_model_ensemble_service import (
+    MetaModelEnsembleRequest,
+    MetaModelEnsembleResponse,
+    run_meta_model_ensemble,
+)
 from app.services.model_selection_service import (
     ModelSelectionRequest,
     ModelSelectionResponse,
     run_model_selection,
+)
+from app.services.signal_scoring_service import (
+    ScoredSignal,
+    SignalScoringRequest,
+    SignalScoringResponse,
+    run_signal_scoring,
 )
 from app.services.strategy_debate_service import (
     StrategyDebateRequest,
@@ -52,6 +79,11 @@ from app.services.strategy_ranking_service import (
 from app.services.timing_cadence_service import (
     RuntimeCadenceResponse,
     get_runtime_cadence,
+)
+from app.services.trigger_rules_service import (
+    TriggerRuleBuildRequest,
+    TriggerRuleBuildResponse,
+    run_trigger_rule_build,
 )
 from app.services.universe_selection_service import (
     UniverseSelectionRequest,
@@ -75,6 +107,12 @@ class UpperWorkflowRequest(BaseModel):
     allow_mock: bool = False
     promote_to_candidate_universe: bool = False
     min_data_freshness_score: int = 50  # Min score to proceed
+
+    # Optional extended workflow steps (safe defaults)
+    build_trigger_rules: bool = True  # Step 8
+    run_event_scanner: bool = False   # Step 9 - requires trigger rules
+    run_signal_scoring: bool = False  # Step 10 - requires events
+    run_meta_model: bool = False      # Step 11 - requires scored signals
 
 
 class UpperWorkflowStage(BaseModel):
@@ -103,6 +141,10 @@ class UpperWorkflowResponse(BaseModel):
     strategy_ranking: StrategyRankingResponse | None = None
     model_selection: ModelSelectionResponse | None = None
     universe_selection: UniverseSelectionResponse | None = None
+    trigger_rules: TriggerRuleBuildResponse | None = None
+    event_scanner: EventScannerResponse | None = None
+    signal_scoring: SignalScoringResponse | None = None
+    meta_model_ensemble: MetaModelEnsembleResponse | None = None
     promoted_candidates: list[str] = Field(default_factory=list)
     blockers: list[str] = Field(default_factory=list)
     warnings: list[str] = Field(default_factory=list)
@@ -420,40 +462,203 @@ def run_upper_workflow(request: UpperWorkflowRequest) -> UpperWorkflowResponse:
         ))
         warnings.append(f"Universe selection skipped: {skip_reason}")
 
-    # 8. Optional Promotion to Candidate Universe
-    promoted: list[str] = []
-    if request.promote_to_candidate_universe and universe and universe.selected_watchlist:
+    # 8. Trigger Rules Build (from universe selection candidates)
+    trigger_rules: TriggerRuleBuildResponse | None = None
+    if request.build_trigger_rules and universe and universe.selected_watchlist:
         try:
-            for candidate in universe.selected_watchlist:
-                add_candidate(
-                    symbol=candidate.symbol,
-                    asset_class=candidate.asset_class,
-                    horizon=candidate.horizon,
-                    source_type="universe_selection",
-                    source_detail=f"upper_workflow:{run_id}",
-                    priority_score=int(candidate.universe_score),
-                    notes=f"Promoted from upper workflow. Score: {candidate.universe_score:.1f}, Strategy: {candidate.assigned_strategy}",
-                )
-                promoted.append(candidate.symbol)
+            trigger_rules = run_trigger_rule_build(TriggerRuleBuildRequest(
+                candidates=universe.selected_watchlist,
+                strategy_key=top_strategy,
+                horizon=request.horizon,
+                market_phase=market_phase,
+                active_loop=active_loop,
+                source_run_id=run_id,
+                use_latest_watchlist=False,  # We already have the candidates
+            ))
 
+            stages.append(UpperWorkflowStage(
+                stage="trigger_rules",
+                status="completed" if trigger_rules.status not in ["no_candidates", "failed"] else "failed",
+                run_id=trigger_rules.run_id,
+                warnings=trigger_rules.warnings,
+            ))
+            warnings.extend(trigger_rules.warnings)
+        except Exception as e:
+            stages.append(UpperWorkflowStage(
+                stage="trigger_rules",
+                status="failed",
+                blockers=[str(e)],
+            ))
+            warnings.append(f"Trigger rules build failed: {e}")
+    else:
+        skip_reason = "build_trigger_rules=false" if not request.build_trigger_rules else "No universe selection results"
+        stages.append(UpperWorkflowStage(
+            stage="trigger_rules",
+            status="skipped",
+            warnings=[skip_reason],
+        ))
+
+    # 9. Event Scanner (requires trigger rules or watchlist)
+    event_scanner: EventScannerResponse | None = None
+    if request.run_event_scanner:
+        try:
+            event_scanner = run_event_scanner(EventScannerRequest(
+                use_latest_watchlist=True,  # Will use trigger rules first
+                use_active_trigger_rules=True,
+                source=request.source,
+                horizon=request.horizon,
+                allow_mock=request.allow_mock,
+            ))
+
+            stages.append(UpperWorkflowStage(
+                stage="event_scanner",
+                status="completed" if event_scanner.status not in ["no_symbols", "failed"] else "failed",
+                run_id=event_scanner.run_id,
+                warnings=event_scanner.warnings,
+            ))
+            warnings.extend(event_scanner.warnings)
+        except Exception as e:
+            stages.append(UpperWorkflowStage(
+                stage="event_scanner",
+                status="failed",
+                blockers=[str(e)],
+            ))
+            warnings.append(f"Event scanner failed: {e}")
+    else:
+        stages.append(UpperWorkflowStage(
+            stage="event_scanner",
+            status="skipped",
+            warnings=["run_event_scanner=false"],
+        ))
+
+    # 10. Signal Scoring (requires events)
+    signal_scoring: SignalScoringResponse | None = None
+    if request.run_signal_scoring and event_scanner and event_scanner.matched_events:
+        try:
+            signal_scoring = run_signal_scoring(SignalScoringRequest(
+                events=event_scanner.matched_events,
+                use_latest_events=False,  # We already have them
+                source=request.source,
+                horizon=request.horizon,
+                strategy_key=top_strategy,
+                allow_mock=request.allow_mock,
+            ))
+
+            stages.append(UpperWorkflowStage(
+                stage="signal_scoring",
+                status="completed" if signal_scoring.status not in ["no_events", "failed"] else "failed",
+                run_id=signal_scoring.run_id,
+                warnings=signal_scoring.warnings,
+            ))
+            warnings.extend(signal_scoring.warnings)
+        except Exception as e:
+            stages.append(UpperWorkflowStage(
+                stage="signal_scoring",
+                status="failed",
+                blockers=[str(e)],
+            ))
+            warnings.append(f"Signal scoring failed: {e}")
+    else:
+        skip_reason = "run_signal_scoring=false" if not request.run_signal_scoring else "No events to score"
+        stages.append(UpperWorkflowStage(
+            stage="signal_scoring",
+            status="skipped",
+            warnings=[skip_reason],
+        ))
+
+    # 11. Meta-Model Ensemble (requires scored signals)
+    meta_model_ensemble: MetaModelEnsembleResponse | None = None
+    if request.run_meta_model and signal_scoring and signal_scoring.scored_signals:
+        try:
+            meta_model_ensemble = run_meta_model_ensemble(MetaModelEnsembleRequest(
+                scored_signals=signal_scoring.scored_signals,
+                use_latest_scored_signals=False,  # We already have them
+                regime=regime_value,
+                strategy_key=top_strategy,
+                horizon=request.horizon,
+                promote_to_candidates=False,  # Handle separately
+            ))
+
+            stages.append(UpperWorkflowStage(
+                stage="meta_model_ensemble",
+                status="completed" if meta_model_ensemble.status not in ["no_signals", "failed"] else "failed",
+                run_id=meta_model_ensemble.run_id,
+                warnings=meta_model_ensemble.warnings,
+            ))
+            warnings.extend(meta_model_ensemble.warnings)
+        except Exception as e:
+            stages.append(UpperWorkflowStage(
+                stage="meta_model_ensemble",
+                status="failed",
+                blockers=[str(e)],
+            ))
+            warnings.append(f"Meta-model ensemble failed: {e}")
+    else:
+        skip_reason = "run_meta_model=false" if not request.run_meta_model else "No scored signals"
+        stages.append(UpperWorkflowStage(
+            stage="meta_model_ensemble",
+            status="skipped",
+            warnings=[skip_reason],
+        ))
+
+    # 12. Optional Promotion to Candidate Universe
+    promoted: list[str] = []
+    if request.promote_to_candidate_universe:
+        # Prefer meta-model signals if available
+        signals_to_promote = meta_model_ensemble.ensemble_signals if meta_model_ensemble else []
+
+        if signals_to_promote:
+            # Promote passing signals from meta-model
+            for signal in signals_to_promote:
+                if signal.status == "pass":
+                    try:
+                        add_candidate(
+                            symbol=signal.symbol,
+                            source_type="meta_model_ensemble",
+                            source_detail=f"upper_workflow:{run_id}",
+                            metadata={
+                                "final_score": signal.final_signal_score,
+                                "confidence": signal.confidence,
+                                "strategy_key": signal.strategy_key,
+                            },
+                        )
+                        promoted.append(signal.symbol)
+                    except Exception as e:
+                        warnings.append(f"Failed to promote {signal.symbol}: {e}")
+        elif universe and universe.selected_watchlist:
+            # Fall back to universe selection candidates
+            for candidate in universe.selected_watchlist:
+                try:
+                    add_candidate(
+                        symbol=candidate.symbol,
+                        asset_class=candidate.asset_class,
+                        horizon=candidate.horizon,
+                        source_type="universe_selection",
+                        source_detail=f"upper_workflow:{run_id}",
+                        priority_score=int(candidate.universe_score),
+                        notes=f"Promoted from upper workflow. Score: {candidate.universe_score:.1f}, Strategy: {candidate.assigned_strategy}",
+                    )
+                    promoted.append(candidate.symbol)
+                except Exception:
+                    pass
+
+        if promoted:
             stages.append(UpperWorkflowStage(
                 stage="promote_to_candidates",
                 status="completed",
             ))
-        except Exception as e:
-            stages.append(UpperWorkflowStage(
-                stage="promote_to_candidates",
-                status="failed",
-                blockers=[str(e)],
-            ))
-            warnings.append(f"Promotion to candidates failed: {e}")
-    else:
-        if not request.promote_to_candidate_universe:
+        else:
             stages.append(UpperWorkflowStage(
                 stage="promote_to_candidates",
                 status="skipped",
-                warnings=["promote_to_candidate_universe=false - skipping promotion"],
+                warnings=["No candidates available to promote"],
             ))
+    else:
+        stages.append(UpperWorkflowStage(
+            stage="promote_to_candidates",
+            status="skipped",
+            warnings=["promote_to_candidate_universe=false - skipping promotion"],
+        ))
 
     # Determine final status
     failed_stages = [s for s in stages if s.status == "failed"]
@@ -483,6 +688,10 @@ def run_upper_workflow(request: UpperWorkflowRequest) -> UpperWorkflowResponse:
         strategy_ranking=ranking,
         model_selection=model_sel,
         universe_selection=universe,
+        trigger_rules=trigger_rules,
+        event_scanner=event_scanner,
+        signal_scoring=signal_scoring,
+        meta_model_ensemble=meta_model_ensemble,
         promoted_candidates=promoted,
         blockers=blockers,
         warnings=list(set(warnings)),  # Deduplicate

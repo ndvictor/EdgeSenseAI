@@ -2,8 +2,8 @@
 
 import { useEffect, useState } from "react";
 import { PageHeader, MetricCard } from "@/components/Cards";
-import { api, type UniverseSelectionResponse, type UniverseSelectionCandidate, type CadencePlan } from "@/lib/api";
-import { Play, Globe, Target, ListFilter, TrendingUp, AlertTriangle, CheckCircle, XCircle, Clock, ArrowRight } from "lucide-react";
+import { api, type UpperWorkflowResponse, type UniverseSelectionCandidate, type CadencePlan, type TriggerRule } from "@/lib/api";
+import { Play, Globe, Target, ListFilter, TrendingUp, AlertTriangle, CheckCircle, XCircle, Clock, ArrowRight, Radar, Activity, Zap } from "lucide-react";
 import Link from "next/link";
 
 function formatDate(dateStr: string | null | undefined) {
@@ -56,19 +56,26 @@ export default function UniversePage() {
   const [maxCandidates, setMaxCandidates] = useState(25);
   const [includeMock, setIncludeMock] = useState(false);
   const [promoteToCandidates, setPromoteToCandidates] = useState(false);
+
+  // Extended workflow options
+  const [buildTriggerRules, setBuildTriggerRules] = useState(true);
+  const [runEventScanner, setRunEventScanner] = useState(false);
+  const [runSignalScoring, setRunSignalScoring] = useState(false);
+  const [runMetaModel, setRunMetaModel] = useState(false);
+
   const [isRunning, setIsRunning] = useState(false);
   const [isPromoting, setIsPromoting] = useState(false);
-  const [latestRun, setLatestRun] = useState<UniverseSelectionResponse | null>(null);
+  const [latestRun, setLatestRun] = useState<UpperWorkflowResponse | null>(null);
   const [error, setError] = useState<string | null>(null);
   const [successMessage, setSuccessMessage] = useState<string | null>(null);
 
   const loadLatestRun = async () => {
     try {
-      const response = await api.getLatestUniverseSelection();
+      const response = await api.getLatestUpperWorkflow();
       if ("status" in response && response.status === "not_found") {
         setLatestRun(null);
       } else {
-        setLatestRun(response as UniverseSelectionResponse);
+        setLatestRun(response as UpperWorkflowResponse);
       }
     } catch {
       setLatestRun(null);
@@ -96,22 +103,41 @@ export default function UniversePage() {
         return;
       }
 
-      const response = await api.runUniverseSelection({
+      // Use Upper Workflow API with extended options
+      const response = await api.runUpperWorkflow({
         symbols,
         asset_class: assetClass,
         horizon,
         source,
-        max_candidates: maxCandidates,
-        min_score: minScore,
-        include_mock: includeMock,
+        allow_mock: includeMock,
         promote_to_candidate_universe: promoteToCandidates,
+        build_trigger_rules: buildTriggerRules,
+        run_event_scanner: runEventScanner,
+        run_signal_scoring: runSignalScoring,
+        run_meta_model: runMetaModel,
       });
 
       setLatestRun(response);
-      setSuccessMessage(`Universe selection completed. Selected ${response.selected_watchlist.length}/${response.ranked_candidates.length} candidates.`);
+
+      // Build success message
+      let msg = `Workflow completed: ${response.universe_selection?.selected_watchlist?.length || 0} candidates selected`;
+      if (response.trigger_rules?.rules?.length) {
+        msg += `, ${response.trigger_rules.rules.length} trigger rules built`;
+      }
+      if (response.event_scanner?.matched_events?.length) {
+        msg += `, ${response.event_scanner.matched_events.length} events detected`;
+      }
+      if (response.signal_scoring?.scored_signals?.length) {
+        msg += `, ${response.signal_scoring.scored_signals.length} signals scored`;
+      }
+      if (response.meta_model_ensemble?.ensemble_signals?.length) {
+        msg += `, ${response.meta_model_ensemble.passed_signals.length} passed meta-model`;
+      }
+
+      setSuccessMessage(msg);
       setSymbolsInput("");
     } catch (err) {
-      setError(err instanceof Error ? err.message : "Failed to run universe selection");
+      setError(err instanceof Error ? err.message : "Failed to run workflow");
     } finally {
       setIsRunning(false);
     }
@@ -125,11 +151,19 @@ export default function UniversePage() {
     setSuccessMessage(null);
 
     try {
-      const response = await api.promoteLatestUniverseSelectionToCandidates();
+      // If meta-model was run, use that to promote passing signals
+      let response;
+      if (latestRun.meta_model_ensemble?.ensemble_signals?.length) {
+        response = await api.promotePassingSignalsToCandidates(false, 60);
+      } else {
+        // Fall back to promoting from universe selection
+        response = await api.promoteLatestUniverseSelectionToCandidates();
+      }
+
       if (response.success) {
         setSuccessMessage(`Promoted ${response.promoted_count} symbol(s) to Candidate Universe`);
       } else {
-        setError(response.message);
+        setError("Failed to promote candidates");
       }
     } catch (err) {
       setError(err instanceof Error ? err.message : "Failed to promote to candidates");
@@ -177,16 +211,12 @@ export default function UniversePage() {
               <div className="mt-1 text-sm font-medium text-slate-200">{latestRun.active_loop.replace(/_/g, " ")}</div>
             </div>
             <div>
-              <span className="text-xs font-bold uppercase text-slate-500">Scan Interval</span>
-              <div className="mt-1 text-sm font-medium text-slate-200">{latestRun.cadence_plan.scan_interval_seconds}s</div>
+              <span className="text-xs font-bold uppercase text-slate-500">Workflow Status</span>
+              <div className="mt-1 text-sm font-medium text-slate-200">{latestRun.status}</div>
             </div>
             <div>
-              <span className="text-xs font-bold uppercase text-slate-500">Scanner Depth</span>
-              <div className="mt-1 text-sm font-medium text-slate-200">{latestRun.cadence_plan.scanner_depth}</div>
-            </div>
-            <div>
-              <span className="text-xs font-bold uppercase text-slate-500">LLM Policy</span>
-              <div className="mt-1 text-sm font-medium text-slate-200">{latestRun.cadence_plan.llm_validation_policy}</div>
+              <span className="text-xs font-bold uppercase text-slate-500">Stages</span>
+              <div className="mt-1 text-sm font-medium text-slate-200">{latestRun.stages.filter(s => s.status === "completed").length}/{latestRun.stages.length}</div>
             </div>
           </div>
         </div>
@@ -309,9 +339,9 @@ export default function UniversePage() {
           {latestRun && (
             <button
               onClick={handlePromoteToCandidates}
-              disabled={isPromoting || latestRun.selected_watchlist.length === 0}
+              disabled={isPromoting || (latestRun.universe_selection?.selected_watchlist?.length || 0) === 0}
               className={`flex items-center gap-2 rounded-xl px-4 py-2 text-sm font-bold uppercase transition-all ${
-                isPromoting || latestRun.selected_watchlist.length === 0
+                isPromoting || (latestRun.universe_selection?.selected_watchlist?.length || 0) === 0
                   ? "cursor-not-allowed border border-slate-600 bg-slate-800 text-slate-500"
                   : "border border-emerald-500 bg-slate-900 text-emerald-400 hover:bg-emerald-500 hover:text-slate-950"
               }`}
@@ -324,7 +354,7 @@ export default function UniversePage() {
               ) : (
                 <>
                   <ArrowRight className="h-4 w-4" />
-                  Promote to Candidates ({latestRun.selected_watchlist.length})
+                  Promote to Candidates ({latestRun.universe_selection?.selected_watchlist?.length || 0})
                 </>
               )}
             </button>
@@ -345,10 +375,10 @@ export default function UniversePage() {
         <>
           {/* Summary */}
           <div className="mb-6 grid grid-cols-2 gap-4 md:grid-cols-4">
-            <MetricCard label="Requested" value={latestRun.requested_symbols.length.toString()} accent />
-            <MetricCard label="Ranked" value={latestRun.ranked_candidates.length.toString()} />
-            <MetricCard label="Selected" value={latestRun.selected_watchlist.length.toString()} />
-            <MetricCard label="Rejected" value={latestRun.rejected_candidates.length.toString()} />
+            <MetricCard label="Requested" value={latestRun.universe_selection?.requested_symbols?.length?.toString() || "0"} accent />
+            <MetricCard label="Ranked" value={latestRun.universe_selection?.ranked_candidates?.length?.toString() || "0"} />
+            <MetricCard label="Selected" value={latestRun.universe_selection?.selected_watchlist?.length?.toString() || "0"} />
+            <MetricCard label="Rejected" value={latestRun.universe_selection?.rejected_candidates?.length?.toString() || "0"} />
           </div>
 
           {/* Blockers & Warnings */}
@@ -374,14 +404,14 @@ export default function UniversePage() {
           )}
 
           {/* Selected Watchlist */}
-          {latestRun.selected_watchlist.length > 0 && (
+          {(latestRun.universe_selection?.selected_watchlist?.length || 0) > 0 && (
             <div className="mb-6">
               <h3 className="mb-3 flex items-center gap-2 text-sm font-bold uppercase text-emerald-400">
                 <CheckCircle className="h-4 w-4" />
-                Selected Watchlist ({latestRun.selected_watchlist.length})
+                Selected Watchlist ({latestRun.universe_selection?.selected_watchlist?.length || 0})
               </h3>
               <div className="grid gap-3">
-                {latestRun.selected_watchlist.map((candidate) => (
+                {latestRun.universe_selection?.selected_watchlist?.map((candidate: UniverseSelectionCandidate) => (
                   <CandidateCard key={candidate.symbol} candidate={candidate} />
                 ))}
               </div>
@@ -389,19 +419,19 @@ export default function UniversePage() {
           )}
 
           {/* Rejected Candidates */}
-          {latestRun.rejected_candidates.length > 0 && (
+          {(latestRun.universe_selection?.rejected_candidates?.length || 0) > 0 && (
             <div className="mb-6">
               <h3 className="mb-3 flex items-center gap-2 text-sm font-bold uppercase text-slate-500">
                 <XCircle className="h-4 w-4" />
-                Rejected Candidates ({latestRun.rejected_candidates.length})
+                Rejected Candidates ({latestRun.universe_selection?.rejected_candidates?.length || 0})
               </h3>
               <div className="grid gap-3 opacity-60">
-                {latestRun.rejected_candidates.slice(0, 5).map((candidate) => (
+                {latestRun.universe_selection?.rejected_candidates?.slice(0, 5).map((candidate: UniverseSelectionCandidate) => (
                   <CandidateCard key={candidate.symbol} candidate={candidate} rejected />
                 ))}
-                {latestRun.rejected_candidates.length > 5 && (
+                {(latestRun.universe_selection?.rejected_candidates?.length || 0) > 5 && (
                   <p className="text-center text-xs text-slate-500">
-                    +{latestRun.rejected_candidates.length - 5} more rejected
+                    +{(latestRun.universe_selection?.rejected_candidates?.length || 0) - 5} more rejected
                   </p>
                 )}
               </div>

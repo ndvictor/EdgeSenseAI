@@ -1384,6 +1384,162 @@ export type UniverseSelectionDataFreshnessSummary = {
   total_checked: number;
 };
 
+export type HistoricalSimilarityMatch = {
+  memory_id: string;
+  title: string;
+  memory_type: string;
+  strategy_key?: string | null;
+  regime?: string | null;
+  similarity_score: number;
+  outcome_label?: string | null;
+  realized_r?: number | null;
+  lesson?: string | null;
+  source: string;
+  created_at: string;
+  metadata: Record<string, unknown>;
+};
+
+export type HistoricalSimilarityResponse = {
+  run_id: string;
+  status: "completed" | "unavailable" | "no_matches" | "degraded";
+  symbol: string;
+  strategy_key?: string | null;
+  regime?: string | null;
+  matches: HistoricalSimilarityMatch[];
+  similarity_score?: number | null;
+  outcome_summary: Record<string, unknown>;
+  blockers: string[];
+  warnings: string[];
+  checked_at: string;
+};
+
+export type TriggerRule = {
+  rule_id: string;
+  symbol: string;
+  asset_class: "stock" | "option" | "crypto";
+  horizon: "day_trade" | "swing" | "one_month";
+  strategy_key?: string | null;
+  trigger_type: string;
+  trigger_condition: string;
+  validation_condition: string;
+  invalidation_condition: string;
+  ttl_minutes: number;
+  scan_interval_seconds: number;
+  cooldown_minutes: number;
+  priority_score: number;
+  expires_at: string;
+  status: "active" | "expired" | "disabled" | "triggered";
+  reasons: string[];
+  created_from: string;
+  source_run_id?: string | null;
+};
+
+export type TriggerRuleBuildResponse = {
+  run_id: string;
+  status: "completed" | "partial" | "no_candidates" | "failed";
+  rules: TriggerRule[];
+  active_rules: string[];
+  expired_rules: string[];
+  total_rules: number;
+  blockers: string[];
+  warnings: string[];
+  created_at: string;
+};
+
+export type EventScannerMatchedEvent = {
+  event_id: string;
+  symbol: string;
+  strategy_key?: string | null;
+  trigger_rule_id?: string | null;
+  trigger_type: string;
+  raw_signal_score: number;
+  event_confidence: number;
+  event_data: Record<string, unknown>;
+  reasons: string[];
+  warnings: string[];
+  detected_at: string;
+};
+
+export type EventScannerResponse = {
+  run_id: string;
+  status: "completed" | "partial" | "no_symbols" | "degraded" | "failed";
+  scanned_symbols: string[];
+  matched_events: EventScannerMatchedEvent[];
+  skipped_symbols: Array<Record<string, unknown>>;
+  source: string;
+  data_freshness_run_id?: string | null;
+  warnings: string[];
+  blockers: string[];
+  started_at: string;
+  completed_at: string;
+  duration_ms: number;
+};
+
+export type ScoredSignal = {
+  signal_id: string;
+  symbol: string;
+  strategy_key?: string | null;
+  trigger_type: string;
+  raw_signal_score: number;
+  weighted_ranker_score: number;
+  xgboost_score?: number | null;
+  historical_similarity_score?: number | null;
+  liquidity_score?: number | null;
+  regime_alignment_score?: number | null;
+  data_quality_score: number;
+  signal_score: number;
+  confidence: number;
+  model_outputs: Record<string, unknown>;
+  skipped_models: Array<Record<string, unknown>>;
+  reasons: string[];
+  blockers: string[];
+  warnings: string[];
+};
+
+export type SignalScoringResponse = {
+  run_id: string;
+  status: "completed" | "partial" | "no_events" | "failed";
+  scored_signals: ScoredSignal[];
+  skipped_signals: Array<Record<string, unknown>>;
+  blockers: string[];
+  warnings: string[];
+  started_at: string;
+  completed_at: string;
+  duration_ms: number;
+};
+
+export type EnsembleSignal = {
+  symbol: string;
+  strategy_key?: string | null;
+  trigger_type: string;
+  final_signal_score: number;
+  confidence: number;
+  model_agreement: number;
+  primary_reason: string;
+  disagreement: string[];
+  components: Array<Record<string, unknown>>;
+  status: "pass" | "watch" | "blocked";
+  blockers: string[];
+  warnings: string[];
+  scored_signal_id?: string | null;
+};
+
+export type MetaModelEnsembleResponse = {
+  run_id: string;
+  status: "completed" | "partial" | "no_signals" | "failed";
+  ensemble_signals: EnsembleSignal[];
+  passed_signals: string[];
+  watch_signals: string[];
+  blocked_signals: string[];
+  model_weights_used: Record<string, number>;
+  promoted_candidates: string[];
+  blockers: string[];
+  warnings: string[];
+  started_at: string;
+  completed_at: string;
+  duration_ms: number;
+};
+
 export type UpperWorkflowResponse = {
   run_id: string;
   status: "completed" | "partial" | "failed" | "blocked";
@@ -1396,6 +1552,10 @@ export type UpperWorkflowResponse = {
   strategy_ranking: StrategyRankingResponse | null;
   model_selection: ModelSelectionResponse | null;
   universe_selection: UniverseSelectionResponse | null;
+  trigger_rules: TriggerRuleBuildResponse | null;
+  event_scanner: EventScannerResponse | null;
+  signal_scoring: SignalScoringResponse | null;
+  meta_model_ensemble: MetaModelEnsembleResponse | null;
   promoted_candidates: string[];
   blockers: string[];
   warnings: string[];
@@ -1586,7 +1746,40 @@ export const api = {
   getModelRegistry: () => request<Record<string, unknown>>("/api/model-selection/registry"),
 
   // Upper Workflow API
-  runUpperWorkflow: (payload: { symbols: string[]; horizon?: string; source?: string; asset_class?: string; account_equity?: number; buying_power?: number; allow_mock?: boolean; promote_to_candidate_universe?: boolean }) =>
+  runUpperWorkflow: (payload: { symbols: string[]; horizon?: string; source?: string; asset_class?: string; account_equity?: number; buying_power?: number; allow_mock?: boolean; promote_to_candidate_universe?: boolean; build_trigger_rules?: boolean; run_event_scanner?: boolean; run_signal_scoring?: boolean; run_meta_model?: boolean }) =>
     request<UpperWorkflowResponse>("/api/upper-workflow/run", { method: "POST", body: JSON.stringify(payload) }),
   getLatestUpperWorkflow: () => request<UpperWorkflowResponse | { message: string; status: string }>("/api/upper-workflow/latest"),
+
+  // Historical Similarity APIs
+  runHistoricalSimilarity: (payload: { symbol: string; asset_class?: string; horizon?: string; strategy_key?: string; regime?: string; max_results?: number; min_similarity?: number }) =>
+    request<HistoricalSimilarityResponse>("/api/historical-similarity/search", { method: "POST", body: JSON.stringify(payload) }),
+  getLatestHistoricalSimilarity: () => request<HistoricalSimilarityResponse | { message: string; status: string }>("/api/historical-similarity/latest"),
+
+  // Trigger Rules APIs
+  buildTriggerRules: (payload: { symbols?: string[]; strategy_key?: string; horizon?: string; market_phase?: string; active_loop?: string; use_latest_watchlist?: boolean }) =>
+    request<TriggerRuleBuildResponse>("/api/trigger-rules/build", { method: "POST", body: JSON.stringify(payload) }),
+  getLatestTriggerRules: () => request<TriggerRuleBuildResponse | { message: string; status: string }>("/api/trigger-rules/latest"),
+  getActiveTriggerRules: () => request<{ rules: TriggerRule[]; count: number; status: string }>("/api/trigger-rules/active"),
+  expireTriggerRules: (allRules?: boolean, ruleId?: string) =>
+    request<{ expired_count: number; status: string; message: string }>("/api/trigger-rules/expire", { method: "POST", body: JSON.stringify({ all_rules: allRules, rule_id: ruleId }) }),
+
+  // Event Scanner APIs
+  runEventScanner: (payload: { symbols?: string[]; use_latest_watchlist?: boolean; use_active_trigger_rules?: boolean; source?: string; horizon?: string; allow_mock?: boolean; max_symbols?: number }) =>
+    request<EventScannerResponse>("/api/event-scanner/run", { method: "POST", body: JSON.stringify(payload) }),
+  getLatestEventScan: () => request<EventScannerResponse | { message: string; status: string }>("/api/event-scanner/runs/latest"),
+  getEventScanRuns: (limit = 20) => request<{ runs: EventScannerResponse[]; count: number }>(`/api/event-scanner/runs?limit=${limit}`),
+
+  // Signal Scoring APIs
+  runSignalScoring: (payload: { events?: unknown[]; use_latest_events?: boolean; source?: string; horizon?: string; strategy_key?: string; allow_mock?: boolean }) =>
+    request<SignalScoringResponse>("/api/signal-scoring/run", { method: "POST", body: JSON.stringify(payload) }),
+  getLatestSignalScoring: () => request<SignalScoringResponse | { message: string; status: string }>("/api/signal-scoring/runs/latest"),
+  getSignalScoringRuns: (limit = 20) => request<{ runs: SignalScoringResponse[]; count: number }>(`/api/signal-scoring/runs?limit=${limit}`),
+
+  // Meta-Model Ensemble APIs
+  runMetaModelEnsemble: (payload: { scored_signals?: unknown[]; use_latest_scored_signals?: boolean; regime?: string; strategy_key?: string; horizon?: string; promote_to_candidates?: boolean; include_watch?: boolean }) =>
+    request<MetaModelEnsembleResponse>("/api/meta-model/ensemble/run", { method: "POST", body: JSON.stringify(payload) }),
+  getLatestMetaModelEnsemble: () => request<MetaModelEnsembleResponse | { message: string; status: string }>("/api/meta-model/ensemble/latest"),
+  getMetaModelEnsembleRuns: (limit = 20) => request<{ runs: MetaModelEnsembleResponse[]; count: number }>(`/api/meta-model/ensemble/runs?limit=${limit}`),
+  promotePassingSignalsToCandidates: (includeWatch?: boolean, minScore?: number) =>
+    request<{ success: boolean; promoted_count: number; promoted_symbols: string[]; source_run_id?: string }>("/api/meta-model/ensemble/promote-passing-to-candidates", { method: "POST", body: JSON.stringify({ include_watch: includeWatch, min_score: minScore }) }),
 };
