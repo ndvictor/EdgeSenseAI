@@ -10,6 +10,9 @@ from app.schemas import AccountRiskProfile, ModelVote, PricePlan, Recommendation
 from app.services.feature_store_service import FeatureStoreRunRequest, FeatureStoreRunResponse, run_feature_store_pipeline
 from app.services.model_orchestrator_service import ModelRunRequest, ModelRunResponse, run_model_orchestrator
 
+MIN_MODEL_SCORE_TO_WATCH = 60
+DEFAULT_MIN_REWARD_RISK_RATIO = 3.0
+
 
 class DecisionWorkflowRunRequest(BaseModel):
     symbols: list[str] = Field(default_factory=lambda: ["AAPL", "MSFT", "NVDA", "AMD"])
@@ -80,8 +83,31 @@ def _as_float(value: Any) -> float | None:
         return None
 
 
+def _scale_score(score: float | None) -> int:
+    if score is None:
+        return 0
+    scaled = score * 100 if 0 <= score <= 1 else score
+    return int(max(0, min(100, round(scaled))))
+
+
+def _dedupe_outputs(outputs: list[dict[str, Any]]) -> list[dict[str, Any]]:
+    seen: set[tuple[str, str, str]] = set()
+    unique: list[dict[str, Any]] = []
+    for output in outputs:
+        key = (
+            str(output.get("model_name") or output.get("model") or "unknown"),
+            str(output.get("status") or "unknown"),
+            str(output.get("rank_score") or output.get("prediction_score") or output.get("reason") or ""),
+        )
+        if key in seen:
+            continue
+        seen.add(key)
+        unique.append(output)
+    return unique
+
+
 def _best_model_score(model_run: ModelRunResponse, symbol: str) -> tuple[float | None, list[dict[str, Any]]]:
-    outputs = list(model_run.completed_models or []) + list(model_run.model_outputs or [])
+    outputs = _dedupe_outputs(list(model_run.model_outputs or []))
     best_score: float | None = None
     normalized_outputs: list[dict[str, Any]] = []
     for output in outputs:
@@ -141,21 +167,28 @@ def _build_candidate(symbol: str, request: DecisionWorkflowRunRequest) -> tuple[
     if model_score is None:
         blockers.append("No completed model score returned. Weighted ranker may be blocked by missing feature quality.")
 
-    base_score = int(max(0, min(100, round(model_score or 0))))
+    base_score = _scale_score(model_score)
     confidence = round(max(0.0, min(0.95, base_score / 100)), 2)
     stop_loss = target_price = buy_low = buy_high = reward_risk = None
+    min_reward_risk = DEFAULT_MIN_REWARD_RISK_RATIO
     if price:
         buy_low = price * 0.995
         buy_high = price * 1.005
         stop_loss = price * 0.97
-        target_price = price * 1.06
-        reward_risk = (target_price - price) / (price - stop_loss) if price > stop_loss else None
+        risk_per_share = price - stop_loss
+        target_price = price + (risk_per_share * min_reward_risk)
+        reward_risk = (target_price - price) / risk_per_share if risk_per_share > 0 else None
 
-    status = "candidate_ready" if not blockers and base_score > 0 else "blocked"
+    if base_score < MIN_MODEL_SCORE_TO_WATCH:
+        blockers.append(f"Model score {base_score}/100 is below watch threshold {MIN_MODEL_SCORE_TO_WATCH}/100.")
+    if reward_risk is not None and reward_risk < min_reward_risk:
+        blockers.append(f"Reward/risk {reward_risk:.2f}R is below minimum {min_reward_risk:.2f}R.")
+
+    status = "candidate_ready" if not blockers else "blocked"
     reason = (
-        "Feature-store row and model score are source-backed. Send to risk/approval workflow before any paper action."
+        "Feature-store row and model score passed source-backed watch threshold. Send to risk/approval workflow before any paper action."
         if status == "candidate_ready"
-        else "Blocked until source data, feature quality, and model output are usable."
+        else "Blocked until source data, feature quality, model score threshold, and reward/risk are usable."
     )
     candidate = DecisionCandidate(
         symbol=symbol.upper(),
@@ -186,6 +219,8 @@ def _candidate_to_trade_recommendation(candidate: DecisionCandidate, account_pro
     if candidate.status != "candidate_ready" or candidate.current_price is None:
         return None
     if candidate.buy_zone_low is None or candidate.buy_zone_high is None or candidate.stop_loss is None or candidate.target_price is None:
+        return None
+    if candidate.reward_risk_ratio is not None and candidate.reward_risk_ratio < account_profile.min_reward_risk_ratio:
         return None
     max_risk_dollars = account_profile.account_equity * (account_profile.max_risk_per_trade_percent / 100)
     return TradeRecommendation(
@@ -291,7 +326,7 @@ def run_decision_workflow(request: DecisionWorkflowRunRequest, account_profile: 
     top_candidate = ready[0] if ready else None
     top_action = _candidate_to_trade_recommendation(top_candidate, account_profile) if top_candidate else None
     recommendations = [_candidate_to_recommendation(candidate) for candidate in limited]
-    status = "completed_with_candidates" if ready else "completed_no_actionable_candidates"
+    status = "completed_with_candidates" if top_action else "completed_no_actionable_candidates"
     completed_at = datetime.utcnow()
     response = DecisionWorkflowRunResponse(
         run_id=f"dwf-{uuid4().hex[:12]}",
