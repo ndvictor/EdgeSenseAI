@@ -8,6 +8,7 @@ from fastapi.middleware.cors import CORSMiddleware
 from app.api.routes.agent_scorecards import router as agent_scorecards_router
 from app.api.routes.ai_ops import router as ai_ops_router
 from app.api.routes.auto_run import router as auto_run_router
+from app.api.routes.candidate_universe import router as candidate_universe_router
 from app.api.routes.data_quality import router as data_quality_router
 from app.api.routes.data_sources import router as data_sources_router
 from app.api.routes.decision_workflows import router as decision_workflows_router
@@ -43,6 +44,7 @@ from app.schemas import (
 )
 from app.services.account_feasibility_service import AccountFeasibilityResult, evaluate_account_feasibility
 from app.services.backtesting_service import BacktestingResponse, build_backtesting_summary
+from app.services.candidate_universe_service import get_candidate_symbols
 from app.services.decision_workflow_service import DecisionWorkflowRunRequest, run_decision_workflow
 from app.services.edge_signal_service import build_edge_signals
 from app.services.feature_engineering_service import EngineeredFeatures, build_features
@@ -109,6 +111,7 @@ app.include_router(market_scanner_router, prefix="/api")
 app.include_router(auto_run_router, prefix="/api")
 app.include_router(memory_router, prefix="/api")
 app.include_router(decision_workflows_router, prefix="/api")
+app.include_router(candidate_universe_router, prefix="/api")
 
 _ACCOUNT_PROFILE = AccountRiskProfile()
 
@@ -124,9 +127,26 @@ def agents() -> list[AgentStatus]:
 
 
 def _build_decision_command_center() -> CommandCenterResponse:
+    # Pull active candidates from candidate universe
+    symbols = get_candidate_symbols()
+
+    if not symbols:
+        # No candidates selected - return no_action state
+        return CommandCenterResponse(
+            account_profile=_ACCOUNT_PROFILE,
+            top_action=None,
+            top_recommendations=[],
+            urgent_edge_alerts=[],
+            agents=agents(),
+            source_data_status=[],
+            dashboard_mode="no_symbols_selected",
+            cost_usage_message="No candidates selected. Add symbols from Stocks search, Watchlist, Scanner, or Candidate Universe before ranking.",
+        )
+
+    # Run decision workflow on candidate universe
     workflow = run_decision_workflow(
         DecisionWorkflowRunRequest(
-            symbols=[],
+            symbols=symbols,
             asset_class="stock",
             horizon="swing",
             source="auto",
@@ -135,6 +155,7 @@ def _build_decision_command_center() -> CommandCenterResponse:
         ),
         account_profile=_ACCOUNT_PROFILE,
     )
+
     source_status = [
         SourceDataStatus(
             symbol=candidate.symbol,
@@ -145,6 +166,7 @@ def _build_decision_command_center() -> CommandCenterResponse:
         )
         for candidate in workflow.candidates
     ]
+
     return CommandCenterResponse(
         account_profile=_ACCOUNT_PROFILE,
         top_action=workflow.top_action,
@@ -153,7 +175,7 @@ def _build_decision_command_center() -> CommandCenterResponse:
         agents=agents(),
         source_data_status=source_status,
         dashboard_mode=f"decision_workflow:{workflow.status}",
-        cost_usage_message="No symbols selected. Add candidates through watchlist, scanner, Stocks search, or explicit decision workflow run before Command Center ranks anything.",
+        cost_usage_message=f"Ranked {len(symbols)} candidate(s) from candidate universe. {len([c for c in workflow.candidates if c.status == 'candidate_ready'])} passed source-backed quality and model thresholds.",
     )
 
 

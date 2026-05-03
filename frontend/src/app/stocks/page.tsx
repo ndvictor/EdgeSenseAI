@@ -1,8 +1,10 @@
 "use client";
 
-import { useMemo, useState } from "react";
+import { useEffect, useMemo, useState } from "react";
 import { PageHeader } from "@/components/Cards";
 import { StockSearchChart, type StockChartSelection } from "@/components/StockSearchChart";
+import { api, type CandidateUniverseEntry } from "@/lib/api";
+import { Plus, Check, Loader2 } from "lucide-react";
 
 function money(value?: number | null) {
   if (value === undefined || value === null || Number.isNaN(value)) return "—";
@@ -74,7 +76,55 @@ function calcReport(selection: StockChartSelection | null) {
 
 export default function StocksPage() {
   const [selection, setSelection] = useState<StockChartSelection | null>(null);
+  const [candidates, setCandidates] = useState<CandidateUniverseEntry[]>([]);
+  const [isAdding, setIsAdding] = useState(false);
+  const [addSuccess, setAddSuccess] = useState(false);
   const report = useMemo(() => calcReport(selection), [selection]);
+
+  // Load existing candidates on mount
+  useEffect(() => {
+    api.getCandidateUniverse()
+      .then((response) => setCandidates(response.candidates))
+      .catch(() => setCandidates([]));
+  }, []);
+
+  const isAlreadyCandidate = useMemo(() => {
+    if (!selection?.symbol) return false;
+    return candidates.some((c) => c.symbol === selection.symbol.toUpperCase() && c.status === "active");
+  }, [candidates, selection]);
+
+  const handleAddToCandidateUniverse = async () => {
+    if (!selection?.symbol) return;
+
+    setIsAdding(true);
+    setAddSuccess(false);
+
+    try {
+      // Derive priority score from momentum if available, else default 50
+      const momentum = report.momentum;
+      const priorityScore = momentum !== null ? Math.min(100, Math.max(0, 50 + momentum)) : 50;
+
+      await api.addCandidate({
+        symbol: selection.symbol,
+        asset_class: "stock",
+        horizon: "swing",
+        source_type: "stock_search",
+        source_detail: "Added from Stocks page",
+        priority_score: priorityScore,
+        notes: "Manual candidate from Stocks workspace",
+      });
+
+      // Refresh candidates list
+      const response = await api.getCandidateUniverse();
+      setCandidates(response.candidates);
+      setAddSuccess(true);
+      setTimeout(() => setAddSuccess(false), 2000);
+    } catch (err) {
+      console.error("Failed to add candidate:", err);
+    } finally {
+      setIsAdding(false);
+    }
+  };
 
   return (
     <div className="min-h-screen bg-slate-500 p-4 lg:p-6">
@@ -94,10 +144,47 @@ export default function StocksPage() {
                 <p className="text-xs font-semibold uppercase tracking-[0.22em] text-emerald-500">Source-backed stock report</p>
                 <h2 className="mt-1 text-xl font-black text-white">Current Workflow Candidate: {report.symbol}</h2>
               </div>
-              <div className="flex flex-wrap gap-2 text-xs font-bold uppercase">
+              <div className="flex flex-wrap items-center gap-2 text-xs font-bold uppercase">
                 <span className="rounded-full border border-slate-700 bg-slate-900 px-3 py-1 text-slate-300">Source: {report.source}</span>
                 <span className="rounded-full border border-slate-700 bg-slate-900 px-3 py-1 text-slate-300">Provider: {report.provider}</span>
                 <span className={`rounded-full border px-3 py-1 ${report.hasUsableSourceData ? "border-emerald-500 bg-emerald-500/10 text-emerald-300" : report.isMock ? "border-cyan-500 bg-cyan-500/10 text-cyan-300" : "border-amber-500 bg-amber-500/10 text-amber-300"}`}>Quality: {report.sourceQuality}</span>
+
+                {/* Add to Candidate Universe Button */}
+                {selection?.symbol && (
+                  <button
+                    onClick={handleAddToCandidateUniverse}
+                    disabled={isAdding || isAlreadyCandidate}
+                    className={`flex items-center gap-1 rounded-full border px-3 py-1 text-xs font-bold uppercase transition-all ${
+                      isAlreadyCandidate
+                        ? "border-emerald-500 bg-emerald-500 text-slate-950"
+                        : addSuccess
+                          ? "border-emerald-500 bg-emerald-500 text-slate-950"
+                          : "border-emerald-500 bg-slate-900 text-emerald-400 hover:bg-emerald-500 hover:text-slate-950"
+                    }`}
+                  >
+                    {isAdding ? (
+                      <>
+                        <Loader2 className="h-3 w-3 animate-spin" />
+                        Adding...
+                      </>
+                    ) : addSuccess ? (
+                      <>
+                        <Check className="h-3 w-3" />
+                        Added!
+                      </>
+                    ) : isAlreadyCandidate ? (
+                      <>
+                        <Check className="h-3 w-3" />
+                        In Universe
+                      </>
+                    ) : (
+                      <>
+                        <Plus className="h-3 w-3" />
+                        Add to Candidate Universe
+                      </>
+                    )}
+                  </button>
+                )}
               </div>
             </div>
 

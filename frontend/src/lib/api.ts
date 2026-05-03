@@ -1120,6 +1120,74 @@ export type StrategyWorkflowRunSummary = {
   runs: StrategyWorkflowRunResult[];
 };
 
+export type CandidateUniverseEntry = {
+  id: string;
+  symbol: string;
+  asset_class: string;
+  horizon: string;
+  source_type: "manual" | "watchlist" | "scanner" | "stock_search" | "strategy_workflow";
+  source_detail: string;
+  priority_score: number;
+  status: "active" | "paused" | "removed";
+  created_at: string;
+  updated_at: string;
+  last_ranked_at?: string | null;
+  notes: string;
+};
+
+export type CandidateUniverseResponse = {
+  candidates: CandidateUniverseEntry[];
+  summary: {
+    total_candidates: number;
+    active_count: number;
+    paused_count: number;
+    removed_count: number;
+    active_symbols: string[];
+  };
+};
+
+export type DecisionCandidate = {
+  symbol: string;
+  asset_class: string;
+  horizon: string;
+  source: string;
+  provider?: string | null;
+  data_quality: string;
+  status: string;
+  rank?: number | null;
+  final_score: number;
+  confidence: number;
+  current_price?: number | null;
+  buy_zone_low?: number | null;
+  buy_zone_high?: number | null;
+  stop_loss?: number | null;
+  target_price?: number | null;
+  reward_risk_ratio?: number | null;
+  feature_row_id?: string | null;
+  model_outputs: Array<Record<string, unknown>>;
+  blockers: string[];
+  warnings: string[];
+  reason: string;
+};
+
+export type DecisionWorkflowRunResponse = {
+  run_id: string;
+  status: string;
+  source: string;
+  horizon: string;
+  symbols_requested: string[];
+  candidates: DecisionCandidate[];
+  top_action?: TradeRecommendation | null;
+  recommendations: Recommendation[];
+  feature_runs: Array<Record<string, unknown>>;
+  model_runs: Array<Record<string, unknown>>;
+  blockers: string[];
+  warnings: string[];
+  started_at: string;
+  completed_at: string;
+  duration_ms: number;
+};
+
 export const api = {
   getCommandCenter: () => request<CommandCenterResponse>("/api/command-center"),
   getAccountRisk: () => request<AccountRiskProfile>("/api/account-risk/profile"),
@@ -1181,4 +1249,23 @@ export const api = {
   runStrategyWorkflow: (payload: StrategyWorkflowRunRequest) => request<StrategyWorkflowRunResult>("/api/strategy-workflows/run", { method: "POST", body: JSON.stringify(payload) }),
   getAutoRunStatus: () => request<AutoRunControlState>("/api/auto-run/status"),
   updateAutoRunStatus: (payload: AutoRunControlUpdate) => request<AutoRunControlState>("/api/auto-run/status", { method: "PUT", body: JSON.stringify(payload) }),
+
+  // Candidate Universe APIs
+  getCandidateUniverse: () => request<CandidateUniverseResponse>("/api/candidate-universe"),
+  addCandidate: (payload: { symbol: string; asset_class?: string; horizon?: string; source_type?: string; source_detail?: string; priority_score?: number; notes?: string }) =>
+    request<{ success: boolean; message: string; candidate: CandidateUniverseEntry }>("/api/candidate-universe/add", { method: "POST", body: JSON.stringify(payload) }),
+  bulkAddCandidates: (payload: { symbols: string[]; asset_class?: string; horizon?: string; source_type?: string; source_detail?: string; priority_score?: number; notes?: string }) =>
+    request<{ success: boolean; message: string; candidates: CandidateUniverseEntry[] }>("/api/candidate-universe/bulk-add", { method: "POST", body: JSON.stringify(payload) }),
+  removeCandidate: (symbol: string) =>
+    request<{ success: boolean; message: string }>("/api/candidate-universe/remove", { method: "POST", body: JSON.stringify({ symbol }) }),
+  clearCandidates: () =>
+    request<{ success: boolean; message: string }>("/api/candidate-universe/clear", { method: "POST" }),
+
+  // Decision Workflow APIs
+  getLatestDecisionWorkflowRun: () => request<DecisionWorkflowRunResponse | null>("/api/decision-workflows/runs/latest"),
+  listDecisionWorkflowRuns: (limit = 20) => request<DecisionWorkflowRunResponse[]>(`/api/decision-workflows/runs?limit=${limit}`),
+  runDecisionWorkflow: (payload: { symbols: string[]; asset_class?: string; horizon?: string; source?: string; max_candidates?: number; allow_mock?: boolean }) =>
+    request<DecisionWorkflowRunResponse>("/api/decision-workflows/run", { method: "POST", body: JSON.stringify(payload) }),
+  runDecisionWorkflowDefault: () => request<DecisionWorkflowRunResponse>("/api/decision-workflows/run-default", { method: "POST" }),
+  runCandidateUniverseWorkflow: () => request<DecisionWorkflowRunResponse>("/api/decision-workflows/run-candidate-universe", { method: "POST" }),
 };

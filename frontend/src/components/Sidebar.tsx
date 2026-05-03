@@ -16,12 +16,14 @@ import {
   LineChart,
   Settings,
   TrendingUp,
+  Users,
   WalletCards,
 } from "lucide-react";
 
 const items = [
   { label: "Account Risk Center", href: "/account-risk", icon: WalletCards },
   { label: "Command Center", href: "/command-center", icon: Gauge },
+  { label: "Candidates", href: "/candidates", icon: Users },
   { label: "Agent Ops Center", href: "/ai-ops", icon: BrainCircuit },
   { label: "LLM Gateway", href: "/llm-gateway", icon: Gauge },
   { label: "Live Watchlist", href: "/live-watchlist", icon: BellRing },

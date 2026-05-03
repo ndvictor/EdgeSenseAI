@@ -1,8 +1,10 @@
 "use client";
 
 import { useEffect, useState } from "react";
+import Link from "next/link";
 import { api, type CommandCenterResponse } from "@/lib/api";
 import { EdgeSignalGrid, MetricCard, PageHeader, RecommendationTable } from "@/components/Cards";
+import { Users, TrendingUp, AlertTriangle } from "lucide-react";
 
 function money(value: number) {
   return `$${value.toLocaleString(undefined, { maximumFractionDigits: 2 })}`;
@@ -39,25 +41,66 @@ export default function CommandCenterPage() {
           <div className="py-8 text-center text-sm text-slate-300">Loading dashboard...</div>
         ) : (
           <div className="space-y-4">
-            {!data.top_action ? (
+            {!data.top_action || data.dashboard_mode === "no_symbols_selected" || data.top_recommendations.length === 0 ? (
               <section className="rounded-2xl border border-amber-500 bg-slate-950 p-5 shadow-sm">
-                <p className="text-xs font-semibold uppercase tracking-[0.22em] text-amber-400">No actionable source-backed recommendation</p>
-                <h2 className="mt-2 text-3xl font-black text-white">Source data unavailable or not validated</h2>
-                <p className="mt-3 max-w-5xl text-sm leading-relaxed text-slate-300">
-                  The dashboard did not generate a ticker recommendation because no non-mock source returned usable market data. This prevents fake AMD/default values from appearing as actionable insight.
-                </p>
-                <div className="mt-5 grid grid-cols-1 gap-3 lg:grid-cols-5">
-                  {data.source_data_status.map((source) => (
-                    <div key={source.symbol} className="rounded-xl border border-slate-800 bg-slate-900 p-4">
-                      <p className="text-lg font-black text-white">{source.symbol}</p>
-                      <p className="mt-1 text-xs uppercase tracking-wide text-slate-500">Provider</p>
-                      <p className="text-sm font-bold text-slate-300">{source.provider ?? "none"}</p>
-                      <p className="mt-2 text-xs uppercase tracking-wide text-slate-500">Quality</p>
-                      <p className="text-sm font-bold text-amber-300">{source.data_quality ?? "unavailable"}</p>
-                      {source.error && <p className="mt-2 text-xs leading-relaxed text-slate-400">{source.error}</p>}
-                    </div>
-                  ))}
+                <div className="flex items-center gap-3">
+                  <AlertTriangle className="h-8 w-8 text-amber-400" />
+                  <div>
+                    <p className="text-xs font-semibold uppercase tracking-[0.22em] text-amber-400">No candidates selected</p>
+                    <h2 className="mt-1 text-2xl font-black text-white">Add symbols before running ranking</h2>
+                  </div>
                 </div>
+                <p className="mt-4 max-w-5xl text-sm leading-relaxed text-slate-300">
+                  The Command Center requires a candidate universe to rank. Add symbols from Stocks search, Watchlist, Scanner, or the Candidate Universe page before running the decision workflow.
+                </p>
+
+                {/* Navigation Cards */}
+                <div className="mt-6 grid grid-cols-1 gap-4 md:grid-cols-2">
+                  <Link
+                    href="/stocks"
+                    className="flex items-center gap-4 rounded-xl border border-emerald-800 bg-slate-900 p-4 transition-colors hover:border-emerald-500 hover:bg-slate-800"
+                  >
+                    <div className="flex h-12 w-12 items-center justify-center rounded-xl bg-emerald-500/10 text-emerald-400">
+                      <TrendingUp className="h-6 w-6" />
+                    </div>
+                    <div>
+                      <h3 className="font-bold text-white">Stocks</h3>
+                      <p className="text-sm text-slate-400">Search tickers and add them to candidate universe</p>
+                    </div>
+                  </Link>
+
+                  <Link
+                    href="/candidates"
+                    className="flex items-center gap-4 rounded-xl border border-emerald-800 bg-slate-900 p-4 transition-colors hover:border-emerald-500 hover:bg-slate-800"
+                  >
+                    <div className="flex h-12 w-12 items-center justify-center rounded-xl bg-emerald-500/10 text-emerald-400">
+                      <Users className="h-6 w-6" />
+                    </div>
+                    <div>
+                      <h3 className="font-bold text-white">Candidate Universe</h3>
+                      <p className="text-sm text-slate-400">Manage candidates and run decision workflow</p>
+                    </div>
+                  </Link>
+                </div>
+
+                {/* Show source data status if available */}
+                {data.source_data_status.length > 0 && (
+                  <div className="mt-6">
+                    <p className="mb-3 text-sm font-semibold text-slate-400">Last source data status:</p>
+                    <div className="grid grid-cols-1 gap-3 lg:grid-cols-5">
+                      {data.source_data_status.map((source) => (
+                        <div key={source.symbol} className="rounded-xl border border-slate-800 bg-slate-900 p-4">
+                          <p className="text-lg font-black text-white">{source.symbol}</p>
+                          <p className="mt-1 text-xs uppercase tracking-wide text-slate-500">Provider</p>
+                          <p className="text-sm font-bold text-slate-300">{source.provider ?? "none"}</p>
+                          <p className="mt-2 text-xs uppercase tracking-wide text-slate-500">Quality</p>
+                          <p className="text-sm font-bold text-amber-300">{source.data_quality ?? "unavailable"}</p>
+                          {source.error && <p className="mt-2 text-xs leading-relaxed text-slate-400">{source.error}</p>}
+                        </div>
+                      ))}
+                    </div>
+                  </div>
+                )}
               </section>
             ) : (
               <>

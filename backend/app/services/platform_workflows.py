@@ -125,7 +125,7 @@ class FeatureStoreRow(BaseModel):
 
 
 class SignalAgentRunRequest(BaseModel):
-    symbols: list[str] = Field(default_factory=lambda: ["AMD", "NVDA", "AAPL", "MSFT", "BTC-USD"])
+    symbols: list[str] = Field(default_factory=list)
     horizon: str = "swing"
     data_source: str = "yfinance"
     agents: list[str] = Field(default_factory=lambda: ["technical", "volume", "volatility", "macro_regime"])
@@ -140,9 +140,7 @@ class SignalAgentRunResponse(BaseModel):
     next_step: str
 
 
-_WATCHLISTS: list[Watchlist] = [
-    Watchlist(id="wl-core", name="Core Liquid Watchlist", description="Large liquid symbols for small-account scanning.", items=[WatchlistItem(ticker="AMD"), WatchlistItem(ticker="NVDA"), WatchlistItem(ticker="AAPL"), WatchlistItem(ticker="MSFT"), WatchlistItem(ticker="BTC-USD", asset_class="crypto")], updated_at=datetime.utcnow().isoformat())
-]
+_WATCHLISTS: list[Watchlist] = []
 
 _PAPER_TRADES: list[PaperTrade] = []
 
@@ -193,11 +191,8 @@ def update_paper_trade_status(trade_id: str, status: str, exit_price: float | No
 
 
 def get_recommendation_lifecycle() -> list[RecommendationLifecycleItem]:
-    now = datetime.utcnow().isoformat()
-    return [
-        RecommendationLifecycleItem(id="rec-amd-001", ticker="AMD", action="WATCH_SETUP", status="generated", score=84.5, probability=0.68, next_step="wait_for_entry_zone_and_data_quality_pass", provenance=["technical_agent", "volume_agent", "risk_filter"], updated_at=now),
-        RecommendationLifecycleItem(id="rec-nvda-001", ticker="NVDA", action="WATCH_ONLY", status="risk_review", score=79.2, probability=0.63, next_step="reduce_position_size_or_wait_for_pullback", provenance=["volume_agent", "macro_regime_agent", "xgboost_supervisor"], updated_at=now),
-    ]
+    # Returns empty list - recommendations come from decision workflow, not hardcoded
+    return []
 
 
 def get_agent_scorecards() -> list[AgentScorecard]:
@@ -211,25 +206,18 @@ def get_agent_scorecards() -> list[AgentScorecard]:
 
 
 def get_historical_analogs(ticker: str) -> list[HistoricalAnalog]:
-    return [
-        HistoricalAnalog(ticker=ticker.upper(), analog_ticker=ticker.upper(), analog_date="2025-10-14", similarity_score=0.78, outcome_summary="Momentum continued for three sessions before mean reversion.", matching_features=["high_rvol", "positive_momentum", "risk_on_regime"]),
-        HistoricalAnalog(ticker=ticker.upper(), analog_ticker="NVDA", analog_date="2025-08-21", similarity_score=0.71, outcome_summary="Strong opening move required tighter stop due to elevated volatility.", matching_features=["sector_strength", "elevated_volatility", "trend_confirmation"]),
-    ]
+    # Returns empty list - analogs require configured historical data pipeline
+    return []
 
 
 def get_market_radar_events() -> list[MarketRadarEvent]:
-    now = datetime.utcnow().isoformat()
-    return [
-        MarketRadarEvent(id="radar-001", ticker="NVDA", event_type="volume_acceleration", severity="medium", title="Volume acceleration detected", summary="Volume signal requires confirmation from price and spread quality.", source="volume_agent", impact_score=0.72, detected_at=now),
-        MarketRadarEvent(id="radar-002", ticker=None, event_type="market_regime", severity="medium", title="Risk-on regime prototype", summary="Regime signal is currently prototype and should be replaced with SPY/QQQ/VIX pipeline.", source="macro_regime_agent", impact_score=0.64, detected_at=now),
-    ]
+    # Returns empty list - radar events require configured scanner pipeline
+    return []
 
 
 def get_trade_quality_reviews() -> list[TradeQualityReview]:
-    return [
-        TradeQualityReview(id="tq-001", ticker="AMD", setup_quality=0.82, entry_quality=0.74, risk_quality=0.88, thesis_quality=0.79, overall_grade="B+", notes=["Setup is strong but requires fresh data quality pass.", "Entry should be limited to planned zone."]),
-        TradeQualityReview(id="tq-002", ticker="NVDA", setup_quality=0.78, entry_quality=0.61, risk_quality=0.66, thesis_quality=0.81, overall_grade="B", notes=["High opportunity score but elevated volatility reduces quality."]),
-    ]
+    # Returns empty list - reviews require configured paper trading outcomes
+    return []
 
 
 def run_signal_agents(request: SignalAgentRunRequest) -> SignalAgentRunResponse:
