@@ -1540,6 +1540,153 @@ export type MetaModelEnsembleResponse = {
   duration_ms: number;
 };
 
+// LLM Budget Gate Types
+export type LLMBudgetGateResponse = {
+  run_id: string;
+  status: "approved" | "skipped" | "blocked";
+  llm_validation_policy: "disabled" | "deterministic_only" | "cheap_summary_allowed" | "strong_reasoning_allowed";
+  selected_tier: "disabled" | "cheap" | "standard" | "strong";
+  estimated_cost_usd: number;
+  reason: string;
+  blockers: string[];
+  warnings: string[];
+  checked_at: string;
+};
+
+// Agent Validation Types
+export type SpecialistVote = {
+  agent_key: string;
+  vote: "pass" | "watch" | "block" | "abstain";
+  score: number;
+  reason: string;
+};
+
+export type AgentValidationResponse = {
+  run_id: string;
+  status: "pass" | "watch" | "blocked" | "skipped";
+  symbol: string | null;
+  specialist_votes: SpecialistVote[];
+  validation_score: number;
+  blockers: string[];
+  warnings: string[];
+  reason: string;
+  checked_at: string;
+};
+
+// Risk Manager Types
+export type OpenPosition = {
+  symbol: string;
+  side: "long" | "short";
+  entry_price: number;
+  quantity: number;
+  unrealized_pnl: number;
+};
+
+export type RiskReviewResponse = {
+  run_id: string;
+  symbol: string;
+  status: "approved" | "watch_only" | "paper_only" | "reduce_size" | "blocked";
+  risk_score: number;
+  hard_veto: boolean;
+  veto_reasons: string[];
+  max_dollar_risk: number;
+  max_position_size_dollars: number;
+  position_size_cap_dollars: number;
+  required_reward_risk_ratio: number;
+  approved_reward_risk_ratio: number | null;
+  blockers: string[];
+  warnings: string[];
+  checked_at: string;
+  live_trading_allowed: boolean;
+};
+
+// No-Trade Types
+export type NoTradeResponse = {
+  run_id: string;
+  decision: "trade_allowed" | "watch_only" | "no_trade" | "reduce_cadence" | "preserve_capital";
+  no_trade_reason: string;
+  severity: "low" | "medium" | "high";
+  blockers: string[];
+  warnings: string[];
+  checked_at: string;
+};
+
+// Capital Allocation Types
+export type CapitalAllocationResponse = {
+  run_id: string;
+  symbol: string;
+  status: "plan_created" | "watch_only" | "blocked";
+  opportunity_score: number;
+  capital_allocation_dollars: number;
+  risk_dollars: number;
+  position_size_units: number;
+  entry_zone_low: number;
+  entry_zone_high: number;
+  stop_loss: number;
+  invalidation: number;
+  target_price: number;
+  target_2_price: number | null;
+  reward_risk_ratio: number;
+  max_hold_minutes: number | null;
+  timeout_rule: string;
+  rotation_rule: string;
+  approval_required: boolean;
+  paper_trade_allowed: boolean;
+  live_trading_allowed: boolean;
+  blockers: string[];
+  warnings: string[];
+  created_at: string;
+};
+
+// Recommendation Pipeline Types
+export type PipelineStage = {
+  stage: string;
+  status: "pending" | "running" | "completed" | "blocked" | "skipped";
+  result: Record<string, unknown> | null;
+  blockers: string[];
+  warnings: string[];
+};
+
+export type PipelineRecommendation = {
+  id: string;
+  symbol: string;
+  action_label: string;
+  status: "pending_review" | "approved" | "rejected" | "paper_trade_created" | "expired";
+  final_signal_score: number;
+  confidence: number;
+  risk_status: string;
+  no_trade_decision: string;
+  llm_policy: string;
+  capital_allocation_dollars: number;
+  position_size_units: number;
+  entry_zone_low: number;
+  entry_zone_high: number;
+  stop_loss: number;
+  target_price: number;
+  reward_risk_ratio: number;
+  paper_trade_allowed: boolean;
+  live_trading_allowed: boolean;
+  approval_required: boolean;
+  reason: string;
+};
+
+export type RecommendationPipelineResponse = {
+  run_id: string;
+  status: "no_signal_available" | "llm_gate_skipped" | "agent_validation_blocked" | "risk_blocked" | "no_trade" | "capital_allocation_blocked" | "recommendation_created" | "completed";
+  symbol: string | null;
+  llm_budget_gate: LLMBudgetGateResponse | null;
+  agent_validation: AgentValidationResponse | null;
+  risk_review: RiskReviewResponse | null;
+  no_trade: NoTradeResponse | null;
+  capital_allocation: CapitalAllocationResponse | null;
+  recommendation: PipelineRecommendation | null;
+  stages: PipelineStage[];
+  blockers: string[];
+  warnings: string[];
+  started_at: string;
+  completed_at: string;
+};
+
 export type UpperWorkflowResponse = {
   run_id: string;
   status: "completed" | "partial" | "failed" | "blocked";
@@ -1556,12 +1703,31 @@ export type UpperWorkflowResponse = {
   event_scanner: EventScannerResponse | null;
   signal_scoring: SignalScoringResponse | null;
   meta_model_ensemble: MetaModelEnsembleResponse | null;
+  recommendation_pipeline: RecommendationPipelineResponse | null;
   promoted_candidates: string[];
   blockers: string[];
   warnings: string[];
   started_at: string;
   completed_at: string;
   duration_ms: number;
+};
+
+export type RecommendationLifecycleRecord = {
+  id: string;
+  symbol: string;
+  asset_class: string;
+  horizon: string;
+  source: string;
+  feature_row_id?: string | null;
+  score: number;
+  confidence: number;
+  action_label: string;
+  status: "pending_review" | "approved" | "rejected" | "paper_trade_created" | "expired";
+  reason: string;
+  risk_factors: string[];
+  created_at: string;
+  updated_at: string;
+  workflow_run_id?: string | null;
 };
 
 export type DecisionCandidate = {
@@ -1696,8 +1862,8 @@ export const api = {
     request<{ success: boolean; message: string; added: Array<Record<string, unknown>>; skipped: Array<Record<string, unknown>>; total_added: number; total_skipped: number }>("/api/watchlists/promote-to-candidates", { method: "POST", body: JSON.stringify(payload || {}) }),
 
   // Recommendation Lifecycle APIs
-  getRecommendationLifecycle: (status?: string, symbol?: string, limit?: number) =>
-    request<Array<Record<string, unknown>>>(`/api/recommendation-lifecycle?${status ? `status=${status}&` : ""}${symbol ? `symbol=${symbol}&` : ""}${limit ? `limit=${limit}` : ""}`),
+  getRecommendationLifecycleList: (status?: string, symbol?: string, limit?: number) =>
+    request<RecommendationLifecycleRecord[]>(`/api/recommendation-lifecycle?${status ? `status=${status}&` : ""}${symbol ? `symbol=${symbol}&` : ""}${limit ? `limit=${limit}` : ""}`),
   getRecommendationLifecycleSummary: () => request<Record<string, unknown>>("/api/recommendation-lifecycle/summary"),
   approveRecommendation: (id: string) => request<{ success: boolean; recommendation: Record<string, unknown> | null; message: string }>("/api/recommendation-lifecycle/approve", { method: "POST", body: JSON.stringify({ id }) }),
   rejectRecommendation: (id: string) => request<{ success: boolean; recommendation: Record<string, unknown> | null; message: string }>("/api/recommendation-lifecycle/reject", { method: "POST", body: JSON.stringify({ id }) }),
@@ -1746,7 +1912,7 @@ export const api = {
   getModelRegistry: () => request<Record<string, unknown>>("/api/model-selection/registry"),
 
   // Upper Workflow API
-  runUpperWorkflow: (payload: { symbols: string[]; horizon?: string; source?: string; asset_class?: string; account_equity?: number; buying_power?: number; allow_mock?: boolean; promote_to_candidate_universe?: boolean; build_trigger_rules?: boolean; run_event_scanner?: boolean; run_signal_scoring?: boolean; run_meta_model?: boolean }) =>
+  runUpperWorkflow: (payload: { symbols: string[]; horizon?: string; source?: string; asset_class?: string; account_equity?: number; buying_power?: number; allow_mock?: boolean; promote_to_candidate_universe?: boolean; build_trigger_rules?: boolean; run_event_scanner?: boolean; run_signal_scoring?: boolean; run_meta_model?: boolean; run_recommendation_pipeline?: boolean }) =>
     request<UpperWorkflowResponse>("/api/upper-workflow/run", { method: "POST", body: JSON.stringify(payload) }),
   getLatestUpperWorkflow: () => request<UpperWorkflowResponse | { message: string; status: string }>("/api/upper-workflow/latest"),
 
@@ -1782,4 +1948,34 @@ export const api = {
   getMetaModelEnsembleRuns: (limit = 20) => request<{ runs: MetaModelEnsembleResponse[]; count: number }>(`/api/meta-model/ensemble/runs?limit=${limit}`),
   promotePassingSignalsToCandidates: (includeWatch?: boolean, minScore?: number) =>
     request<{ success: boolean; promoted_count: number; promoted_symbols: string[]; source_run_id?: string }>("/api/meta-model/ensemble/promote-passing-to-candidates", { method: "POST", body: JSON.stringify({ include_watch: includeWatch, min_score: minScore }) }),
+
+  // LLM Budget Gate APIs
+  evaluateLLMBudgetGate: (payload: { symbol?: string; final_signal_score?: number; confidence?: number; allow_paid_llm?: boolean; dry_run?: boolean; requested_model_tier?: string }) =>
+    request<LLMBudgetGateResponse>("/api/llm-budget-gate/evaluate", { method: "POST", body: JSON.stringify(payload) }),
+  getLatestLLMBudgetGate: () => request<LLMBudgetGateResponse | { message: string; status: string }>("/api/llm-budget-gate/latest"),
+
+  // Agent Validation APIs
+  runAgentValidation: (payload: { ensemble_signal?: Record<string, unknown>; symbol?: string; strategy_key?: string; final_signal_score?: number; confidence?: number; llm_policy?: string; dry_run?: boolean }) =>
+    request<AgentValidationResponse>("/api/agent-validation/run", { method: "POST", body: JSON.stringify(payload) }),
+  getLatestAgentValidation: () => request<AgentValidationResponse | { message: string; status: string }>("/api/agent-validation/latest"),
+
+  // Risk Manager APIs
+  reviewRisk: (payload: { symbol: string; asset_class?: string; horizon?: string; current_price?: number; final_signal_score?: number; confidence?: number; account_equity?: number; buying_power?: number; data_quality?: string; spread_percent?: number; liquidity_score?: number }) =>
+    request<RiskReviewResponse>("/api/risk-manager/review", { method: "POST", body: JSON.stringify(payload) }),
+  getLatestRiskReview: () => request<RiskReviewResponse | { message: string; status: string }>("/api/risk-manager/latest"),
+
+  // No-Trade APIs
+  evaluateNoTrade: (payload: { regime?: string; data_freshness_status?: string; final_signal_score?: number; confidence?: number; risk_status?: string; buying_power?: number; account_equity?: number; warnings?: string[]; blockers?: string[] }) =>
+    request<NoTradeResponse>("/api/no-trade/evaluate", { method: "POST", body: JSON.stringify(payload) }),
+  getLatestNoTrade: () => request<NoTradeResponse | { message: string; status: string }>("/api/no-trade/latest"),
+
+  // Capital Allocation APIs
+  createCapitalAllocationPlan: (payload: { symbol: string; current_price: number; final_signal_score: number; confidence: number; risk_status: string; account_equity?: number; buying_power?: number; max_risk_per_trade_percent?: number; max_position_size_percent?: number; min_reward_risk_ratio?: number }) =>
+    request<CapitalAllocationResponse>("/api/capital-allocation/plan", { method: "POST", body: JSON.stringify(payload) }),
+  getLatestCapitalAllocation: () => request<CapitalAllocationResponse | { message: string; status: string }>("/api/capital-allocation/latest"),
+
+  // Recommendation Pipeline APIs
+  runRecommendationPipeline: (payload: { use_latest_ensemble?: boolean; ensemble_signal?: Record<string, unknown>; symbol?: string; account_equity?: number; buying_power?: number; allow_paid_llm?: boolean; dry_run?: boolean }) =>
+    request<RecommendationPipelineResponse>("/api/recommendation-pipeline/run", { method: "POST", body: JSON.stringify(payload) }),
+  getLatestRecommendationPipeline: () => request<RecommendationPipelineResponse | { message: string; status: string }>("/api/recommendation-pipeline/latest"),
 };

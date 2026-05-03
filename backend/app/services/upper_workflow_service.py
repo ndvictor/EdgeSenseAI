@@ -80,6 +80,11 @@ from app.services.timing_cadence_service import (
     RuntimeCadenceResponse,
     get_runtime_cadence,
 )
+from app.services.recommendation_pipeline_service import (
+    RecommendationPipelineRequest,
+    RecommendationPipelineResponse,
+    run_recommendation_pipeline,
+)
 from app.services.trigger_rules_service import (
     TriggerRuleBuildRequest,
     TriggerRuleBuildResponse,
@@ -113,6 +118,7 @@ class UpperWorkflowRequest(BaseModel):
     run_event_scanner: bool = False   # Step 9 - requires trigger rules
     run_signal_scoring: bool = False  # Step 10 - requires events
     run_meta_model: bool = False      # Step 11 - requires scored signals
+    run_recommendation_pipeline: bool = False  # Step 14-19 - requires meta-model signals
 
 
 class UpperWorkflowStage(BaseModel):
@@ -145,6 +151,7 @@ class UpperWorkflowResponse(BaseModel):
     event_scanner: EventScannerResponse | None = None
     signal_scoring: SignalScoringResponse | None = None
     meta_model_ensemble: MetaModelEnsembleResponse | None = None
+    recommendation_pipeline: RecommendationPipelineResponse | None = None
     promoted_candidates: list[str] = Field(default_factory=list)
     blockers: list[str] = Field(default_factory=list)
     warnings: list[str] = Field(default_factory=list)
@@ -660,6 +667,41 @@ def run_upper_workflow(request: UpperWorkflowRequest) -> UpperWorkflowResponse:
             warnings=["promote_to_candidate_universe=false - skipping promotion"],
         ))
 
+    # 13. Recommendation Pipeline (optional - requires meta-model signals)
+    recommendation_pipeline: RecommendationPipelineResponse | None = None
+    if request.run_recommendation_pipeline and meta_model_ensemble and meta_model_ensemble.ensemble_signals:
+        try:
+            # Use latest ensemble signals
+            recommendation_pipeline = run_recommendation_pipeline(RecommendationPipelineRequest(
+                use_latest_ensemble=True,
+                account_equity=request.account_equity or 1000,
+                buying_power=request.buying_power or 1000,
+                allow_paid_llm=False,  # Never allow paid LLM in workflow
+                dry_run=True,  # Always dry run for safety
+            ))
+
+            stages.append(UpperWorkflowStage(
+                stage="recommendation_pipeline",
+                status="completed" if recommendation_pipeline.status == "recommendation_created" else "failed",
+                run_id=recommendation_pipeline.run_id,
+                warnings=recommendation_pipeline.warnings,
+            ))
+            warnings.extend(recommendation_pipeline.warnings)
+        except Exception as e:
+            stages.append(UpperWorkflowStage(
+                stage="recommendation_pipeline",
+                status="failed",
+                blockers=[str(e)],
+            ))
+            warnings.append(f"Recommendation pipeline failed: {e}")
+    else:
+        skip_reason = "run_recommendation_pipeline=false" if not request.run_recommendation_pipeline else "No ensemble signals available"
+        stages.append(UpperWorkflowStage(
+            stage="recommendation_pipeline",
+            status="skipped",
+            warnings=[skip_reason],
+        ))
+
     # Determine final status
     failed_stages = [s for s in stages if s.status == "failed"]
     blocked_stages = [s for s in stages if s.status == "blocked"]
@@ -692,6 +734,7 @@ def run_upper_workflow(request: UpperWorkflowRequest) -> UpperWorkflowResponse:
         event_scanner=event_scanner,
         signal_scoring=signal_scoring,
         meta_model_ensemble=meta_model_ensemble,
+        recommendation_pipeline=recommendation_pipeline,
         promoted_candidates=promoted,
         blockers=blockers,
         warnings=list(set(warnings)),  # Deduplicate

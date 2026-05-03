@@ -6,9 +6,11 @@ from fastapi import FastAPI
 from fastapi.middleware.cors import CORSMiddleware
 
 from app.api.routes.agent_scorecards import router as agent_scorecards_router
+from app.api.routes.agent_validation import router as agent_validation_router
 from app.api.routes.ai_ops import router as ai_ops_router
 from app.api.routes.auto_run import router as auto_run_router
 from app.api.routes.candidate_universe import router as candidate_universe_router
+from app.api.routes.capital_allocation import router as capital_allocation_router
 from app.api.routes.data_freshness import router as data_freshness_router
 from app.api.routes.data_quality import router as data_quality_router
 from app.api.routes.data_sources import router as data_sources_router
@@ -18,6 +20,7 @@ from app.api.routes.event_scanner_models import router as event_scanner_router
 from app.api.routes.feature_store import router as feature_store_router
 from app.api.routes.historical_analogs import router as historical_analogs_router
 from app.api.routes.historical_similarity import router as historical_similarity_router
+from app.api.routes.llm_budget_gate import router as llm_budget_gate_router
 from app.api.routes.llm_gateway import router as llm_gateway_router
 from app.api.routes.market_data import router as market_data_router
 from app.api.routes.market_radar import router as market_radar_router
@@ -27,9 +30,12 @@ from app.api.routes.memory import router as memory_router
 from app.api.routes.meta_model_ensemble import router as meta_model_router
 from app.api.routes.model_runs import router as model_runs_router
 from app.api.routes.model_selection import router as model_selection_router
-from app.api.routes.signal_scoring import router as signal_scoring_router
+from app.api.routes.no_trade import router as no_trade_router
 from app.api.routes.paper_trading_lifecycle import router as paper_trading_lifecycle_router
 from app.api.routes.recommendation_lifecycle import router as recommendation_lifecycle_router
+from app.api.routes.recommendation_pipeline import router as recommendation_pipeline_router
+from app.api.routes.risk_manager import router as risk_manager_router
+from app.api.routes.signal_scoring import router as signal_scoring_router
 from app.api.routes.runtime import router as runtime_router
 from app.api.routes.signal_orchestration import router as signal_orchestration_router
 from app.api.routes.strategies import router as strategies_router
@@ -138,6 +144,12 @@ app.include_router(trigger_rules_router, prefix="/api")
 app.include_router(event_scanner_router, prefix="/api")
 app.include_router(signal_scoring_router, prefix="/api")
 app.include_router(meta_model_router, prefix="/api")
+app.include_router(llm_budget_gate_router, prefix="/api")
+app.include_router(agent_validation_router, prefix="/api")
+app.include_router(risk_manager_router, prefix="/api")
+app.include_router(no_trade_router, prefix="/api")
+app.include_router(capital_allocation_router, prefix="/api")
+app.include_router(recommendation_pipeline_router, prefix="/api")
 
 _ACCOUNT_PROFILE = AccountRiskProfile()
 
