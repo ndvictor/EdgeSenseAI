@@ -21,6 +21,7 @@ from app.api.routes.memory import router as memory_router
 from app.api.routes.model_runs import router as model_runs_router
 from app.api.routes.paper_trading_lifecycle import router as paper_trading_lifecycle_router
 from app.api.routes.recommendation_lifecycle import router as recommendation_lifecycle_router
+from app.api.routes.runtime import router as runtime_router
 from app.api.routes.signal_orchestration import router as signal_orchestration_router
 from app.api.routes.strategies import router as strategies_router
 from app.api.routes.strategy_workflows import router as strategy_workflows_router
@@ -112,6 +113,7 @@ app.include_router(strategy_workflows_router, prefix="/api")
 app.include_router(market_scanner_router, prefix="/api")
 app.include_router(auto_run_router, prefix="/api")
 app.include_router(memory_router, prefix="/api")
+app.include_router(runtime_router, prefix="/api")
 
 _ACCOUNT_PROFILE = AccountRiskProfile()
 _MARKET_DATA = MarketDataService()
