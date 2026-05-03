@@ -253,29 +253,54 @@ function CoreAgentRegistryTable({ agents }: { agents: CoreAgentRegistryItem[] })
   );
 }
 
+function strategyStatusBadge(strategy: StrategyConfig) {
+  const isCandidate = strategy.status === "candidate" || strategy.promotion_status === "candidate";
+  const isDisabled = strategy.disabled_reason || strategy.status === "rejected";
+
+  if (isDisabled) return <span className="rounded-full border border-red-500 bg-red-500/10 px-2 py-0.5 text-xs font-bold uppercase text-red-400">Disabled</span>;
+  if (isCandidate) return <span className="rounded-full border border-amber-500 bg-amber-500/10 px-2 py-0.5 text-xs font-bold uppercase text-amber-400">Research</span>;
+  return <span className="rounded-full border border-emerald-500 bg-emerald-500/10 px-2 py-0.5 text-xs font-bold uppercase text-emerald-400">Active</span>;
+}
+
 function StrategyRegistryTable({ strategies }: { strategies: StrategyConfig[] }) {
   if (!strategies.length) return <EmptyState label="strategy registry entries" />;
+
+  const activeCount = strategies.filter(s => s.status !== "candidate" && s.status !== "rejected" && !s.disabled_reason).length;
+  const candidateCount = strategies.filter(s => s.status === "candidate" || s.promotion_status === "candidate").length;
+  const disabledCount = strategies.filter(s => s.disabled_reason || s.status === "rejected").length;
+
   return (
-    <div className="overflow-x-auto rounded-xl border border-slate-800 bg-slate-900">
-      <table className="w-full min-w-[1280px] text-left text-sm">
-        <thead className="text-xs uppercase tracking-wide text-emerald-600">
-          <tr><th className="px-4 py-3">Strategy</th><th className="px-4 py-3">Asset</th><th className="px-4 py-3">Timeframe</th><th className="px-4 py-3">Required Agents</th><th className="px-4 py-3">Required Models</th><th className="px-4 py-3">Paper</th><th className="px-4 py-3">Approval</th><th className="px-4 py-3">Live</th></tr>
-        </thead>
-        <tbody className="divide-y divide-slate-800">
-          {strategies.map((strategy) => (
-            <tr key={strategy.strategy_key} className="hover:bg-emerald-950/20">
-              <td className="px-4 py-3"><p className="font-bold text-white">{strategy.display_name}</p><p className="mt-1 max-w-md text-xs text-slate-400">{strategy.description}</p></td>
-              <td className="px-4 py-3 text-slate-300">{strategy.asset_class}</td>
-              <td className="px-4 py-3 text-slate-300">{strategy.timeframe}</td>
-              <td className="max-w-md px-4 py-3 text-slate-300">{strategy.required_agents.join(", ")}</td>
-              <td className="px-4 py-3 text-slate-300">{strategy.required_models.join(", ")}</td>
-              <td className="px-4 py-3"><StatusBadge status={strategy.paper_trading_supported ? "supported" : "disabled"} /></td>
-              <td className="px-4 py-3"><StatusBadge status={strategy.requires_human_approval ? "required" : "not_required"} /></td>
-              <td className="px-4 py-3"><StatusBadge status={strategy.live_trading_supported ? "enabled" : "disabled"} /></td>
-            </tr>
-          ))}
-        </tbody>
-      </table>
+    <div className="space-y-4">
+      {/* Strategy Counts */}
+      <div className="grid grid-cols-3 gap-3">
+        <MetricCard label="Active / Approved" value={activeCount} accent />
+        <MetricCard label="Candidate / Research" value={candidateCount} />
+        <MetricCard label="Disabled / Blocked" value={disabledCount} />
+      </div>
+
+      {/* Strategy Table */}
+      <div className="overflow-x-auto rounded-xl border border-slate-800 bg-slate-900">
+        <table className="w-full min-w-[1280px] text-left text-sm">
+          <thead className="text-xs uppercase tracking-wide text-emerald-600">
+            <tr><th className="px-4 py-3">Strategy</th><th className="px-4 py-3">Status</th><th className="px-4 py-3">Asset</th><th className="px-4 py-3">Timeframe</th><th className="px-4 py-3">Required Agents</th><th className="px-4 py-3">Required Models</th><th className="px-4 py-3">Paper</th><th className="px-4 py-3">Approval</th><th className="px-4 py-3">Live</th></tr>
+          </thead>
+          <tbody className="divide-y divide-slate-800">
+            {strategies.map((strategy) => (
+              <tr key={strategy.strategy_key} className="hover:bg-emerald-950/20">
+                <td className="px-4 py-3"><p className="font-bold text-white">{strategy.display_name}</p><p className="mt-1 max-w-md text-xs text-slate-400">{strategy.description}</p></td>
+                <td className="px-4 py-3">{strategyStatusBadge(strategy)}</td>
+                <td className="px-4 py-3 text-slate-300">{strategy.asset_class}</td>
+                <td className="px-4 py-3 text-slate-300">{strategy.timeframe}</td>
+                <td className="max-w-md px-4 py-3 text-slate-300">{strategy.required_agents.join(", ")}</td>
+                <td className="px-4 py-3 text-slate-300">{strategy.required_models.join(", ")}</td>
+                <td className="px-4 py-3"><StatusBadge status={strategy.paper_trading_supported ? "supported" : "disabled"} /></td>
+                <td className="px-4 py-3"><StatusBadge status={strategy.requires_human_approval ? "required" : "not_required"} /></td>
+                <td className="px-4 py-3"><StatusBadge status={strategy.live_trading_supported ? "enabled" : "disabled"} /></td>
+              </tr>
+            ))}
+          </tbody>
+        </table>
+      </div>
     </div>
   );
 }

@@ -12,6 +12,8 @@ from app.api.routes.auto_run import router as auto_run_router
 from app.api.routes.candidate_universe import router as candidate_universe_router
 from app.api.routes.capital_allocation import router as capital_allocation_router
 from app.api.routes.journal_outcomes import router as journal_outcomes_router
+from app.api.routes.platform_readiness import router as platform_readiness_router
+from app.api.routes.tracing import router as tracing_router
 from app.api.routes.data_freshness import router as data_freshness_router
 from app.api.routes.data_quality import router as data_quality_router
 from app.api.routes.data_sources import router as data_sources_router
@@ -161,6 +163,8 @@ app.include_router(performance_drift_router, prefix="/api")
 app.include_router(research_priority_router, prefix="/api")
 app.include_router(model_strategy_update_router, prefix="/api")
 app.include_router(memory_update_router, prefix="/api")
+app.include_router(platform_readiness_router, prefix="/api")
+app.include_router(tracing_router, prefix="/api")
 
 _ACCOUNT_PROFILE = AccountRiskProfile()
 

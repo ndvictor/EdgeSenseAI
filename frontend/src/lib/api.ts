@@ -971,6 +971,44 @@ export type StrategyConfig = {
 
 export type StrategyRegistryResponse = StrategyConfig[];
 
+export type PlatformReadinessCheck = {
+  key: string;
+  label: string;
+  status: "pass" | "warn" | "fail";
+  message: string;
+  required_for: string;
+};
+
+export type PlatformReadinessResponse = {
+  status: "ready" | "partial" | "not_ready";
+  checks: PlatformReadinessCheck[];
+  blockers: string[];
+  warnings: string[];
+  generated_at: string;
+};
+
+export type TracingStatusResponse = {
+  enabled: boolean;
+  configured: boolean;
+  langsmith_installed: boolean;
+  langsmith_tracing_env: boolean;
+  api_key_configured: boolean;
+  project_configured: boolean;
+  mode: string;
+};
+
+export type TracingTestEventRequest = {
+  name: string;
+  metadata?: Record<string, unknown>;
+};
+
+export type TracingTestEventResponse = {
+  tracing_enabled: boolean;
+  event_sent: boolean;
+  event_name: string;
+  mode: string;
+};
+
 export type EdgeSignalRule = {
   signal_key: string;
   display_name: string;
@@ -2172,4 +2210,12 @@ export const api = {
   storeLatestJournalToMemory: () => request<MemoryUpdateResponse>("/api/memory-update/from-journal-latest", { method: "POST" }),
   storeLatestResearchToMemory: () => request<MemoryUpdateResponse>("/api/memory-update/from-research-latest", { method: "POST" }),
   getLatestMemoryUpdate: () => request<MemoryUpdateResponse | { message: string; status: string }>("/api/memory-update/latest"),
+
+  // Platform Readiness APIs
+  getPlatformReadiness: () => request<PlatformReadinessResponse>("/api/platform-readiness"),
+
+  // Tracing APIs
+  getTracingStatus: () => request<TracingStatusResponse>("/api/tracing/status"),
+  sendTracingTestEvent: (payload: TracingTestEventRequest) =>
+    request<TracingTestEventResponse>("/api/tracing/test-event", { method: "POST", body: JSON.stringify(payload) }),
 };
