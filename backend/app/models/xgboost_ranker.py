@@ -1,13 +1,15 @@
 from pathlib import Path
 from typing import Any
 
-from pydantic import BaseModel, Field
+from pydantic import BaseModel, ConfigDict, Field
 
 from app.services.feature_store_service import FeatureStoreRow
 from app.strategies.registry import StrategyConfig
 
 
 class XGBoostRankerOutput(BaseModel):
+    model_config = ConfigDict(protected_namespaces=())
+
     model: str = "xgboost_ranker"
     model_name: str = "xgboost_ranker"
     model_type: str = "supervised_ranker"

@@ -1,6 +1,6 @@
 from typing import Any
 
-from pydantic import BaseModel, Field
+from pydantic import BaseModel, ConfigDict, Field
 
 from app.services.feature_store_service import FeatureStoreRow
 from app.strategies.registry import StrategyConfig
@@ -16,6 +16,8 @@ class FeatureContribution(BaseModel):
 
 
 class WeightedRankerOutput(BaseModel):
+    model_config = ConfigDict(protected_namespaces=())
+
     model: str = "weighted_ranker"
     model_name: str = "weighted_ranker_v1"
     model_type: str = "deterministic_statistical_baseline"

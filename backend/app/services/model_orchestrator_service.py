@@ -1,6 +1,6 @@
 from typing import Any, Literal
 
-from pydantic import BaseModel, Field
+from pydantic import BaseModel, ConfigDict, Field
 
 from app.services.feature_store_service import FeatureStoreRow, get_feature_row_by_id, get_feature_rows_for_symbol
 from app.services.model_runner_service import run_selected_models
@@ -46,6 +46,8 @@ class ModelRunRequest(ModelRunPlanRequest):
 
 
 class ModelRunResponse(BaseModel):
+    model_config = ConfigDict(protected_namespaces=())
+
     status: str
     data_source: str
     plan: ModelRunPlanResponse

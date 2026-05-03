@@ -1,4 +1,5 @@
 from datetime import datetime, timezone
+from time import sleep, time
 from typing import Any, Dict, Optional
 
 import requests
@@ -9,6 +10,8 @@ from app.services.market_data_providers.base import MARKET_DATA_FIELDS, MarketDa
 
 class YFinanceMarketDataProvider(MarketDataProvider):
     name = "yfinance"
+    _last_request_time: float = 0.0
+    _min_request_interval: float = 0.3  # 300ms between requests to avoid 429
 
     def get_snapshot(self, symbol: str) -> Dict[str, Any]:
         errors: list[str] = []
@@ -22,8 +25,16 @@ class YFinanceMarketDataProvider(MarketDataProvider):
 
         return self.unavailable(symbol, error="; ".join(errors) or "No data returned from yfinance or Yahoo chart fallback")
 
+    def _throttle(self) -> None:
+        """Add small delay between requests to respect Yahoo Finance rate limits."""
+        elapsed = time() - self._last_request_time
+        if elapsed < self._min_request_interval:
+            sleep(self._min_request_interval - elapsed)
+        self._last_request_time = time()
+
     def _get_snapshot_from_yfinance_library(self, symbol: str, errors: list[str]) -> Dict[str, Any]:
         try:
+            self._throttle()
             ticker = yf.Ticker(symbol)
             hist = ticker.history(period="5d", interval="1d")
             info = ticker.info or {}
@@ -92,6 +103,7 @@ class YFinanceMarketDataProvider(MarketDataProvider):
 
     def _get_snapshot_from_yahoo_chart_api(self, symbol: str, errors: list[str]) -> Dict[str, Any]:
         try:
+            self._throttle()
             response = requests.get(
                 f"https://query1.finance.yahoo.com/v8/finance/chart/{symbol.upper()}",
                 params={"range": "5d", "interval": "1d"},

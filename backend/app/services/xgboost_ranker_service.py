@@ -1,6 +1,6 @@
 from __future__ import annotations
 
-from pydantic import BaseModel
+from pydantic import BaseModel, ConfigDict
 
 
 class RankerInputRow(BaseModel):
@@ -14,6 +14,8 @@ class RankerInputRow(BaseModel):
 
 
 class RankerScore(BaseModel):
+    model_config = ConfigDict(protected_namespaces=())
+
     symbol: str
     score: float
     rank: int
@@ -22,6 +24,8 @@ class RankerScore(BaseModel):
 
 
 class RankerRunResult(BaseModel):
+    model_config = ConfigDict(protected_namespaces=())
+
     model_name: str
     model_available: bool
     rows_scored: int
