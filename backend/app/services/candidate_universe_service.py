@@ -2,7 +2,7 @@
 
 This service stores symbols that should be ranked by Command Center.
 Candidates can come from: manual entry, watchlist, scanner, stock search, or strategy workflow.
-Currently in-memory; designed to be replaced by Postgres persistence later.
+Uses Postgres persistence when DATABASE_URL is configured, falls back to in-memory storage.
 """
 
 from datetime import datetime
@@ -10,6 +10,14 @@ from typing import Any
 from uuid import uuid4
 
 from pydantic import BaseModel, ConfigDict, Field
+
+from app.services.persistence_service import (
+    clear_candidate_universe_entries,
+    delete_candidate_universe_entry,
+    get_database_table_status,
+    list_candidate_universe_entries,
+    save_candidate_universe_entry,
+)
 
 
 class CandidateSourceType:
@@ -89,8 +97,60 @@ class RemoveCandidateRequest(BaseModel):
 _CANDIDATE_UNIVERSE: dict[str, CandidateUniverseEntry] = {}  # key: symbol (uppercase)
 
 
+def _is_db_available() -> bool:
+    """Check if database persistence is available."""
+    status = get_database_table_status()
+    return status.get("connected", False)
+
+
+def _db_row_to_entry(row: dict[str, Any]) -> CandidateUniverseEntry:
+    """Convert a database row dict to CandidateUniverseEntry."""
+    return CandidateUniverseEntry(
+        id=row.get("id", f"cand-{uuid4().hex[:12]}"),
+        symbol=row.get("symbol", ""),
+        asset_class=row.get("asset_class", "stock"),
+        horizon=row.get("horizon", "swing"),
+        source_type=row.get("source_type", "manual"),
+        source_detail=row.get("source_detail", ""),
+        priority_score=float(row.get("priority_score", 50)),
+        status=row.get("status", "active"),
+        created_at=row.get("created_at") if isinstance(row.get("created_at"), datetime) else datetime.utcnow(),
+        updated_at=row.get("updated_at") if isinstance(row.get("updated_at"), datetime) else datetime.utcnow(),
+        last_ranked_at=row.get("last_ranked_at") if isinstance(row.get("last_ranked_at"), datetime) else None,
+        notes=row.get("notes", ""),
+    )
+
+
+def _sync_db_to_memory() -> None:
+    """Sync database entries to in-memory cache."""
+    try:
+        rows = list_candidate_universe_entries()
+        _CANDIDATE_UNIVERSE.clear()
+        for row in rows:
+            entry = _db_row_to_entry(row)
+            _CANDIDATE_UNIVERSE[entry.symbol] = entry
+    except Exception:
+        pass
+
+
+def get_persistence_mode() -> str:
+    """Return the current persistence mode."""
+    return "postgres" if _is_db_available() else "memory"
+
+
 def list_candidates(status: str | None = None) -> list[CandidateUniverseEntry]:
-    """List all candidates, optionally filtered by status."""
+    """List all candidates, optionally filtered by status.
+
+    Uses database if available, falls back to in-memory storage.
+    """
+    if _is_db_available():
+        try:
+            rows = list_candidate_universe_entries(status)
+            return [_db_row_to_entry(row) for row in rows]
+        except Exception:
+            pass
+
+    # Fallback to in-memory
     candidates = list(_CANDIDATE_UNIVERSE.values())
     if status:
         candidates = [c for c in candidates if c.status == status]
@@ -117,12 +177,16 @@ def add_candidate(
     priority_score: float = 50.0,
     notes: str = "",
 ) -> CandidateUniverseEntry:
-    """Add a new candidate to the universe, or update if exists."""
+    """Add a new candidate to the universe, or update if exists.
+
+    Saves to database if available, always updates in-memory cache.
+    """
     symbol_upper = symbol.upper().strip()
     now = datetime.utcnow()
 
+    # Build entry
     if symbol_upper in _CANDIDATE_UNIVERSE:
-        # Update existing
+        # Update existing in-memory
         existing = _CANDIDATE_UNIVERSE[symbol_upper]
         existing.asset_class = asset_class
         existing.horizon = horizon
@@ -133,22 +197,30 @@ def add_candidate(
         existing.updated_at = now
         if notes:
             existing.notes = notes
-        return existing
+        entry = existing
+    else:
+        # Create new
+        entry = CandidateUniverseEntry(
+            symbol=symbol_upper,
+            asset_class=asset_class,
+            horizon=horizon,
+            source_type=source_type,
+            source_detail=source_detail,
+            priority_score=priority_score,
+            status=CandidateStatus.ACTIVE,
+            created_at=now,
+            updated_at=now,
+            notes=notes,
+        )
+        _CANDIDATE_UNIVERSE[symbol_upper] = entry
 
-    # Create new
-    entry = CandidateUniverseEntry(
-        symbol=symbol_upper,
-        asset_class=asset_class,
-        horizon=horizon,
-        source_type=source_type,
-        source_detail=source_detail,
-        priority_score=priority_score,
-        status=CandidateStatus.ACTIVE,
-        created_at=now,
-        updated_at=now,
-        notes=notes,
-    )
-    _CANDIDATE_UNIVERSE[symbol_upper] = entry
+    # Persist to database if available
+    if _is_db_available():
+        try:
+            save_candidate_universe_entry(entry)
+        except Exception:
+            pass  # Continue even if DB save fails
+
     return entry
 
 
@@ -185,6 +257,14 @@ def remove_candidate(symbol: str) -> CandidateUniverseEntry | None:
     if entry:
         entry.status = CandidateStatus.REMOVED
         entry.updated_at = datetime.utcnow()
+
+        # Persist to database if available
+        if _is_db_available():
+            try:
+                save_candidate_universe_entry(entry)
+            except Exception:
+                pass
+
     return entry
 
 
@@ -192,6 +272,15 @@ def clear_candidates() -> int:
     """Clear all candidates (hard delete). Returns count cleared."""
     count = len(_CANDIDATE_UNIVERSE)
     _CANDIDATE_UNIVERSE.clear()
+
+    # Clear database if available
+    if _is_db_available():
+        try:
+            db_count = clear_candidate_universe_entries()
+            return db_count
+        except Exception:
+            pass
+
     return count
 
 
@@ -203,6 +292,13 @@ def update_last_ranked(symbol: str) -> None:
         entry.last_ranked_at = datetime.utcnow()
         entry.updated_at = datetime.utcnow()
 
+        # Persist to database if available
+        if _is_db_available():
+            try:
+                save_candidate_universe_entry(entry)
+            except Exception:
+                pass
+
 
 def get_candidate_symbols() -> list[str]:
     """Get list of active candidate symbols only."""
@@ -211,6 +307,13 @@ def get_candidate_symbols() -> list[str]:
 
 def get_candidate_universe_summary() -> dict[str, Any]:
     """Get summary statistics for the candidate universe."""
+    # Refresh from DB if available
+    if _is_db_available():
+        try:
+            _sync_db_to_memory()
+        except Exception:
+            pass
+
     all_candidates = list(_CANDIDATE_UNIVERSE.values())
     active = [c for c in all_candidates if c.status == CandidateStatus.ACTIVE]
     paused = [c for c in all_candidates if c.status == CandidateStatus.PAUSED]
@@ -222,4 +325,5 @@ def get_candidate_universe_summary() -> dict[str, Any]:
         "paused_count": len(paused),
         "removed_count": len(removed),
         "active_symbols": [c.symbol for c in active],
+        "persistence_mode": get_persistence_mode(),
     }

@@ -1,7 +1,7 @@
 """Recommendation Lifecycle Service - persistent storage for recommendation records.
 
 This service stores recommendation lifecycle records created from decision workflow outputs.
-Currently in-memory; designed to be replaced by Postgres persistence later.
+Uses Postgres persistence when DATABASE_URL is configured, falls back to in-memory storage.
 """
 
 from datetime import datetime
@@ -9,6 +9,13 @@ from typing import Any, Literal
 from uuid import uuid4
 
 from pydantic import BaseModel, ConfigDict, Field
+
+from app.services.persistence_service import (
+    get_database_table_status,
+    list_recommendation_lifecycle_records,
+    save_recommendation_lifecycle_record,
+    update_recommendation_status as update_recommendation_status_db,
+)
 
 RecommendationStatus = Literal["pending_review", "approved", "rejected", "paper_trade_created", "expired"]
 
@@ -68,13 +75,44 @@ class CreateRecommendationRequest(BaseModel):
     workflow_run_id: str | None = None
 
 
-# In-memory storage - replace with DB later
+# In-memory storage - fallback when DB unavailable
 _RECOMMENDATION_LIFECYCLE: dict[str, RecommendationLifecycleRecord] = {}  # key: id
 _RECOMMENDATIONS_BY_SYMBOL: dict[str, list[str]] = {}  # key: symbol, value: list of rec ids
 
 
+def _is_db_available() -> bool:
+    """Check if database persistence is available."""
+    status = get_database_table_status()
+    return status.get("connected", False)
+
+
+def _db_row_to_record(row: dict[str, Any]) -> RecommendationLifecycleRecord:
+    """Convert a database row dict to RecommendationLifecycleRecord."""
+    return RecommendationLifecycleRecord(
+        id=row.get("id", f"rec-{uuid4().hex[:12]}"),
+        symbol=row.get("symbol", ""),
+        asset_class=row.get("asset_class", "stock"),
+        horizon=row.get("horizon", "swing"),
+        source=row.get("source", "decision_workflow"),
+        feature_row_id=row.get("feature_row_id"),
+        score=float(row.get("score", 0)),
+        confidence=float(row.get("confidence", 0)),
+        action_label=row.get("action_label", ""),
+        status=row.get("status", "pending_review"),
+        reason=row.get("reason", ""),
+        risk_factors=row.get("risk_factors") if isinstance(row.get("risk_factors"), list) else [],
+        created_at=row.get("created_at") if isinstance(row.get("created_at"), datetime) else datetime.utcnow(),
+        updated_at=row.get("updated_at") if isinstance(row.get("updated_at"), datetime) else datetime.utcnow(),
+        workflow_run_id=row.get("workflow_run_id"),
+    )
+
+
 def create_recommendation(request: CreateRecommendationRequest) -> RecommendationLifecycleRecord:
-    """Create a new recommendation lifecycle record."""
+    """Create a new recommendation lifecycle record.
+
+    Saves to database if available, always updates in-memory cache.
+    Only candidate_ready records should be created from Decision Workflow.
+    """
     now = datetime.utcnow()
     record = RecommendationLifecycleRecord(
         symbol=request.symbol.upper(),
@@ -99,6 +137,13 @@ def create_recommendation(request: CreateRecommendationRequest) -> Recommendatio
         _RECOMMENDATIONS_BY_SYMBOL[symbol_upper] = []
     _RECOMMENDATIONS_BY_SYMBOL[symbol_upper].append(record.id)
 
+    # Persist to database if available
+    if _is_db_available():
+        try:
+            save_recommendation_lifecycle_record(record)
+        except Exception:
+            pass  # Continue even if DB save fails
+
     return record
 
 
@@ -112,7 +157,20 @@ def list_recommendations(
     symbol: str | None = None,
     limit: int = 100,
 ) -> list[RecommendationLifecycleRecord]:
-    """List recommendation records with optional filtering."""
+    """List recommendation records with optional filtering.
+
+    Uses database if available, falls back to in-memory storage.
+    """
+    if _is_db_available():
+        try:
+            rows = list_recommendation_lifecycle_records(
+                status=status, symbol=symbol, limit=limit
+            )
+            return [_db_row_to_record(row) for row in rows]
+        except Exception:
+            pass
+
+    # Fallback to in-memory
     records = list(_RECOMMENDATION_LIFECYCLE.values())
 
     if status:
@@ -132,10 +190,29 @@ def update_recommendation_status(id: str, status: RecommendationStatus) -> Recom
     """Update the status of a recommendation."""
     record = _RECOMMENDATION_LIFECYCLE.get(id)
     if record is None:
+        # Try to find in DB
+        if _is_db_available():
+            try:
+                rows = list_recommendation_lifecycle_records(limit=1000)
+                for row in rows:
+                    if row.get("id") == id:
+                        # Update in DB
+                        update_recommendation_status_db(id, status)
+                        return _db_row_to_record({**row, "status": status})
+            except Exception:
+                pass
         return None
 
     record.status = status
     record.updated_at = datetime.utcnow()
+
+    # Persist to database if available
+    if _is_db_available():
+        try:
+            update_recommendation_status_db(id, status)
+        except Exception:
+            pass
+
     return record
 
 
@@ -171,9 +248,30 @@ def get_latest_recommendation_for_symbol(symbol: str) -> RecommendationLifecycle
 
 def get_recommendation_summary() -> dict[str, Any]:
     """Get summary statistics for recommendations."""
+    # Use DB if available
+    if _is_db_available():
+        try:
+            rows = list_recommendation_lifecycle_records(limit=1000)
+            by_status: dict[str, int] = {}
+            for row in rows:
+                s = row.get("status", "pending_review")
+                by_status[s] = by_status.get(s, 0) + 1
+            return {
+                "total_recommendations": len(rows),
+                "by_status": by_status,
+                "pending_review": by_status.get("pending_review", 0),
+                "approved": by_status.get("approved", 0),
+                "rejected": by_status.get("rejected", 0),
+                "expired": by_status.get("expired", 0),
+                "persistence_mode": "postgres",
+            }
+        except Exception:
+            pass
+
+    # Fallback to in-memory
     all_records = list(_RECOMMENDATION_LIFECYCLE.values())
 
-    by_status: dict[str, int] = {}
+    by_status = {}
     for record in all_records:
         by_status[record.status] = by_status.get(record.status, 0) + 1
 
@@ -184,6 +282,7 @@ def get_recommendation_summary() -> dict[str, Any]:
         "approved": by_status.get("approved", 0),
         "rejected": by_status.get("rejected", 0),
         "expired": by_status.get("expired", 0),
+        "persistence_mode": "memory",
     }
 
 

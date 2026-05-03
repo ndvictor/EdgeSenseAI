@@ -40,7 +40,7 @@ function sourceTypeLabel(sourceType: string) {
 
 export default function CandidatesPage() {
   const [candidates, setCandidates] = useState<CandidateUniverseEntry[]>([]);
-  const [summary, setSummary] = useState<{ active_count: number; total_candidates: number }>({ active_count: 0, total_candidates: 0 });
+  const [summary, setSummary] = useState<{ active_count: number; total_candidates: number; persistence_mode?: "postgres" | "memory" }>({ active_count: 0, total_candidates: 0 });
   const [loading, setLoading] = useState(true);
   const [isRunningWorkflow, setIsRunningWorkflow] = useState(false);
   const [isPromotingScanner, setIsPromotingScanner] = useState(false);
@@ -180,8 +180,8 @@ export default function CandidatesPage() {
           <MetricCard label="Active" value={summary.active_count.toString()} />
           <MetricCard label="Ready to Rank" value={activeCandidates.length.toString()} />
           <MetricCard
-            label="Status"
-            value={activeCandidates.length > 0 ? "Ready" : "Empty"}
+            label="Persistence"
+            value={summary.persistence_mode === "postgres" ? "PostgreSQL" : "Memory"}
           />
         </div>
 

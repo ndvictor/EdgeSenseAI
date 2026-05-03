@@ -1143,6 +1143,7 @@ export type CandidateUniverseResponse = {
     paused_count: number;
     removed_count: number;
     active_symbols: string[];
+    persistence_mode?: "postgres" | "memory";
   };
 };
 

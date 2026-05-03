@@ -9,6 +9,11 @@ from pydantic import BaseModel, ConfigDict, Field
 from app.schemas import AccountRiskProfile, ModelVote, PricePlan, Recommendation, RiskPlan, TradeRecommendation
 from app.services.feature_store_service import FeatureStoreRunRequest, FeatureStoreRunResponse, run_feature_store_pipeline
 from app.services.model_orchestrator_service import ModelRunRequest, ModelRunResponse, run_model_orchestrator
+from app.services.persistence_service import (
+    get_latest_decision_workflow_run as get_latest_decision_workflow_run_db,
+    list_decision_workflow_runs as list_decision_workflow_runs_db,
+    save_decision_workflow_run,
+)
 from app.services.recommendation_lifecycle_service import CreateRecommendationRequest, create_recommendation
 
 MIN_MODEL_SCORE_TO_WATCH = 60
@@ -394,6 +399,13 @@ def run_decision_workflow(request: DecisionWorkflowRunRequest, account_profile: 
         completed_at=completed_at,
         duration_ms=max(0, int((completed_at - started_at).total_seconds() * 1000)),
     )
+
+    # Persist to database if available (best effort)
+    try:
+        save_decision_workflow_run(response)
+    except Exception:
+        pass  # Continue even if DB save fails
+
     _LATEST_DECISION_RUN = response
     _DECISION_RUNS.insert(0, response)
     del _DECISION_RUNS[100:]
@@ -401,10 +413,37 @@ def run_decision_workflow(request: DecisionWorkflowRunRequest, account_profile: 
 
 
 def get_latest_decision_workflow_run() -> DecisionWorkflowRunResponse | None:
+    """Get the latest decision workflow run.
+
+    Checks database first, falls back to in-memory storage.
+    """
+    # Try database first
+    try:
+        db_row = get_latest_decision_workflow_run_db()
+        if db_row:
+            # Convert DB row to response model
+            return DecisionWorkflowRunResponse(**db_row)
+    except Exception:
+        pass
+
+    # Fallback to in-memory
     return _LATEST_DECISION_RUN
 
 
 def list_decision_workflow_runs(limit: int = 20) -> list[DecisionWorkflowRunResponse]:
+    """List decision workflow runs.
+
+    Checks database first, falls back to in-memory storage.
+    """
+    # Try database first
+    try:
+        db_rows = list_decision_workflow_runs_db(limit)
+        if db_rows:
+            return [DecisionWorkflowRunResponse(**row) for row in db_rows]
+    except Exception:
+        pass
+
+    # Fallback to in-memory
     return _DECISION_RUNS[: max(1, min(limit, 100))]
 
 

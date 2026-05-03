@@ -6,7 +6,7 @@ from fastapi import APIRouter
 from pydantic import BaseModel
 
 from app.core.settings import settings
-from app.services.persistence_service import get_persistence_status
+from app.services.persistence_service import get_database_table_status, get_persistence_status
 
 router = APIRouter()
 
@@ -127,6 +127,59 @@ def _pgvector_status(persistence: dict) -> dict:
     }
 
 
+def _platform_persistence_status() -> dict:
+    """Check status of platform workflow persistence tables."""
+    status = get_database_table_status()
+    connected = status.get("connected", False)
+    tables = status.get("tables", {})
+
+    if not connected:
+        return {
+            "status": "not_connected",
+            "configured": bool(settings.database_url),
+            "connected": False,
+            "configured_label": "DATABASE_URL",
+            "connection_label": "Not connected",
+            "message": "Database not available. Platform workflow will use in-memory fallback.",
+            "tables": {},
+        }
+
+    # Count existing tables
+    existing_tables = {name: info for name, info in tables.items() if info.get("exists", False)}
+    total_tables = 5  # candidate_universe, decision_workflow_runs, recommendation_lifecycle, paper_trade_outcomes, model_training_examples
+
+    if len(existing_tables) == total_tables:
+        return {
+            "status": "ready",
+            "configured": True,
+            "connected": True,
+            "configured_label": "Tables exist",
+            "connection_label": "Ready",
+            "message": f"All {total_tables} platform persistence tables are available.",
+            "tables": existing_tables,
+        }
+    elif len(existing_tables) > 0:
+        return {
+            "status": "partial",
+            "configured": True,
+            "connected": True,
+            "configured_label": "Tables exist",
+            "connection_label": "Partial",
+            "message": f"Only {len(existing_tables)}/{total_tables} platform persistence tables exist. Run migration script.",
+            "tables": existing_tables,
+        }
+    else:
+        return {
+            "status": "missing_tables",
+            "configured": True,
+            "connected": True,
+            "configured_label": "Tables exist",
+            "connection_label": "Missing tables",
+            "message": "Database connected but platform persistence tables not created. Run migration script.",
+            "tables": {},
+        }
+
+
 @router.get("/data-sources/status", response_model=DataSourcesStatusResponse)
 def get_data_sources_status():
     now = datetime.utcnow().isoformat()
@@ -157,6 +210,7 @@ def get_data_sources_status():
         "pgvector": _pgvector_status(persistence),
         "redis": _env_status(settings.redis_url, "REDIS_URL is set.", "REDIS_URL is not configured."),
         "mock": _mock_status(),
+        "platform_persistence": _platform_persistence_status(),
     }
 
     source_specs = [
@@ -173,6 +227,7 @@ def get_data_sources_status():
         ("PostgreSQL", "postgresql", "database", ["feature_store", "recommendations", "paper_trading"], ["persistence"]),
         ("pgvector / Vector Memory", "pgvector", "database", ["vector_memory", "embeddings", "similarity_search", "agent_context"], ["memory_foundation", "semantic_retrieval", "agent_trace_recall"]),
         ("Redis", "redis", "database", ["caching", "agent_jobs", "sessions"], ["background_jobs"]),
+        ("Platform Persistence", "platform_persistence", "database", ["candidate_universe", "decision_workflows", "recommendations", "paper_trades", "training_data"], ["workflow_state", "historical_outcomes"]),
         ("Mock Provider", "mock", "testing", ["ui_testing", "offline_demo"], ["explicit_testing_only"]),
     ]
 
