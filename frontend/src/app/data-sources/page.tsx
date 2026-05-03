@@ -5,10 +5,10 @@ import { api, type DataSourcesStatusResponse } from "@/lib/api";
 import { MetricCard, PageHeader } from "@/components/Cards";
 
 function statusClass(status: string) {
-  if (status === "connected" || status === "configured") return "border-emerald-500 bg-emerald-500/10 text-emerald-300";
+  if (["connected", "configured", "installed"].includes(status)) return "border-emerald-500 bg-emerald-500/10 text-emerald-300";
   if (status === "test_only") return "border-cyan-500 bg-cyan-500/10 text-cyan-300";
   if (status === "partial") return "border-cyan-500 bg-cyan-500/10 text-cyan-300";
-  if (status === "error" || status === "unavailable") return "border-rose-500 bg-rose-500/10 text-rose-300";
+  if (["error", "unavailable", "not_installed"].includes(status)) return "border-rose-500 bg-rose-500/10 text-rose-300";
   return "border-amber-500 bg-amber-500/10 text-amber-300";
 }
 
@@ -35,7 +35,7 @@ export default function DataSourcesPage() {
         <PageHeader
           eyebrow="platform truth layer"
           title="Data Sources"
-          description="Configuration truth for every source. Runtime quote failures are shown in the market-data endpoints, while this page tells you what is installed, enabled, and configured."
+          description="Shows package installation, API credentials, feature flags, and persistence status. Live market connectivity is checked when a ticker request runs, not assumed from this page."
         />
 
         {error && <div className="rounded-xl border border-amber-500/30 bg-amber-500/10 px-4 py-3 text-sm text-amber-200">{error}</div>}
@@ -48,8 +48,8 @@ export default function DataSourcesPage() {
               <div className="grid grid-cols-2 gap-4 md:grid-cols-4">
                 <MetricCard label="Connected/Test" value={data.connected_sources} accent />
                 <MetricCard label="Total Sources" value={data.total_sources} />
-                <MetricCard label="Configured" value={data.sources.filter((source) => source.configured).length} />
-                <MetricCard label="Not Configured" value={data.sources.filter((source) => source.status === "not_configured").length} />
+                <MetricCard label="Available/Configured" value={data.sources.filter((source) => source.configured).length} />
+                <MetricCard label="Unavailable" value={data.sources.filter((source) => ["not_configured", "not_installed", "disabled", "missing_credentials"].includes(source.status)).length} />
               </div>
             </section>
 
@@ -69,12 +69,12 @@ export default function DataSourcesPage() {
                       <p className="mt-3 text-sm leading-relaxed text-slate-300">{source.message}</p>
                       <div className="mt-3 grid grid-cols-2 gap-2 text-xs">
                         <div className="rounded-lg border border-slate-800 bg-slate-950 px-3 py-2">
-                          <p className="uppercase tracking-wide text-slate-500">Configured</p>
+                          <p className="uppercase tracking-wide text-slate-500">{source.configured_label ?? "Configured"}</p>
                           <p className={source.configured ? "font-bold text-emerald-300" : "font-bold text-amber-300"}>{source.configured ? "Yes" : "No"}</p>
                         </div>
                         <div className="rounded-lg border border-slate-800 bg-slate-950 px-3 py-2">
-                          <p className="uppercase tracking-wide text-slate-500">Connected</p>
-                          <p className={source.connected ? "font-bold text-emerald-300" : "font-bold text-slate-300"}>{source.connected ? "Yes" : "Runtime check"}</p>
+                          <p className="uppercase tracking-wide text-slate-500">Live Connectivity</p>
+                          <p className={source.connected ? "font-bold text-emerald-300" : "font-bold text-slate-300"}>{source.connection_label ?? (source.connected ? "Yes" : "Checked during request")}</p>
                         </div>
                       </div>
                       <div className="mt-3 flex flex-wrap gap-2">
