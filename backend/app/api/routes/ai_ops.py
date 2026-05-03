@@ -17,6 +17,7 @@ from app.services.persistence_service import get_latest_strategy_workflow_run as
 from app.services.persistence_service import get_persistence_status
 from app.services.platform_workflows import get_agent_scorecards
 from app.services.strategy_workflow_run_service import get_strategy_workflow_run_summary
+from app.services.timing_cadence_service import build_cadence_plan, detect_market_phase
 from app.services.vector_memory_service import get_vector_memory_status, list_recent_memories
 from app.strategies.registry import list_strategies
 
@@ -43,6 +44,8 @@ def get_ai_ops_summary() -> dict[str, Any]:
     persistence = get_persistence_status()
     memory = get_vector_memory_status()
     recent_memories = list_recent_memories(25)
+    market_phase = detect_market_phase()
+    cadence_plan = build_cadence_plan(market_phase.market_phase)
     return {
         "data_source": "source_backed",
         "status": "foundation_installed",
@@ -53,6 +56,11 @@ def get_ai_ops_summary() -> dict[str, Any]:
             "litellm": {"installed_via_requirements": True, "status": "placeholder_cost_estimates_only"},
             "apscheduler": scheduler,
         },
+        "market_phase": market_phase.model_dump(),
+        "cadence_plan": cadence_plan.model_dump(),
+        "active_loop": cadence_plan.active_loop,
+        "scan_mode": cadence_plan.scan_mode,
+        "llm_validation_policy": cadence_plan.llm_validation_policy,
         "data_quality": {"agent": "Data Quality Agent", "status": "configured", "data_source": "source_backed"},
         "feature_store": feature_store,
         "model_orchestrator": {"agent": "Model Orchestrator Agent", "status": "configured", "data_source": "source_backed"},
