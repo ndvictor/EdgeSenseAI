@@ -45,7 +45,7 @@ from app.schemas import (
 from app.services.account_feasibility_service import AccountFeasibilityResult, evaluate_account_feasibility
 from app.services.backtesting_service import BacktestingResponse, build_backtesting_summary
 from app.services.candidate_universe_service import get_candidate_symbols
-from app.services.decision_workflow_service import DecisionWorkflowRunRequest, run_decision_workflow
+from app.services.decision_workflow_service import DecisionWorkflowRunRequest, get_latest_decision_workflow_run, run_decision_workflow
 from app.services.edge_signal_service import build_edge_signals
 from app.services.feature_engineering_service import EngineeredFeatures, build_features
 from app.services.health_service import get_health_snapshot
@@ -127,11 +127,79 @@ def agents() -> list[AgentStatus]:
 
 
 def _build_decision_command_center() -> CommandCenterResponse:
+    """Build Command Center response - READ ONLY, does not run workflows.
+
+    Uses latest stored workflow run if available. If candidates exist but
+    no workflow has been run, shows candidates_ready_not_ranked state.
+    """
     # Pull active candidates from candidate universe
     symbols = get_candidate_symbols()
 
     if not symbols:
         # No candidates selected - return no_action state
+        return CommandCenterResponse(
+            account_profile=_ACCOUNT_PROFILE,
+            top_action=None,
+            top_recommendations=[],
+            urgent_edge_alerts=[],
+            agents=agents(),
+            source_data_status=[],
+            dashboard_mode="no_symbols_selected",
+            cost_usage_message="No candidates selected. Add symbols from Stocks search, Watchlist, Scanner, or Candidate Universe before ranking.",
+        )
+
+    # Try to use latest stored workflow run (read-only)
+    latest_workflow = get_latest_decision_workflow_run()
+
+    if latest_workflow is None:
+        # Candidates exist but workflow has not been run
+        return CommandCenterResponse(
+            account_profile=_ACCOUNT_PROFILE,
+            top_action=None,
+            top_recommendations=[],
+            urgent_edge_alerts=[],
+            agents=agents(),
+            source_data_status=[],
+            dashboard_mode="candidates_ready_not_ranked",
+            cost_usage_message=f"{len(symbols)} candidate(s) ready but decision workflow has not been run. Go to Candidates page to run workflow.",
+        )
+
+    # Use latest stored workflow results
+    source_status = [
+        SourceDataStatus(
+            symbol=candidate.symbol,
+            provider=candidate.provider,
+            data_quality=candidate.data_quality,
+            is_mock=candidate.source == "mock",
+            error="; ".join(candidate.blockers) if candidate.blockers else None,
+        )
+        for candidate in latest_workflow.candidates
+    ]
+
+    # Check if workflow data is stale (older than 5 minutes)
+    from datetime import datetime
+    workflow_age_seconds = (datetime.utcnow() - latest_workflow.completed_at).total_seconds() if latest_workflow.completed_at else 0
+    is_stale = workflow_age_seconds > 300  # 5 minutes
+
+    stale_message = " (Data may be stale - consider re-running workflow)" if is_stale else ""
+
+    return CommandCenterResponse(
+        account_profile=_ACCOUNT_PROFILE,
+        top_action=latest_workflow.top_action,
+        top_recommendations=latest_workflow.recommendations,
+        urgent_edge_alerts=[],
+        agents=agents(),
+        source_data_status=source_status,
+        dashboard_mode=f"decision_workflow:{latest_workflow.status}",
+        cost_usage_message=f"Latest workflow {latest_workflow.run_id} completed {int(workflow_age_seconds)}s ago.{stale_message} {len([c for c in latest_workflow.candidates if c.status == 'candidate_ready'])} passed source-backed quality and model thresholds.",
+    )
+
+
+def _run_command_center_workflow() -> CommandCenterResponse:
+    """Explicitly run decision workflow on candidate universe and return Command Center response."""
+    symbols = get_candidate_symbols()
+
+    if not symbols:
         return CommandCenterResponse(
             account_profile=_ACCOUNT_PROFILE,
             top_action=None,
@@ -175,7 +243,7 @@ def _build_decision_command_center() -> CommandCenterResponse:
         agents=agents(),
         source_data_status=source_status,
         dashboard_mode=f"decision_workflow:{workflow.status}",
-        cost_usage_message=f"Ranked {len(symbols)} candidate(s) from candidate universe. {len([c for c in workflow.candidates if c.status == 'candidate_ready'])} passed source-backed quality and model thresholds.",
+        cost_usage_message=f"Workflow {workflow.run_id} just completed. Ranked {len(symbols)} candidate(s). {len([c for c in workflow.candidates if c.status == 'candidate_ready'])} passed source-backed quality and model thresholds.",
     )
 
 
@@ -320,4 +388,15 @@ def get_journal_summary():
 
 @app.get("/api/command-center", response_model=CommandCenterResponse)
 def get_command_center():
+    """Get Command Center data - READ ONLY. Does not run workflows.
+
+    Uses latest stored workflow run if available. If candidates exist but
+    no workflow has been run, shows candidates_ready_not_ranked state.
+    """
     return _build_decision_command_center()
+
+
+@app.post("/api/command-center/run", response_model=CommandCenterResponse)
+def post_command_center_run():
+    """Explicitly run decision workflow on candidate universe and return Command Center response."""
+    return _run_command_center_workflow()

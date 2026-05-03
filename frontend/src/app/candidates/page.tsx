@@ -3,7 +3,7 @@
 import { useEffect, useState } from "react";
 import { PageHeader, MetricCard } from "@/components/Cards";
 import { api, type CandidateUniverseEntry, type DecisionWorkflowRunResponse } from "@/lib/api";
-import { Play, Trash2, X, Users, TrendingUp, AlertTriangle, CheckCircle } from "lucide-react";
+import { Play, Trash2, X, Users, TrendingUp, AlertTriangle, CheckCircle, ScanLine, Radio } from "lucide-react";
 
 function formatDate(dateStr: string | null | undefined) {
   if (!dateStr) return "—";
@@ -43,7 +43,10 @@ export default function CandidatesPage() {
   const [summary, setSummary] = useState<{ active_count: number; total_candidates: number }>({ active_count: 0, total_candidates: 0 });
   const [loading, setLoading] = useState(true);
   const [isRunningWorkflow, setIsRunningWorkflow] = useState(false);
+  const [isPromotingScanner, setIsPromotingScanner] = useState(false);
+  const [isPromotingWatchlist, setIsPromotingWatchlist] = useState(false);
   const [workflowResult, setWorkflowResult] = useState<DecisionWorkflowRunResponse | null>(null);
+  const [recommendations, setRecommendations] = useState<Array<Record<string, unknown>>>([]);
   const [error, setError] = useState<string | null>(null);
 
   const loadCandidates = async () => {
@@ -93,12 +96,63 @@ export default function CandidatesPage() {
       const result = await api.runCandidateUniverseWorkflow();
       setWorkflowResult(result);
       await loadCandidates(); // Refresh to update last_ranked_at
+      await loadRecommendations(); // Refresh recommendations
     } catch (err) {
       setError("Failed to run decision workflow");
     } finally {
       setIsRunningWorkflow(false);
     }
   };
+
+  const loadRecommendations = async () => {
+    try {
+      const response = await api.getRecommendationLifecycle("pending_review", undefined, 20);
+      setRecommendations(response);
+    } catch (err) {
+      // Silent fail - recommendations are optional
+    }
+  };
+
+  const handlePromoteScanner = async () => {
+    setIsPromotingScanner(true);
+    setError(null);
+
+    try {
+      const result = await api.promoteScannerToCandidates({ min_score: 60, max_candidates: 25 });
+      if (result.success) {
+        await loadCandidates();
+      } else {
+        setError(result.message);
+      }
+    } catch (err) {
+      setError("Failed to promote scanner results. Run a market scan first.");
+    } finally {
+      setIsPromotingScanner(false);
+    }
+  };
+
+  const handlePromoteWatchlist = async () => {
+    setIsPromotingWatchlist(true);
+    setError(null);
+
+    try {
+      // For now, we'll use a default set - in production this would come from user selection
+      const result = await api.promoteWatchlistToCandidates({ priority_score: 50 });
+      if (result.success) {
+        await loadCandidates();
+      } else {
+        setError(result.message);
+      }
+    } catch (err) {
+      setError("Failed to promote watchlist symbols");
+    } finally {
+      setIsPromotingWatchlist(false);
+    }
+  };
+
+  useEffect(() => {
+    loadRecommendations();
+  }, []);
 
   const activeCandidates = candidates.filter((c) => c.status === "active");
 
@@ -153,6 +207,34 @@ export default function CandidatesPage() {
                 Run Decision Workflow
               </>
             )}
+          </button>
+
+          <button
+            onClick={handlePromoteScanner}
+            disabled={isPromotingScanner}
+            className={`flex items-center gap-2 rounded-xl border border-cyan-500 bg-slate-900 px-4 py-2 text-sm font-bold uppercase text-cyan-400 transition-all ${isPromotingScanner ? "cursor-not-allowed opacity-50" : "hover:bg-cyan-500 hover:text-slate-950"}`}
+            title="Promote matched signals from latest scanner run"
+          >
+            {isPromotingScanner ? (
+              <div className="h-4 w-4 animate-spin rounded-full border-2 border-cyan-400 border-t-transparent" />
+            ) : (
+              <ScanLine className="h-4 w-4" />
+            )}
+            Promote Scanner
+          </button>
+
+          <button
+            onClick={handlePromoteWatchlist}
+            disabled={isPromotingWatchlist}
+            className={`flex items-center gap-2 rounded-xl border border-blue-500 bg-slate-900 px-4 py-2 text-sm font-bold uppercase text-blue-400 transition-all ${isPromotingWatchlist ? "cursor-not-allowed opacity-50" : "hover:bg-blue-500 hover:text-slate-950"}`}
+            title="Promote symbols from watchlist"
+          >
+            {isPromotingWatchlist ? (
+              <div className="h-4 w-4 animate-spin rounded-full border-2 border-blue-400 border-t-transparent" />
+            ) : (
+              <Radio className="h-4 w-4" />
+            )}
+            Promote Watchlist
           </button>
 
           {activeCandidates.length > 0 && (
@@ -291,6 +373,53 @@ export default function CandidatesPage() {
           )}
         </section>
 
+        {/* Pending Recommendations Section */}
+        {recommendations.length > 0 && (
+          <section className="mt-6 rounded-xl border border-emerald-700 bg-slate-950 p-4 shadow-sm">
+            <div className="mb-4 flex items-center justify-between">
+              <h2 className="text-lg font-semibold text-emerald-500">Pending Recommendations ({recommendations.length})</h2>
+            </div>
+            <div className="space-y-3">
+              {recommendations.slice(0, 5).map((rec) => (
+                <div key={rec.id as string} className="flex items-center justify-between rounded-lg border border-slate-800 bg-slate-900 p-3">
+                  <div>
+                    <p className="font-bold text-white">{rec.symbol as string}</p>
+                    <p className="text-xs text-slate-400">Score: {rec.score as number}/100 • Confidence: {((rec.confidence as number) * 100).toFixed(0)}%</p>
+                  </div>
+                  <div className="flex gap-2">
+                    <button
+                      onClick={async () => {
+                        try {
+                          await api.approveRecommendation(rec.id as string);
+                          await loadRecommendations();
+                        } catch (err) {
+                          setError("Failed to approve recommendation");
+                        }
+                      }}
+                      className="rounded-lg border border-emerald-500 px-3 py-1 text-xs font-bold uppercase text-emerald-400 transition-all hover:bg-emerald-500 hover:text-slate-950"
+                    >
+                      Approve
+                    </button>
+                    <button
+                      onClick={async () => {
+                        try {
+                          await api.rejectRecommendation(rec.id as string);
+                          await loadRecommendations();
+                        } catch (err) {
+                          setError("Failed to reject recommendation");
+                        }
+                      }}
+                      className="rounded-lg border border-amber-500 px-3 py-1 text-xs font-bold uppercase text-amber-400 transition-all hover:bg-amber-500 hover:text-slate-950"
+                    >
+                      Reject
+                    </button>
+                  </div>
+                </div>
+              ))}
+            </div>
+          </section>
+        )}
+
         {/* Notes Section */}
         <section className="mt-6 rounded-xl border border-slate-700 bg-slate-950 p-4 shadow-sm">
           <h3 className="mb-2 text-sm font-semibold text-slate-300">How it works</h3>
@@ -299,6 +428,8 @@ export default function CandidatesPage() {
             <li>• Click &quot;Run Decision Workflow&quot; to rank candidates using source-backed data and models</li>
             <li>• Candidates are scored on feature quality, model outputs, and risk metrics</li>
             <li>• Only candidates passing all gates become actionable recommendations</li>
+            <li>• Promote Scanner: Adds matched signals from latest market scan</li>
+            <li>• Promote Watchlist: Adds symbols from your watchlists</li>
           </ul>
         </section>
       </div>

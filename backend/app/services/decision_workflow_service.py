@@ -9,6 +9,7 @@ from pydantic import BaseModel, ConfigDict, Field
 from app.schemas import AccountRiskProfile, ModelVote, PricePlan, Recommendation, RiskPlan, TradeRecommendation
 from app.services.feature_store_service import FeatureStoreRunRequest, FeatureStoreRunResponse, run_feature_store_pipeline
 from app.services.model_orchestrator_service import ModelRunRequest, ModelRunResponse, run_model_orchestrator
+from app.services.recommendation_lifecycle_service import CreateRecommendationRequest, create_recommendation
 
 MIN_MODEL_SCORE_TO_WATCH = 60
 DEFAULT_MIN_REWARD_RISK_RATIO = 3.0
@@ -352,9 +353,32 @@ def run_decision_workflow(request: DecisionWorkflowRunRequest, account_profile: 
     top_action = _candidate_to_trade_recommendation(top_candidate, account_profile) if top_candidate else None
     recommendations = [_candidate_to_recommendation(candidate) for candidate in limited]
     status = "completed_with_candidates" if top_action else "completed_no_actionable_candidates"
+
+    # Create recommendation lifecycle records for candidate_ready candidates
+    workflow_run_id = f"dwf-{uuid4().hex[:12]}"
+    for candidate in ready:
+        try:
+            create_recommendation(
+                CreateRecommendationRequest(
+                    symbol=candidate.symbol,
+                    asset_class=candidate.asset_class,
+                    horizon=candidate.horizon,
+                    source=request.source,
+                    feature_row_id=candidate.feature_row_id,
+                    score=candidate.final_score,
+                    confidence=candidate.confidence,
+                    action_label="MODEL WATCH CANDIDATE",
+                    reason=candidate.reason,
+                    risk_factors=candidate.blockers + candidate.warnings,
+                    workflow_run_id=workflow_run_id,
+                )
+            )
+        except Exception as exc:
+            warnings.append(f"Failed to create recommendation lifecycle for {candidate.symbol}: {exc}")
+
     completed_at = datetime.utcnow()
     response = DecisionWorkflowRunResponse(
-        run_id=f"dwf-{uuid4().hex[:12]}",
+        run_id=workflow_run_id,
         status=status,
         source=request.source,
         horizon=request.horizon,

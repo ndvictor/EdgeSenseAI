@@ -13,7 +13,7 @@ from app.strategies.registry import StrategyConfig, get_strategy
 
 class MarketScannerRequest(BaseModel):
     strategy_key: str
-    symbols: list[str] = Field(default_factory=lambda: ["AMD"])
+    symbols: list[str] = Field(default_factory=list)
     data_source: str = "auto"
     auto_run: bool = False
     trigger_type: Literal["manual", "scheduled"] = "manual"

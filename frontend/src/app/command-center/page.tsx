@@ -4,7 +4,7 @@ import { useEffect, useState } from "react";
 import Link from "next/link";
 import { api, type CommandCenterResponse } from "@/lib/api";
 import { EdgeSignalGrid, MetricCard, PageHeader, RecommendationTable } from "@/components/Cards";
-import { Users, TrendingUp, AlertTriangle } from "lucide-react";
+import { Users, TrendingUp, AlertTriangle, Play, Clock } from "lucide-react";
 
 function money(value: number) {
   return `$${value.toLocaleString(undefined, { maximumFractionDigits: 2 })}`;
@@ -17,10 +17,33 @@ function percent(value: number) {
 export default function CommandCenterPage() {
   const [data, setData] = useState<CommandCenterResponse | null>(null);
   const [error, setError] = useState<string | null>(null);
+  const [isRunning, setIsRunning] = useState(false);
+
+  const loadData = async () => {
+    try {
+      const response = await api.getCommandCenter();
+      setData(response);
+    } catch (err) {
+      setError((err as Error).message);
+    }
+  };
 
   useEffect(() => {
-    api.getCommandCenter().then(setData).catch((err) => setError(err.message));
+    loadData();
   }, []);
+
+  const handleRunWorkflow = async () => {
+    setIsRunning(true);
+    setError(null);
+    try {
+      const response = await api.runCommandCenter();
+      setData(response);
+    } catch (err) {
+      setError("Failed to run workflow");
+    } finally {
+      setIsRunning(false);
+    }
+  };
 
   return (
     <div className="min-h-screen bg-slate-500 p-4 lg:p-6">
@@ -41,7 +64,7 @@ export default function CommandCenterPage() {
           <div className="py-8 text-center text-sm text-slate-300">Loading dashboard...</div>
         ) : (
           <div className="space-y-4">
-            {!data.top_action || data.dashboard_mode === "no_symbols_selected" || data.top_recommendations.length === 0 ? (
+            {data.dashboard_mode === "no_symbols_selected" ? (
               <section className="rounded-2xl border border-amber-500 bg-slate-950 p-5 shadow-sm">
                 <div className="flex items-center gap-3">
                   <AlertTriangle className="h-8 w-8 text-amber-400" />
@@ -82,11 +105,101 @@ export default function CommandCenterPage() {
                     </div>
                   </Link>
                 </div>
+              </section>
+            ) : data.dashboard_mode === "candidates_ready_not_ranked" ? (
+              <section className="rounded-2xl border border-cyan-500 bg-slate-950 p-5 shadow-sm">
+                <div className="flex items-center gap-3">
+                  <Clock className="h-8 w-8 text-cyan-400" />
+                  <div>
+                    <p className="text-xs font-semibold uppercase tracking-[0.22em] text-cyan-400">Candidates Ready</p>
+                    <h2 className="mt-1 text-2xl font-black text-white">Workflow not yet run</h2>
+                  </div>
+                </div>
+                <p className="mt-4 max-w-5xl text-sm leading-relaxed text-slate-300">
+                  {data.cost_usage_message}
+                </p>
+
+                <div className="mt-6 flex flex-wrap gap-3">
+                  <button
+                    onClick={handleRunWorkflow}
+                    disabled={isRunning}
+                    className={`flex items-center gap-2 rounded-xl px-4 py-2 text-sm font-bold uppercase transition-all ${
+                      isRunning
+                        ? "cursor-not-allowed border border-slate-600 bg-slate-800 text-slate-500"
+                        : "border border-emerald-500 bg-slate-900 text-emerald-400 hover:bg-emerald-500 hover:text-slate-950"
+                    }`}
+                  >
+                    {isRunning ? (
+                      <>
+                        <div className="h-4 w-4 animate-spin rounded-full border-2 border-emerald-400 border-t-transparent" />
+                        Running...
+                      </>
+                    ) : (
+                      <>
+                        <Play className="h-4 w-4" />
+                        Run Decision Workflow
+                      </>
+                    )}
+                  </button>
+
+                  <Link
+                    href="/candidates"
+                    className="flex items-center gap-2 rounded-xl border border-cyan-500 bg-slate-900 px-4 py-2 text-sm font-bold uppercase text-cyan-400 transition-all hover:bg-cyan-500 hover:text-slate-950"
+                  >
+                    <Users className="h-4 w-4" />
+                    Go to Candidates
+                  </Link>
+                </div>
+              </section>
+            ) : !data.top_action || data.top_recommendations.length === 0 ? (
+              <section className="rounded-2xl border border-amber-500 bg-slate-950 p-5 shadow-sm">
+                <div className="flex items-center gap-3">
+                  <AlertTriangle className="h-8 w-8 text-amber-400" />
+                  <div>
+                    <p className="text-xs font-semibold uppercase tracking-[0.22em] text-amber-400">No actionable recommendations</p>
+                    <h2 className="mt-1 text-2xl font-black text-white">Candidates exist but none passed all gates</h2>
+                  </div>
+                </div>
+                <p className="mt-4 max-w-5xl text-sm leading-relaxed text-slate-300">
+                  Candidates were ranked but none passed the quality, model score, and risk gates required for actionable status.
+                </p>
+
+                <div className="mt-6 flex flex-wrap gap-3">
+                  <button
+                    onClick={handleRunWorkflow}
+                    disabled={isRunning}
+                    className={`flex items-center gap-2 rounded-xl px-4 py-2 text-sm font-bold uppercase transition-all ${
+                      isRunning
+                        ? "cursor-not-allowed border border-slate-600 bg-slate-800 text-slate-500"
+                        : "border border-emerald-500 bg-slate-900 text-emerald-400 hover:bg-emerald-500 hover:text-slate-950"
+                    }`}
+                  >
+                    {isRunning ? (
+                      <>
+                        <div className="h-4 w-4 animate-spin rounded-full border-2 border-emerald-400 border-t-transparent" />
+                        Running...
+                      </>
+                    ) : (
+                      <>
+                        <Play className="h-4 w-4" />
+                        Re-run Workflow
+                      </>
+                    )}
+                  </button>
+
+                  <Link
+                    href="/candidates"
+                    className="flex items-center gap-2 rounded-xl border border-cyan-500 bg-slate-900 px-4 py-2 text-sm font-bold uppercase text-cyan-400 transition-all hover:bg-cyan-500 hover:text-slate-950"
+                  >
+                    <Users className="h-4 w-4" />
+                    Manage Candidates
+                  </Link>
+                </div>
 
                 {/* Show source data status if available */}
                 {data.source_data_status.length > 0 && (
                   <div className="mt-6">
-                    <p className="mb-3 text-sm font-semibold text-slate-400">Last source data status:</p>
+                    <p className="mb-3 text-sm font-semibold text-slate-400">Source data status:</p>
                     <div className="grid grid-cols-1 gap-3 lg:grid-cols-5">
                       {data.source_data_status.map((source) => (
                         <div key={source.symbol} className="rounded-xl border border-slate-800 bg-slate-900 p-4">

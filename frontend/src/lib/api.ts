@@ -1268,4 +1268,23 @@ export const api = {
     request<DecisionWorkflowRunResponse>("/api/decision-workflows/run", { method: "POST", body: JSON.stringify(payload) }),
   runDecisionWorkflowDefault: () => request<DecisionWorkflowRunResponse>("/api/decision-workflows/run-default", { method: "POST" }),
   runCandidateUniverseWorkflow: () => request<DecisionWorkflowRunResponse>("/api/decision-workflows/run-candidate-universe", { method: "POST" }),
+
+  // Scanner Promotion API
+  promoteScannerToCandidates: (payload?: { min_score?: number; max_candidates?: number; horizon?: string }) =>
+    request<{ success: boolean; message: string; added: Array<Record<string, unknown>>; skipped: Array<Record<string, unknown>>; total_added: number; total_skipped: number }>("/api/market-scanner/promote-to-candidates", { method: "POST", body: JSON.stringify(payload || {}) }),
+
+  // Watchlist Promotion API
+  promoteWatchlistToCandidates: (payload?: { watchlist_id?: string; symbols?: string[]; horizon?: string; priority_score?: number }) =>
+    request<{ success: boolean; message: string; added: Array<Record<string, unknown>>; skipped: Array<Record<string, unknown>>; total_added: number; total_skipped: number }>("/api/watchlists/promote-to-candidates", { method: "POST", body: JSON.stringify(payload || {}) }),
+
+  // Recommendation Lifecycle APIs
+  getRecommendationLifecycle: (status?: string, symbol?: string, limit?: number) =>
+    request<Array<Record<string, unknown>>>(`/api/recommendation-lifecycle?${status ? `status=${status}&` : ""}${symbol ? `symbol=${symbol}&` : ""}${limit ? `limit=${limit}` : ""}`),
+  getRecommendationLifecycleSummary: () => request<Record<string, unknown>>("/api/recommendation-lifecycle/summary"),
+  approveRecommendation: (id: string) => request<{ success: boolean; recommendation: Record<string, unknown> | null; message: string }>("/api/recommendation-lifecycle/approve", { method: "POST", body: JSON.stringify({ id }) }),
+  rejectRecommendation: (id: string) => request<{ success: boolean; recommendation: Record<string, unknown> | null; message: string }>("/api/recommendation-lifecycle/reject", { method: "POST", body: JSON.stringify({ id }) }),
+  expireRecommendation: (id: string) => request<{ success: boolean; recommendation: Record<string, unknown> | null; message: string }>("/api/recommendation-lifecycle/expire", { method: "POST", body: JSON.stringify({ id }) }),
+
+  // Command Center Run API
+  runCommandCenter: () => request<CommandCenterResponse>("/api/command-center/run", { method: "POST" }),
 };
