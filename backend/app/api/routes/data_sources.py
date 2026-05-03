@@ -113,6 +113,20 @@ def _mock_status() -> dict:
     }
 
 
+def _pgvector_status(persistence: dict) -> dict:
+    pgvector_status = persistence.get("pgvector_status", "unknown")
+    postgres_connected = persistence.get("postgres_persistence_status") == "connected"
+    is_available = postgres_connected and pgvector_status in {"available", "connected", "enabled", "installed"}
+    return {
+        "status": pgvector_status,
+        "configured": bool(settings.database_url),
+        "connected": is_available,
+        "configured_label": "Postgres extension",
+        "connection_label": "Available" if is_available else "Not available",
+        "message": f"pgvector status={pgvector_status}. Requires PostgreSQL connection and CREATE EXTENSION vector for embeddings, memory, and similarity search.",
+    }
+
+
 @router.get("/data-sources/status", response_model=DataSourcesStatusResponse)
 def get_data_sources_status():
     now = datetime.utcnow().isoformat()
@@ -140,6 +154,7 @@ def get_data_sources_status():
             "connection_label": "Connected" if persistence["postgres_persistence_status"] == "connected" else "Not connected",
             "message": f"DATABASE_URL configured. pgvector={persistence['pgvector_status']}. {persistence.get('message') or ''}",
         },
+        "pgvector": _pgvector_status(persistence),
         "redis": _env_status(settings.redis_url, "REDIS_URL is set.", "REDIS_URL is not configured."),
         "mock": _mock_status(),
     }
@@ -156,6 +171,7 @@ def get_data_sources_status():
         ("Benzinga", "benzinga", "news", ["news", "events", "market_radar"], ["market_radar_agent"]),
         ("OpenAI", "openai", "internal", ["agents", "explanations"], ["llm_explanations"]),
         ("PostgreSQL", "postgresql", "database", ["feature_store", "recommendations", "paper_trading"], ["persistence"]),
+        ("pgvector / Vector Memory", "pgvector", "database", ["vector_memory", "embeddings", "similarity_search", "agent_context"], ["memory_foundation", "semantic_retrieval", "agent_trace_recall"]),
         ("Redis", "redis", "database", ["caching", "agent_jobs", "sessions"], ["background_jobs"]),
         ("Mock Provider", "mock", "testing", ["ui_testing", "offline_demo"], ["explicit_testing_only"]),
     ]
