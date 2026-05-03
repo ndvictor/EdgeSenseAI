@@ -2,18 +2,17 @@ import type { Metadata } from "next";
 import "./globals.css";
 import { Sidebar } from "@/components/Sidebar";
 
-export const metadata: Metadata = {
-  title: "EdgeSenseAI",
-  description: "Small-account edge signal and recommendation platform",
-};
-
 export default function RootLayout({ children }: { children: React.ReactNode }) {
   return (
     <html lang="en">
-      <body>
-        <div className="flex min-h-screen bg-slate-950 text-slate-100">
+      <body className="bg-slate-950 text-slate-100">
+        <div className="flex min-h-screen">   {/* This is key */}
           <Sidebar />
-          <main className="min-w-0 flex-1">{children}</main>
+          
+          {/* Main content area - also full height */}
+          <main className="flex-1 min-w-0 bg-slate-500 min-h-screen">
+            {children}
+          </main>
         </div>
       </body>
     </html>

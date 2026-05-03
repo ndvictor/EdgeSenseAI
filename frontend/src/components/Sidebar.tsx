@@ -52,7 +52,7 @@ export function Sidebar() {
   const pathname = usePathname();
 
   return (
-    <aside className="sticky top-1 h-screen w-68 shrink-0 bg-slate-950 px-1 py-2">
+    <aside className="flex flex-col min-h-screen w-68 shrink-0 bg-slate-950 px-1 py-2">
       <Link href="/command-center" className="mb-8 flex items-center gap-3">
         <div className="flex h-11 w-11 items-center justify-center rounded-2xl bg-emerald-600 text-slate-950 text-xl tracking-tight font-black">E</div>
         <div>
