@@ -2,9 +2,10 @@ from datetime import datetime, timezone
 from typing import Any, Literal
 from uuid import uuid4
 
-from pydantic import BaseModel, Field
+from pydantic import BaseModel, ConfigDict, Field
 
 from app.core.settings import settings
+from app.services.persistence_service import save_llm_usage_record
 
 ProviderStatus = Literal["configured", "not_configured", "placeholder", "dry_run_available", "error"]
 
@@ -20,6 +21,8 @@ class LlmProviderStatus(BaseModel):
 
 
 class LlmModelConfig(BaseModel):
+    model_config = ConfigDict(protected_namespaces=())
+
     model_name: str
     provider: str
     role: str
@@ -421,6 +424,7 @@ def test_gateway_call(request: LlmGatewayTestCallRequest) -> LlmGatewayTestCallR
         dry_run=dry_run,
     )
     _USAGE_RECORDS.append(record)
+    save_llm_usage_record(record)
     return LlmGatewayTestCallResponse(
         id=record.id,
         provider=request.provider,
@@ -530,6 +534,7 @@ def run_llm_gateway_call(
         dry_run=dry_run,
     )
     _USAGE_RECORDS.append(record)
+    save_llm_usage_record(record)
     return LlmGatewayCallResponse(
         dry_run=dry_run,
         provider=provider,

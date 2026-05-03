@@ -3,6 +3,7 @@ from typing import Any
 from app.models.weighted_ranker import WeightedRankerOutput, run_weighted_ranker_v1
 from app.models.xgboost_ranker import XGBoostRankerOutput, run_xgboost_ranker_safe
 from app.services.feature_store_service import FeatureStoreRow
+from app.services.persistence_service import save_model_run_output
 from app.strategies.registry import StrategyConfig
 
 
@@ -39,12 +40,14 @@ def run_selected_models(
     for model_key in selected_models:
         if model_key == "weighted_ranker":
             output = run_weighted_ranker_v1(feature_row, strategy_config).model_dump()
+            save_model_run_output(output, feature_row=feature_row, strategy_key=strategy_config.strategy_key)
             if output["status"] == "completed":
                 completed.append(output)
             else:
                 blocked.append(output)
         elif model_key == "xgboost_ranker":
             output = run_xgboost_ranker_safe(feature_row, strategy_config).model_dump()
+            save_model_run_output(output, feature_row=feature_row, strategy_key=strategy_config.strategy_key)
             if output["status"] == "completed":
                 completed.append(output)
             elif output["status"] in {"not_trained", "not_available"}:

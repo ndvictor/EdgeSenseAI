@@ -35,7 +35,7 @@ services:
       - edgesenseai-net
 
   postgres:
-    image: postgres:16
+    image: pgvector/pgvector:pg16
     container_name: edgesenseai-postgres
     environment:
       POSTGRES_DB: edgesenseai
@@ -45,6 +45,7 @@ services:
       - "55532:5432"
     volumes:
       - postgres-data:/var/lib/postgresql/data
+      - ./backend/app/db/sql:/docker-entrypoint-initdb.d:ro
     networks:
       - edgesenseai-net
 
@@ -85,6 +86,10 @@ services:
       MAX_DAILY_AGENT_RUNS: "500"
       AWS_REGION: us-east-1
       BEDROCK_MODEL_ID: anthropic.claude-3-haiku-20240307-v1:0
+      EMBEDDINGS_PROVIDER: placeholder
+      EMBEDDINGS_MODEL: placeholder-hash-embedding
+      EMBEDDINGS_ENABLE_PAID_CALLS: "false"
+      VECTOR_MEMORY_ENABLED: "true"
     ports:
       - "8900:8000"
     volumes:

@@ -11,8 +11,13 @@ from app.services.feature_store_service import get_feature_store_status
 from app.services.llm_gateway_service import get_gateway_summary
 from app.services.market_scan_run_service import get_scan_run_summary
 from app.services.model_orchestrator_service import get_model_registry
+from app.services.persistence_service import get_latest_feature_store_row as get_latest_persisted_feature_row
+from app.services.persistence_service import get_latest_market_scan_run as get_latest_persisted_scan_run
+from app.services.persistence_service import get_latest_strategy_workflow_run as get_latest_persisted_strategy_workflow_run
+from app.services.persistence_service import get_persistence_status
 from app.services.platform_workflows import get_agent_scorecards
 from app.services.strategy_workflow_run_service import get_strategy_workflow_run_summary
+from app.services.vector_memory_service import get_vector_memory_status, list_recent_memories
 from app.strategies.registry import list_strategies
 
 router = APIRouter()
@@ -35,6 +40,9 @@ def get_ai_ops_summary() -> dict[str, Any]:
     last_scheduled_scan = get_last_scheduled_scan_result()
     workflow_summary = get_strategy_workflow_run_summary()
     latest_workflow = workflow_summary.latest_run
+    persistence = get_persistence_status()
+    memory = get_vector_memory_status()
+    recent_memories = list_recent_memories(25)
     return {
         "data_source": "source_backed",
         "status": "foundation_installed",
@@ -66,6 +74,16 @@ def get_ai_ops_summary() -> dict[str, Any]:
         "strategy_workflow_runs_today": workflow_summary.workflow_runs_today,
         "last_workflow_trigger_status": scan_summary.latest_run.workflow_trigger_status if scan_summary.latest_run else "not_triggered",
         "latest_recommendation_status": latest_workflow.recommendation.get("action") if latest_workflow else "none",
+        "postgres_persistence_status": persistence["postgres_persistence_status"],
+        "pgvector_status": persistence["pgvector_status"],
+        "embedding_provider": memory["embedding"]["provider"],
+        "vector_memory_status": memory["vector_memory_status"],
+        "latest_persisted_scan_run": get_latest_persisted_scan_run(),
+        "latest_persisted_feature_row": get_latest_persisted_feature_row(),
+        "latest_persisted_strategy_workflow_run": get_latest_persisted_strategy_workflow_run(),
+        "recent_memory_count": len(recent_memories),
+        "latest_workflow_memory": next((memory_record.model_dump(mode="json") for memory_record in recent_memories if memory_record.memory_type == "workflow_summary"), None),
+        "latest_recommendation_memory": next((memory_record.model_dump(mode="json") for memory_record in recent_memories if memory_record.memory_type == "recommendation_summary"), None),
         "live_trading_enabled": auto_run.live_trading_enabled,
         "require_human_approval": auto_run.require_human_approval,
         "agent_scorecards_available": len(scorecards),

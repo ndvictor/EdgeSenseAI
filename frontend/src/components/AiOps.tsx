@@ -314,6 +314,35 @@ function StrategyWorkflowRunsTable({ runs }: { runs: StrategyWorkflowRunResult[]
   );
 }
 
+function PersistenceMemoryPanel({ summary }: { summary: AiOpsSummaryResponse }) {
+  const workflowMemory = asRecord(summary.latest_workflow_memory);
+  const recommendationMemory = asRecord(summary.latest_recommendation_memory);
+  return (
+    <div className="space-y-4">
+      <div className="grid grid-cols-2 gap-4 lg:grid-cols-6">
+        <MetricCard label="Postgres" value={summary.postgres_persistence_status || "unknown"} accent />
+        <MetricCard label="pgvector" value={summary.pgvector_status || "unknown"} />
+        <MetricCard label="Embeddings" value={summary.embedding_provider || "placeholder"} />
+        <MetricCard label="Vector Memory" value={summary.vector_memory_status || "unknown"} />
+        <MetricCard label="Memory Count" value={summary.recent_memory_count ?? 0} />
+        <MetricCard label="Mode" value={summary.pgvector_status === "enabled" ? "pgvector" : "fallback"} />
+      </div>
+      <div className="grid grid-cols-1 gap-4 lg:grid-cols-2">
+        <div className="rounded-xl border border-slate-800 bg-slate-900 p-4">
+          <p className="text-xs uppercase tracking-wide text-slate-500">Latest Workflow Memory</p>
+          <p className="mt-2 text-sm font-semibold text-white">{asText(workflowMemory.title, "No workflow memory yet")}</p>
+          <p className="mt-2 text-sm leading-relaxed text-slate-400">{asText(workflowMemory.summary, "Run a strategy workflow to create memory.")}</p>
+        </div>
+        <div className="rounded-xl border border-slate-800 bg-slate-900 p-4">
+          <p className="text-xs uppercase tracking-wide text-slate-500">Latest Recommendation Memory</p>
+          <p className="mt-2 text-sm font-semibold text-white">{asText(recommendationMemory.title, "No recommendation memory yet")}</p>
+          <p className="mt-2 text-sm leading-relaxed text-slate-400">{asText(recommendationMemory.summary, "Recommendations remain paper/research-only.")}</p>
+        </div>
+      </div>
+    </div>
+  );
+}
+
 function AutoRunPanel({ state, onToggle, loading, error }: { state: AutoRunControlState | null; onToggle: () => void; loading: boolean; error: string | null }) {
   if (error) return <ErrorState error={error} />;
   if (!state) return <LoadingState label="auto-run status" />;
@@ -528,6 +557,7 @@ export function AiOpsOverviewPage() {
             )}
             <StrategyWorkflowRunsTable runs={strategyWorkflowRuns} />
           </Panel>
+          <Panel title="Persistence & Memory"><PersistenceMemoryPanel summary={summary} /></Panel>
           <Panel title="Auto-run Status"><AutoRunPanel state={autoRun} onToggle={toggleAutoRun} loading={autoRunLoading} error={autoRunError} /></Panel>
           <Panel title="Safety Guardrails"><GuardrailGrid summary={summary} llm={llm} /></Panel>
           <EdgeRadarPanel />

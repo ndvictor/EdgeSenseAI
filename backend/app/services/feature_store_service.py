@@ -8,6 +8,7 @@ from app.services.data_quality_service import DataQualityReport, check_market_da
 from app.services.feature_engineering_service import build_features
 from app.services.market_data_service import MarketDataService
 from app.services.normalization_service import NormalizedMarketSnapshot, normalize_market_snapshot
+from app.services.persistence_service import save_feature_store_row
 
 
 class FeatureStoreRow(BaseModel):
@@ -83,6 +84,7 @@ def _build_feature_row(
 
 def store_feature_row(row: FeatureStoreRow) -> FeatureStoreRow:
     _FEATURE_ROWS.append(row)
+    save_feature_store_row(row)
     return row
 
 

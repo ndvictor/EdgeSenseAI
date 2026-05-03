@@ -2,13 +2,15 @@ from datetime import datetime
 from typing import Any, Literal
 from uuid import uuid4
 
-from pydantic import BaseModel, Field
+from pydantic import BaseModel, ConfigDict, Field
 
 from app.agents.portfolio_manager_agent import run_portfolio_manager_agent
 from app.agents.risk_manager_agent import run_risk_manager_agent
 from app.services.auto_run_control_service import get_auto_run_state
 from app.services.feature_store_service import FeatureStoreRunRequest, run_feature_store_pipeline
 from app.services.model_orchestrator_service import ModelRunPlanRequest, ModelRunRequest, plan_model_runs, run_model_orchestrator
+from app.services.persistence_service import save_recommendation, save_strategy_workflow_run
+from app.services.vector_memory_service import create_recommendation_memory, create_workflow_summary_memory
 from app.strategies.registry import get_strategy
 
 
@@ -43,6 +45,8 @@ class StrategyWorkflowTraceStep(BaseModel):
 
 
 class StrategyWorkflowRunResult(BaseModel):
+    model_config = ConfigDict(protected_namespaces=())
+
     workflow_run_id: str
     source_scan_run_id: str | None = None
     trigger_type: StrategyWorkflowTrigger
@@ -112,6 +116,36 @@ def _step(
 def _record(result: StrategyWorkflowRunResult) -> StrategyWorkflowRunResult:
     _WORKFLOW_RUNS.insert(0, result)
     del _WORKFLOW_RUNS[250:]
+    save_strategy_workflow_run(result)
+    save_recommendation({**result.recommendation, "workflow_run_id": result.workflow_run_id, "status": result.status, "asset_class": result.asset_class, "horizon": result.horizon, "data_source": "source_backed"})
+    create_workflow_summary_memory(
+        source_type="strategy_workflow_run",
+        source_id=result.workflow_run_id,
+        symbol=result.symbol,
+        asset_class=result.asset_class,
+        strategy_key=result.strategy_key,
+        horizon=result.horizon,
+        title=f"Strategy workflow {result.strategy_key} for {result.symbol}",
+        content=f"Workflow {result.workflow_run_id} completed with status {result.status}. Recommendation: {result.recommendation}. Live trading allowed: {result.live_trading_allowed}. Approval required: {result.approval_required}.",
+        summary=str(result.recommendation.get("next_action") or result.status),
+        tags=["strategy_workflow", result.status, "paper_research_only"],
+        metadata=result.model_dump(mode="json"),
+        importance_score=0.7,
+    )
+    create_recommendation_memory(
+        source_type="recommendation",
+        source_id=result.workflow_run_id,
+        symbol=result.symbol,
+        asset_class=result.asset_class,
+        strategy_key=result.strategy_key,
+        horizon=result.horizon,
+        title=f"Recommendation memory for {result.symbol}",
+        content=str(result.recommendation),
+        summary=str(result.recommendation.get("next_action") or result.recommendation.get("action") or "watch_only"),
+        tags=["recommendation", "paper_only"],
+        metadata=result.recommendation,
+        importance_score=0.65,
+    )
     return result
 
 

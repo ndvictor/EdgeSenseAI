@@ -432,6 +432,13 @@ export type AiOpsSummaryResponse = {
   agent_scorecards_available?: number;
   live_trading_allowed?: boolean;
   paper_trading_requires_approval?: boolean;
+  postgres_persistence_status?: string;
+  pgvector_status?: string;
+  embedding_provider?: string;
+  vector_memory_status?: string;
+  recent_memory_count?: number;
+  latest_workflow_memory?: Record<string, unknown> | null;
+  latest_recommendation_memory?: Record<string, unknown> | null;
 };
 
 export type AiOpsWorkflow = {

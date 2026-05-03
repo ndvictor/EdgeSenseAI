@@ -529,3 +529,48 @@ def test_strategy_workflow_run_contract_and_scanner_trigger_safety():
     assert client.post("/api/market-scanner/scan", json={"strategy_key": "stock_day_trading", "symbols": ["AMD"], "data_source": "mock"}).status_code == 200
     assert client.post("/api/agents/edge-radar/run", json={"symbols": ["AMD"], "data_source": "mock"}).status_code == 200
     assert client.get("/api/llm-gateway/status").status_code == 200
+
+
+def test_memory_and_persistence_fallback_contracts():
+    from app.services.embedding_service import embed_text
+
+    first = embed_text("AMD momentum workflow memory")
+    second = embed_text("AMD momentum workflow memory")
+    assert first.embedding == second.embedding
+    assert first.provider == "placeholder"
+
+    created = client.post(
+        "/api/memory",
+        json={
+            "memory_type": "workflow_summary",
+            "title": "AMD workflow memory",
+            "content": "Weighted ranker completed for AMD in paper research mode.",
+            "summary": "AMD paper workflow summary",
+            "symbol": "AMD",
+            "strategy_key": "stock_day_trading",
+            "tags": ["test", "workflow"],
+        },
+    )
+    assert created.status_code == 200
+    payload = created.json()
+    assert payload["memory_id"]
+    assert payload["embedding_model"] == "placeholder-hash-embedding"
+
+    recent = client.get("/api/memory/recent")
+    assert recent.status_code == 200
+    assert any(row["memory_id"] == payload["memory_id"] for row in recent.json())
+
+    search = client.post("/api/memory/search", json={"query": "AMD weighted ranker", "symbol": "AMD"})
+    assert search.status_code == 200
+    search_payload = search.json()
+    assert search_payload["data_source"] in {"postgres_pgvector", "postgres_keyword_fallback", "in_memory_fallback"}
+    assert search_payload["results"]
+
+    assert client.get(f"/api/memory/{payload['memory_id']}").status_code == 200
+    assert client.get("/health").status_code == 200
+    summary = client.get("/api/ai-ops/summary")
+    assert summary.status_code == 200
+    summary_payload = summary.json()
+    assert "postgres_persistence_status" in summary_payload
+    assert "vector_memory_status" in summary_payload
+    assert summary_payload["recent_memory_count"] >= 1

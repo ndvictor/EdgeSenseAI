@@ -4,6 +4,9 @@ from uuid import uuid4
 
 from pydantic import BaseModel, Field
 
+from app.services.persistence_service import save_market_scan_run
+from app.services.vector_memory_service import create_memory_record
+
 
 MarketScanTrigger = Literal["manual", "scheduled"]
 
@@ -97,6 +100,19 @@ def record_scan_run(
     )
     _SCAN_RUNS.insert(0, run)
     del _SCAN_RUNS[250:]
+    save_market_scan_run(run)
+    if matched_signals_count > 0:
+        create_memory_record(
+            memory_type="market_scan_summary",
+            source_type="market_scan_run",
+            source_id=run.run_id,
+            strategy_key=run.strategy_key,
+            title=f"Market scan matched {matched_signals_count} signal(s) for {run.strategy_key}",
+            content=f"Scan {run.run_id} found {matched_signals_count} matched signal(s), skipped {skipped_signals_count}, workflow trigger status {workflow_trigger_status}. Next action: {next_action}",
+            summary=next_action,
+            tags=["market_scan", run.trigger_type, run.status],
+            metadata=run.model_dump(mode="json"),
+        )
     return run
 
 

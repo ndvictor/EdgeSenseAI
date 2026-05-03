@@ -6,6 +6,7 @@ from fastapi import APIRouter
 from pydantic import BaseModel
 
 from app.core.settings import settings
+from app.services.persistence_service import get_persistence_status
 
 router = APIRouter()
 
@@ -97,6 +98,7 @@ def _mock_status() -> dict:
 @router.get("/data-sources/status", response_model=DataSourcesStatusResponse)
 def get_data_sources_status():
     now = datetime.utcnow().isoformat()
+    persistence = get_persistence_status()
     checks = {
         "yfinance": _package_status(
             "yfinance",
@@ -112,7 +114,12 @@ def get_data_sources_status():
         "finnhub": _env_status(settings.finnhub_api_key if settings.news_provider_enabled else "", "FINNHUB_API_KEY is set.", "Finnhub is not configured or disabled."),
         "benzinga": _env_status(settings.benzinga_api_key if settings.news_provider_enabled else "", "BENZINGA_API_KEY is set.", "Benzinga is not configured or disabled."),
         "openai": _env_status(settings.openai_api_key, "OPENAI_API_KEY is set.", "OpenAI is not configured."),
-        "postgresql": _env_status(settings.database_url, "DATABASE_URL is set.", "DATABASE_URL is not configured."),
+        "postgresql": {
+            "status": persistence["postgres_persistence_status"],
+            "configured": bool(settings.database_url),
+            "connected": persistence["postgres_persistence_status"] == "connected",
+            "message": f"DATABASE_URL configured. pgvector={persistence['pgvector_status']}. {persistence.get('message') or ''}",
+        },
         "redis": _env_status(settings.redis_url, "REDIS_URL is set.", "REDIS_URL is not configured."),
         "mock": _mock_status(),
     }

@@ -32,6 +32,10 @@ class Settings(BaseSettings):
     llm_gateway_default_cheap_model: str = Field(default="gpt-4o-mini", alias="LLM_GATEWAY_DEFAULT_CHEAP_MODEL")
     llm_gateway_default_reasoning_model: str = Field(default="gpt-4o", alias="LLM_GATEWAY_DEFAULT_REASONING_MODEL")
     llm_gateway_default_fallback_model: str = Field(default="local-placeholder", alias="LLM_GATEWAY_DEFAULT_FALLBACK_MODEL")
+    embeddings_provider: str = Field(default="placeholder", alias="EMBEDDINGS_PROVIDER")
+    embeddings_model: str = Field(default="placeholder-hash-embedding", alias="EMBEDDINGS_MODEL")
+    embeddings_enable_paid_calls: bool = Field(default=False, alias="EMBEDDINGS_ENABLE_PAID_CALLS")
+    vector_memory_enabled: bool = Field(default=True, alias="VECTOR_MEMORY_ENABLED")
 
     live_trading_enabled: bool = Field(default=False, alias="LIVE_TRADING_ENABLED")
     paper_trading_enabled: bool = Field(default=True, alias="PAPER_TRADING_ENABLED")
