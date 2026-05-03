@@ -18,6 +18,8 @@ class DataSourceStatus(BaseModel):
     type: str
     configured: bool
     connected: bool = False
+    connection_label: str = "Checked during request"
+    configured_label: str = "Credentials"
     used_for: List[str]
     last_checked: str
     message: str
@@ -34,15 +36,19 @@ def _package_status(package_name: str, configured_message: str, missing_message:
     installed = find_spec(package_name) is not None
     if installed:
         return {
-            "status": "configured",
+            "status": "installed",
             "configured": True,
             "connected": False,
+            "configured_label": "Package installed",
+            "connection_label": "Checked during ticker request",
             "message": configured_message,
         }
     return {
-        "status": "not_configured",
+        "status": "not_installed",
         "configured": False,
         "connected": False,
+        "configured_label": "Package installed",
+        "connection_label": "Unavailable",
         "message": missing_message,
     }
 
@@ -53,12 +59,16 @@ def _env_status(value: str, configured_message: str, missing_message: str) -> di
             "status": "not_configured",
             "configured": False,
             "connected": False,
+            "configured_label": "Credentials",
+            "connection_label": "Not available",
             "message": missing_message,
         }
     return {
         "status": "configured",
         "configured": True,
         "connected": False,
+        "configured_label": "Credentials",
+        "connection_label": "Checked during ticker request",
         "message": configured_message,
     }
 
@@ -66,22 +76,28 @@ def _env_status(value: str, configured_message: str, missing_message: str) -> di
 def _check_alpaca_market_data() -> dict:
     if not settings.alpaca_market_data_enabled:
         return {
-            "status": "not_configured",
+            "status": "disabled",
             "configured": False,
             "connected": False,
+            "configured_label": "Enabled + credentials",
+            "connection_label": "Disabled",
             "message": "Alpaca market data is disabled. Set ALPACA_MARKET_DATA_ENABLED=true and credentials to use it.",
         }
     if not settings.alpaca_api_key or not settings.alpaca_secret_key:
         return {
-            "status": "not_configured",
+            "status": "missing_credentials",
             "configured": False,
             "connected": False,
+            "configured_label": "Enabled + credentials",
+            "connection_label": "Missing credentials",
             "message": "Alpaca market data is enabled but credentials are missing.",
         }
     return {
         "status": "configured",
         "configured": True,
         "connected": False,
+        "configured_label": "Enabled + credentials",
+        "connection_label": "Checked during ticker request",
         "message": "Alpaca market data credentials are configured. Runtime quote checks happen through /api/market-data/snapshot/{symbol}.",
     }
 
@@ -91,6 +107,8 @@ def _mock_status() -> dict:
         "status": "test_only",
         "configured": True,
         "connected": True,
+        "configured_label": "Test provider",
+        "connection_label": "Always available",
         "message": "Mock provider is available for explicit UI testing only. Auto mode does not silently use mock data.",
     }
 
@@ -102,7 +120,7 @@ def get_data_sources_status():
     checks = {
         "yfinance": _package_status(
             "yfinance",
-            "yfinance package is installed. It is a research fallback and may fail or throttle at runtime.",
+            "yfinance package is installed. This means the adapter can run, not that Yahoo live data is currently reachable. Live connectivity is tested when you request a ticker.",
             "yfinance is not installed in the backend environment.",
         ),
         "alpaca": _check_alpaca_market_data(),
@@ -118,6 +136,8 @@ def get_data_sources_status():
             "status": persistence["postgres_persistence_status"],
             "configured": bool(settings.database_url),
             "connected": persistence["postgres_persistence_status"] == "connected",
+            "configured_label": "DATABASE_URL",
+            "connection_label": "Connected" if persistence["postgres_persistence_status"] == "connected" else "Not connected",
             "message": f"DATABASE_URL configured. pgvector={persistence['pgvector_status']}. {persistence.get('message') or ''}",
         },
         "redis": _env_status(settings.redis_url, "REDIS_URL is set.", "REDIS_URL is not configured."),
@@ -148,6 +168,8 @@ def get_data_sources_status():
             status=checks[key]["status"],
             configured=checks[key]["configured"],
             connected=checks[key]["connected"],
+            configured_label=checks[key].get("configured_label", "Credentials"),
+            connection_label=checks[key].get("connection_label", "Checked during request"),
             used_for=used_for,
             required_for=required_for,
             last_checked=now,
@@ -163,6 +185,8 @@ def get_data_sources_status():
             status="not_configured",
             configured=False,
             connected=False,
+            configured_label="Credentials",
+            connection_label="Not available",
             used_for=["options_analysis", "options_flow_agent"],
             required_for=["options_flow", "iv_rank", "greeks", "gamma_exposure"],
             last_checked=now,
@@ -177,6 +201,8 @@ def get_data_sources_status():
             status="configured" if settings.paper_trading_enabled else "not_configured",
             configured=settings.paper_trading_enabled,
             connected=settings.paper_trading_enabled,
+            configured_label="Feature flag",
+            connection_label="Enabled" if settings.paper_trading_enabled else "Disabled",
             used_for=["paper_trading", "outcome_labels"],
             required_for=["paper_trading_feedback_loop"],
             last_checked=now,
