@@ -8,8 +8,12 @@ from app.orchestration.schedulers.edge_scheduler import get_last_scheduled_scan_
 from app.orchestration.workflows.small_account_edge_radar import build_langgraph_definition
 from app.services.auto_run_control_service import get_auto_run_state
 from app.services.feature_store_service import get_feature_store_status
+from app.services.journal_outcome_service import get_journal_summary, get_latest_journal_entry
 from app.services.llm_gateway_service import get_gateway_summary
 from app.services.market_scan_run_service import get_scan_run_summary
+from app.services.model_strategy_update_service import get_latest_update_proposal
+from app.services.performance_drift_service import get_latest_drift_check
+from app.services.research_priority_service import get_latest_research_priority, get_open_tasks
 from app.services.model_orchestrator_service import get_model_registry
 from app.services.persistence_service import get_latest_feature_store_row as get_latest_persisted_feature_row
 from app.services.persistence_service import get_latest_market_scan_run as get_latest_persisted_scan_run
@@ -106,6 +110,13 @@ def get_ai_ops_summary() -> dict[str, Any]:
         "agent_scorecards_available": len(scorecards),
         "live_trading_allowed": False,
         "paper_trading_requires_approval": True,
+        "learning_loop": {
+            "journal_entries": get_journal_summary().model_dump() if get_latest_journal_entry() else {"total_entries": 0, "status": "empty"},
+            "latest_drift_check": get_latest_drift_check().model_dump() if get_latest_drift_check() else None,
+            "latest_research_priority": get_latest_research_priority().model_dump() if get_latest_research_priority() else None,
+            "open_research_tasks": len(get_open_tasks()),
+            "latest_model_strategy_update": get_latest_update_proposal().model_dump() if get_latest_update_proposal() else None,
+        },
     }
 
 

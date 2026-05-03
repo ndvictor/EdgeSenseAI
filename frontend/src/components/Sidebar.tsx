@@ -17,6 +17,7 @@ import {
   Globe,
   LineChart,
   Radar,
+  RefreshCw,
   Settings,
   Target,
   TrendingUp,
@@ -44,6 +45,7 @@ const items = [
   { label: "Market Regime", href: "/market-regime", icon: BarChart3 },
   { label: "Backtesting", href: "/backtesting", icon: ClipboardList },
   { label: "Paper Trading", href: "/paper-trading", icon: BrainCircuit },
+  { label: "Learning Loop", href: "/learning-loop", icon: RefreshCw },
   { label: "Journal", href: "/journal", icon: BookOpen },
   { label: "Settings", href: "/settings", icon: Settings },
 ];

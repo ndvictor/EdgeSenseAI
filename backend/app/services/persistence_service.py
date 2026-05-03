@@ -361,6 +361,43 @@ def update_recommendation_status(rec_id: str, status: str) -> bool:
         session.close()
 
 
+def save_journal_entry(request: Any, response: Any) -> dict[str, Any]:
+    """Save a journal entry to Postgres."""
+    req_data = _dump(request)
+    resp_data = _dump(response)
+    return _try_save(
+        JournalEntryRecord(
+            id=resp_data.get("id"),
+            source_type=req_data.get("source_type", "manual_observation"),
+            source_id=req_data.get("source_id"),
+            symbol=req_data.get("symbol", "").upper() if req_data.get("symbol") else None,
+            asset_class=req_data.get("asset_class", "stock"),
+            horizon=req_data.get("horizon", "swing"),
+            strategy_key=req_data.get("strategy_key"),
+            regime=req_data.get("regime"),
+            model_stack=req_data.get("model_stack", []),
+            entry_price=req_data.get("entry_price"),
+            exit_price=req_data.get("exit_price"),
+            stop_loss=req_data.get("stop_loss"),
+            target_price=req_data.get("target_price"),
+            max_favorable_price=req_data.get("max_favorable_price"),
+            max_adverse_price=req_data.get("max_adverse_price"),
+            outcome_label=resp_data.get("outcome_label", "unknown"),
+            realized_r=resp_data.get("realized_r"),
+            mfe_percent=resp_data.get("mfe_percent"),
+            mae_percent=resp_data.get("mae_percent"),
+            time_to_result_minutes=resp_data.get("time_to_result_minutes"),
+            followed_plan=resp_data.get("followed_plan"),
+            confidence_error=resp_data.get("confidence_error"),
+            lessons=resp_data.get("lessons", []),
+            notes=req_data.get("notes"),
+            tags=req_data.get("tags", []),
+            opened_at=req_data.get("opened_at"),
+            closed_at=req_data.get("closed_at"),
+        )
+    )
+
+
 def create_paper_trade_outcome_from_recommendation(
     recommendation_id: str,
     symbol: str,

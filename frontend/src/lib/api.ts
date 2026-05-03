@@ -1772,6 +1772,137 @@ export type DecisionWorkflowRunResponse = {
   duration_ms: number;
 };
 
+// Learning Loop Types
+
+export type JournalOutcomeResponse = {
+  id: string;
+  source_type: string;
+  source_id: string | null;
+  symbol: string | null;
+  outcome_label: "win" | "loss" | "breakeven" | "avoided_loss" | "missed_opportunity" | "invalidated" | "unknown";
+  mfe_percent: number | null;
+  mae_percent: number | null;
+  realized_r: number | null;
+  time_to_result_minutes: number | null;
+  followed_plan: boolean | null;
+  confidence_error: number | null;
+  expected_vs_actual: string | null;
+  lessons: string[];
+  created_at: string;
+  updated_at: string;
+};
+
+export type JournalOutcomeSummary = {
+  total_entries: number;
+  wins: number;
+  losses: number;
+  breakeven: number;
+  unknown: number;
+  win_rate: number;
+  average_realized_r: number | null;
+  by_source_type: Record<string, number>;
+  by_symbol: Record<string, number>;
+  by_strategy: Record<string, number>;
+  recent_entries: JournalOutcomeResponse[];
+};
+
+export type CalibrationBucket = {
+  bucket: string;
+  count: number;
+  avg_confidence: number;
+  observed_win_rate: number;
+  avg_realized_r: number | null;
+  calibration_error: number;
+};
+
+export type PerformanceDriftResponse = {
+  run_id: string;
+  status: "pass" | "warn" | "fail" | "insufficient_data";
+  sample_count: number;
+  calibration_buckets: CalibrationBucket[];
+  false_positive_rate: number | null;
+  win_rate: number | null;
+  average_realized_r: number | null;
+  confidence_error: number | null;
+  affected_models: string[];
+  affected_strategies: string[];
+  recommended_actions: string[];
+  blockers: string[];
+  warnings: string[];
+  checked_at: string;
+};
+
+export type ResearchTask = {
+  task_id: string;
+  priority_rank: number;
+  priority_score: number;
+  task_type: "backtest" | "model_evaluation" | "strategy_review" | "feature_review" | "risk_filter_review" | "data_quality_review" | "retraining_request";
+  title: string;
+  description: string;
+  linked_strategy_key: string | null;
+  linked_model: string | null;
+  evidence: string[];
+  suggested_next_step: string;
+  status: "open" | "in_progress" | "completed" | "rejected";
+};
+
+export type ResearchPriorityResponse = {
+  run_id: string;
+  status: "generated" | "insufficient_evidence" | "empty";
+  tasks: ResearchTask[];
+  blockers: string[];
+  warnings: string[];
+  created_at: string;
+};
+
+export type StrategyWeightUpdate = {
+  strategy_key: string;
+  current_weight: number | null;
+  proposed_weight: number;
+  action: "keep" | "reduce" | "increase" | "pause" | "collect_more_data";
+  reason: string;
+  evidence: string[];
+};
+
+export type ModelWeightUpdate = {
+  model_name: string;
+  current_weight: number | null;
+  proposed_weight: number;
+  action: "keep" | "reduce" | "increase" | "pause" | "collect_more_data";
+  reason: string;
+  evidence: string[];
+};
+
+export type RetrainingRequest = {
+  model_name: string;
+  reason: string;
+  required_data_points: number;
+  current_data_points: number;
+};
+
+export type ModelStrategyUpdateResponse = {
+  run_id: string;
+  status: "proposed" | "insufficient_data" | "no_changes";
+  strategy_weight_updates: StrategyWeightUpdate[];
+  model_weight_updates: ModelWeightUpdate[];
+  paused_strategies: string[];
+  retraining_requests: RetrainingRequest[];
+  evaluation_jobs: Array<Record<string, unknown>>;
+  blockers: string[];
+  warnings: string[];
+  created_at: string;
+};
+
+export type MemoryUpdateResponse = {
+  run_id: string;
+  status: "stored" | "skipped" | "unavailable";
+  memory_id: string | null;
+  source_type: string;
+  warnings: string[];
+  blockers: string[];
+  created_at: string;
+};
+
 export const api = {
   getCommandCenter: () => request<CommandCenterResponse>("/api/command-center"),
   getAccountRisk: () => request<AccountRiskProfile>("/api/account-risk/profile"),
@@ -1791,7 +1922,8 @@ export const api = {
   getRiskCheck: (symbol: string) => request<RiskCheckResult>(`/api/risk-check/${symbol}`),
   getMarketRegime: () => request<MarketRegimeResponse>("/api/market-regime"),
   getBacktestingSummary: () => request<BacktestingResponse>("/api/backtesting/summary"),
-  getJournalSummary: () => request<JournalSummary>("/api/journal/summary"),
+  // Re-export for compatibility
+  getJournalSummaryLegacy: () => request<JournalOutcomeSummary>("/api/journal/outcomes/summary"),
   runModelLab: (payload: ModelLabRunRequest) => request<ModelLabRunResponse>("/api/model-lab/run", { method: "POST", body: JSON.stringify(payload) }),
   getAiOpsSummary: () => request<AiOpsSummaryResponse>("/api/ai-ops/summary"),
   getAiOpsWorkflows: () => request<AiOpsWorkflowListResponse>("/api/ai-ops/workflows"),
@@ -1863,6 +1995,9 @@ export const api = {
 
   // Recommendation Lifecycle APIs
   getRecommendationLifecycleList: (status?: string, symbol?: string, limit?: number) =>
+    request<RecommendationLifecycleRecord[]>(`/api/recommendation-lifecycle?${status ? `status=${status}&` : ""}${symbol ? `symbol=${symbol}&` : ""}${limit ? `limit=${limit}` : ""}`),
+  // Alias for compatibility
+  getRecommendationLifecycle: (status?: string, symbol?: string, limit?: number) =>
     request<RecommendationLifecycleRecord[]>(`/api/recommendation-lifecycle?${status ? `status=${status}&` : ""}${symbol ? `symbol=${symbol}&` : ""}${limit ? `limit=${limit}` : ""}`),
   getRecommendationLifecycleSummary: () => request<Record<string, unknown>>("/api/recommendation-lifecycle/summary"),
   approveRecommendation: (id: string) => request<{ success: boolean; recommendation: Record<string, unknown> | null; message: string }>("/api/recommendation-lifecycle/approve", { method: "POST", body: JSON.stringify({ id }) }),
@@ -1978,4 +2113,40 @@ export const api = {
   runRecommendationPipeline: (payload: { use_latest_ensemble?: boolean; ensemble_signal?: Record<string, unknown>; symbol?: string; account_equity?: number; buying_power?: number; allow_paid_llm?: boolean; dry_run?: boolean }) =>
     request<RecommendationPipelineResponse>("/api/recommendation-pipeline/run", { method: "POST", body: JSON.stringify(payload) }),
   getLatestRecommendationPipeline: () => request<RecommendationPipelineResponse | { message: string; status: string }>("/api/recommendation-pipeline/latest"),
+
+  // Journal Outcomes APIs
+  createJournalOutcome: (payload: { source_type?: string; symbol?: string; entry_price?: number; exit_price?: number; stop_loss?: number; target_price?: number; max_favorable_price?: number; max_adverse_price?: number; opened_at?: string; closed_at?: string; notes?: string }) =>
+    request<JournalOutcomeResponse>("/api/journal/outcomes", { method: "POST", body: JSON.stringify(payload) }),
+  getJournalOutcomes: (filters?: { source_type?: string; symbol?: string; outcome_label?: string; limit?: number }) =>
+    request<JournalOutcomeResponse[]>(`/api/journal/outcomes?${filters?.source_type ? `source_type=${filters.source_type}&` : ""}${filters?.symbol ? `symbol=${filters.symbol}&` : ""}${filters?.outcome_label ? `outcome_label=${filters.outcome_label}&` : ""}${filters?.limit ? `limit=${filters.limit}` : ""}`),
+  getJournalOutcome: (entryId: string) => request<JournalOutcomeResponse>(`/api/journal/outcomes/${entryId}`),
+  getJournalSummary: () => request<JournalOutcomeSummary>("/api/journal/outcomes/summary"),
+  labelFromPaperTrade: (payload: { paper_trade_id: string; symbol: string; entry_price: number; exit_price?: number; stop_loss: number; target_price: number; opened_at: string; closed_at?: string; outcome_notes?: string }) =>
+    request<JournalOutcomeResponse>("/api/journal/outcomes/label-from-paper-trade", { method: "POST", body: JSON.stringify(payload) }),
+
+  // Performance Drift APIs
+  runPerformanceDrift: (payload?: { lookback_days?: number; strategy_key?: string; model_name?: string; min_samples?: number; source?: string }) =>
+    request<PerformanceDriftResponse>("/api/performance-drift/run", { method: "POST", body: JSON.stringify(payload || {}) }),
+  getLatestPerformanceDrift: () => request<PerformanceDriftResponse | { message: string; status: string }>("/api/performance-drift/latest"),
+  getPerformanceDriftHistory: (limit?: number) => request<PerformanceDriftResponse[]>(`/api/performance-drift/history?limit=${limit || 20}`),
+
+  // Research Priority APIs
+  runResearchPriority: (payload?: { lookback_days?: number; include_drift?: boolean; include_journal?: boolean; include_no_trade?: boolean; max_tasks?: number }) =>
+    request<ResearchPriorityResponse>("/api/research-priority/run", { method: "POST", body: JSON.stringify(payload || {}) }),
+  getLatestResearchPriority: () => request<ResearchPriorityResponse | { message: string; status: string }>("/api/research-priority/latest"),
+  getResearchTasks: (status?: string) => request<ResearchTask[]>(`/api/research-priority/tasks${status ? `?status=${status}` : ""}`),
+  updateResearchTask: (taskId: string, status: string) => request<{ success: boolean; task: ResearchTask }>(`/api/research-priority/tasks/${taskId}/update`, { method: "POST", body: JSON.stringify({ status }) }),
+
+  // Model/Strategy Update APIs
+  proposeModelStrategyUpdate: (payload?: { research_run_id?: string; drift_run_id?: string; dry_run?: boolean }) =>
+    request<ModelStrategyUpdateResponse>("/api/model-strategy-update/propose", { method: "POST", body: JSON.stringify(payload || {}) }),
+  getLatestModelStrategyUpdate: () => request<ModelStrategyUpdateResponse | { message: string; status: string }>("/api/model-strategy-update/latest"),
+  getModelStrategyUpdateHistory: (limit?: number) => request<ModelStrategyUpdateResponse[]>(`/api/model-strategy-update/history?limit=${limit || 20}`),
+
+  // Memory Update APIs
+  storeMemory: (payload: { source_type: string; title: string; content: string; metadata?: Record<string, unknown>; dry_run?: boolean }) =>
+    request<MemoryUpdateResponse>("/api/memory-update/store", { method: "POST", body: JSON.stringify(payload) }),
+  storeLatestJournalToMemory: () => request<MemoryUpdateResponse>("/api/memory-update/from-journal-latest", { method: "POST" }),
+  storeLatestResearchToMemory: () => request<MemoryUpdateResponse>("/api/memory-update/from-research-latest", { method: "POST" }),
+  getLatestMemoryUpdate: () => request<MemoryUpdateResponse | { message: string; status: string }>("/api/memory-update/latest"),
 };
