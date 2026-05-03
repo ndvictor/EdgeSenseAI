@@ -6,7 +6,6 @@ from uuid import uuid4
 
 from pydantic import BaseModel, ConfigDict, Field
 
-from app.core.settings import settings
 from app.schemas import AccountRiskProfile, ModelVote, PricePlan, Recommendation, RiskPlan, TradeRecommendation
 from app.services.feature_store_service import FeatureStoreRunRequest, FeatureStoreRunResponse, run_feature_store_pipeline
 from app.services.model_orchestrator_service import ModelRunRequest, ModelRunResponse, run_model_orchestrator
@@ -101,7 +100,7 @@ def _best_model_score(model_run: ModelRunResponse, symbol: str) -> tuple[float |
 
 
 def _price_from_feature_run(feature_run: FeatureStoreRunResponse) -> float | None:
-    return _as_float(feature_run.normalized_snapshot.price or feature_run.normalized_snapshot.current_price)
+    return _as_float(feature_run.normalized_snapshot.price)
 
 
 def _build_candidate(symbol: str, request: DecisionWorkflowRunRequest) -> tuple[DecisionCandidate, dict[str, Any], dict[str, Any]]:
