@@ -947,6 +947,26 @@ export type StrategyConfig = {
   paper_trading_supported: boolean;
   requires_human_approval: boolean;
   metadata?: Record<string, unknown>;
+  // New candidate/research strategy fields (all optional for backward compatibility)
+  status?: "active" | "approved" | "candidate" | "paused" | "rejected";
+  promotion_status?: "active" | "candidate" | "testing" | "paper_active" | "paused" | "rejected";
+  claim_source?: string | null;
+  claim_type?: "internal" | "vendor_claim" | "research_note" | "backtest" | "paper_result";
+  best_regimes?: string[];
+  bad_regimes?: string[];
+  trigger_rules?: string[];
+  risk_notes?: string[];
+  small_account_fit?: boolean | null;
+  drawdown_risk?: string | null;
+  pdt_risk?: boolean | null;
+  paper_research_only?: boolean;
+  requires_backtest?: boolean;
+  requires_owner_approval_for_promotion?: boolean;
+  candidate_universe_examples?: string[];
+  core_universe?: string[];
+  optional_expansion?: string[];
+  disabled_reason?: string | null;
+  promotion_requirements?: string[];
 };
 
 export type StrategyRegistryResponse = StrategyConfig[];
@@ -1952,7 +1972,10 @@ export const api = {
   testLlmGatewayCall: (payload: LlmGatewayTestCallRequest) => request<LlmGatewayTestCallResponse>("/api/llm-gateway/test-call", { method: "POST", body: JSON.stringify(payload) }),
   getAgentRegistry: () => request<CoreAgentRegistryResponse>("/api/agents/registry"),
   getStrategies: () => request<StrategyRegistryResponse>("/api/strategies"),
+  getCandidateStrategies: () => request<StrategyRegistryResponse>("/api/strategies/candidates"),
+  getActiveStrategies: () => request<StrategyRegistryResponse>("/api/strategies/active"),
   getStrategy: (strategyKey: string) => request<StrategyConfig>(`/api/strategies/${strategyKey}`),
+  getStrategyPlaybook: (strategyKey: string) => request<Record<string, unknown>>(`/api/strategies/${strategyKey}/playbook`),
   getEdgeSignalRules: () => request<EdgeSignalRulesResponse>("/api/edge-signal-rules"),
   scanMarketConditions: (payload: MarketScannerRequest) => request<MarketScannerResponse>("/api/market-scanner/scan", { method: "POST", body: JSON.stringify(payload) }),
   getMarketScanRuns: (limit = 25) => request<MarketScanRun[]>(`/api/market-scanner/runs?limit=${limit}`),
@@ -2038,7 +2061,7 @@ export const api = {
   runStrategyRanking: (payload: { market_phase: string; active_loop: string; regime: string; horizon: string; account_equity?: number; buying_power?: number }) =>
     request<StrategyRankingResponse>("/api/strategy-ranking/run", { method: "POST", body: JSON.stringify(payload) }),
   getLatestStrategyRanking: () => request<StrategyRankingResponse | { message: string; status: string }>("/api/strategy-ranking/latest"),
-  getActiveStrategies: () => request<{ active_strategies: string[]; top_strategy: string | null }>("/api/strategy-ranking/active"),
+  // Note: getActiveStrategies is defined above for strategy registry
 
   // Model Selection APIs
   runModelSelection: (payload: { strategy_key: string; market_phase: string; active_loop: string; regime: string; horizon: string; llm_budget_mode?: string }) =>

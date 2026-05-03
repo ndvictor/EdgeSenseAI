@@ -244,6 +244,15 @@ def _is_strategy_allowed(
     if regime == "risk_off" and strategy.auto_run_supported and strategy.timeframe == "day_trade":
         return False, "Auto day trading blocked in risk-off regime"
 
+    # Handle candidate strategies
+    if strategy.status == "candidate" or strategy.promotion_status == "candidate":
+        # Candidate strategies allowed for debate but marked as research_candidate
+        # They should not be auto-selected as production active
+        if strategy.disabled_reason:
+            return False, f"Disabled: {strategy.disabled_reason}"
+        # Allow for research purposes with lower priority
+        return True, "research_candidate"
+
     return True, None
 
 
