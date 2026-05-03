@@ -1219,6 +1219,191 @@ export type UniverseSelectionResponse = {
   duration_ms: number;
 };
 
+export type DataFreshnessSymbolResult = {
+  symbol: string;
+  provider: string;
+  data_quality: "excellent" | "good" | "fair" | "poor" | "unavailable";
+  is_mock: boolean;
+  quote_age_seconds: number | null;
+  bar_age_seconds: number | null;
+  has_price: boolean;
+  has_volume: boolean;
+  has_bid_ask: boolean;
+  spread_percent: number | null;
+  freshness_status: "fresh" | "stale" | "unknown";
+  tradability_status: "pass" | "warn" | "fail" | "unknown";
+  decision: "usable" | "degraded" | "blocked";
+  blockers: string[];
+  warnings: string[];
+};
+
+export type DataFreshnessSummary = {
+  total_checked: number;
+  usable_count: number;
+  degraded_count: number;
+  blocked_count: number;
+  mock_blocked_count: number;
+  unavailable_count: number;
+};
+
+export type DataFreshnessCheckResponse = {
+  run_id: string;
+  status: "pass" | "warn" | "fail";
+  source: string;
+  checked_at: string;
+  results: DataFreshnessSymbolResult[];
+  blockers: string[];
+  warnings: string[];
+  summary: DataFreshnessSummary;
+};
+
+export type MarketRegimeModelResponse = {
+  run_id: string;
+  status: "pass" | "warn" | "fail";
+  regime: "risk_on" | "risk_off" | "chop" | "momentum" | "volatility_expansion" | "mean_reversion" | "unknown";
+  trend_state: "uptrend" | "downtrend" | "sideways" | "mixed" | "unknown";
+  volatility_state: "low" | "normal" | "elevated" | "high" | "extreme" | "unknown";
+  breadth_proxy: string;
+  sector_rotation_proxy: string;
+  confidence: number;
+  regime_score: number;
+  allowed_strategy_families: string[];
+  blocked_strategy_families: string[];
+  inputs_used: Record<string, unknown>;
+  blockers: string[];
+  warnings: string[];
+  checked_at: string;
+};
+
+export type StrategyArgument = {
+  strategy_key: string;
+  strategy_family: string;
+  bull_case: string;
+  bear_case: string;
+  fit_score: number;
+  allowed: boolean;
+  disable_reason?: string | null;
+  required_data_sources: string[];
+  model_needs: string[];
+};
+
+export type StrategyDebateResponse = {
+  run_id: string;
+  status: "completed" | "partial" | "failed";
+  market_phase: string;
+  active_loop: string;
+  regime: string;
+  horizon: string;
+  strategy_arguments: StrategyArgument[];
+  recommended_strategy_keys: string[];
+  disabled_strategy_keys: string[];
+  warnings: string[];
+  blockers: string[];
+  created_at: string;
+};
+
+export type RankedStrategy = {
+  strategy_key: string;
+  strategy_family: string;
+  rank: number;
+  strategy_score: number;
+  status: "active" | "conditional" | "disabled";
+  model_stack_hint: string[];
+  scanner_needs: string[];
+  data_needs: string[];
+  reason: string;
+  blockers: string[];
+  warnings: string[];
+};
+
+export type StrategyRankingResponse = {
+  run_id: string;
+  status: "completed" | "partial" | "failed";
+  debate_run_id: string | null;
+  market_phase: string;
+  active_loop: string;
+  regime: string;
+  horizon: string;
+  ranked_strategies: RankedStrategy[];
+  active_strategies: string[];
+  disabled_strategies: string[];
+  top_strategy_key: string | null;
+  warnings: string[];
+  blockers: string[];
+  created_at: string;
+};
+
+export type SelectedModel = {
+  model_key: string;
+  model_name: string;
+  model_type: "scanner" | "scoring" | "validation" | "meta";
+  selected: boolean;
+  reason: string;
+  skip_reason?: string | null;
+};
+
+export type ModelWeights = {
+  weighted_ranker_v1_weight: number;
+  xgboost_ranker_weight: number;
+  historical_similarity_weight: number;
+  liquidity_model_weight: number;
+  regime_alignment_weight: number;
+  confidence_threshold: number;
+};
+
+export type ModelSelectionResponse = {
+  run_id: string;
+  status: "completed" | "partial" | "failed";
+  strategy_key: string;
+  selected_scanner_models: SelectedModel[];
+  selected_scoring_models: SelectedModel[];
+  selected_validation_models: SelectedModel[];
+  meta_model_weights: ModelWeights;
+  skipped_models: SelectedModel[];
+  llm_validation_policy: "strict" | "moderate" | "permissive" | "disabled";
+  blockers: string[];
+  warnings: string[];
+  reason: string;
+  created_at: string;
+};
+
+export type UpperWorkflowStage = {
+  stage: string;
+  status: "completed" | "skipped" | "failed" | "blocked";
+  run_id?: string | null;
+  blockers: string[];
+  warnings: string[];
+};
+
+export type UniverseSelectionDataFreshnessSummary = {
+  run_id: string;
+  status: string;
+  usable_count: number;
+  degraded_count: number;
+  blocked_count: number;
+  total_checked: number;
+};
+
+export type UpperWorkflowResponse = {
+  run_id: string;
+  status: "completed" | "partial" | "failed" | "blocked";
+  market_phase: string;
+  active_loop: string;
+  stages: UpperWorkflowStage[];
+  data_freshness: DataFreshnessCheckResponse | null;
+  regime: MarketRegimeModelResponse | null;
+  strategy_debate: StrategyDebateResponse | null;
+  strategy_ranking: StrategyRankingResponse | null;
+  model_selection: ModelSelectionResponse | null;
+  universe_selection: UniverseSelectionResponse | null;
+  promoted_candidates: string[];
+  blockers: string[];
+  warnings: string[];
+  started_at: string;
+  completed_at: string;
+  duration_ms: number;
+};
+
 export type DecisionCandidate = {
   symbol: string;
   asset_class: string;
@@ -1372,4 +1557,36 @@ export const api = {
   // Runtime/Timing APIs
   getRuntimePhase: () => request<{ market_phase: string; current_time_et: string; is_trading_day: boolean; live_trading_allowed: boolean; human_approval_required: boolean; timestamp: string }>("/api/runtime/phase"),
   getRuntimeCadence: () => request<{ market_phase: string; active_loop: string; cadence_plan: CadencePlan; live_trading_allowed: boolean; human_approval_required: boolean; timestamp: string }>("/api/runtime/cadence"),
+
+  // Data Freshness APIs
+  runDataFreshnessCheck: (payload: { symbols: string[]; asset_class?: string; source?: string; horizon?: string; allow_mock?: boolean }) =>
+    request<DataFreshnessCheckResponse>("/api/data-freshness/check", { method: "POST", body: JSON.stringify(payload) }),
+  getLatestDataFreshness: () => request<DataFreshnessCheckResponse | { message: string; status: string }>("/api/data-freshness/latest"),
+
+  // Market Regime APIs
+  runMarketRegime: (payload: { source?: string; horizon?: string; allow_mock?: boolean }) =>
+    request<MarketRegimeModelResponse>("/api/market-regime/model/run", { method: "POST", body: JSON.stringify(payload) }),
+  getLatestMarketRegime: () => request<MarketRegimeModelResponse | { message: string; status: string }>("/api/market-regime/model/latest"),
+
+  // Strategy Debate APIs
+  runStrategyDebate: (payload: { market_phase: string; active_loop: string; regime: string; horizon: string; account_equity?: number; buying_power?: number }) =>
+    request<StrategyDebateResponse>("/api/strategy-debate/run", { method: "POST", body: JSON.stringify(payload) }),
+  getLatestStrategyDebate: () => request<StrategyDebateResponse | { message: string; status: string }>("/api/strategy-debate/latest"),
+
+  // Strategy Ranking APIs
+  runStrategyRanking: (payload: { market_phase: string; active_loop: string; regime: string; horizon: string; account_equity?: number; buying_power?: number }) =>
+    request<StrategyRankingResponse>("/api/strategy-ranking/run", { method: "POST", body: JSON.stringify(payload) }),
+  getLatestStrategyRanking: () => request<StrategyRankingResponse | { message: string; status: string }>("/api/strategy-ranking/latest"),
+  getActiveStrategies: () => request<{ active_strategies: string[]; top_strategy: string | null }>("/api/strategy-ranking/active"),
+
+  // Model Selection APIs
+  runModelSelection: (payload: { strategy_key: string; market_phase: string; active_loop: string; regime: string; horizon: string; llm_budget_mode?: string }) =>
+    request<ModelSelectionResponse>("/api/model-selection/run", { method: "POST", body: JSON.stringify(payload) }),
+  getLatestModelSelection: () => request<ModelSelectionResponse | { message: string; status: string }>("/api/model-selection/latest"),
+  getModelRegistry: () => request<Record<string, unknown>>("/api/model-selection/registry"),
+
+  // Upper Workflow API
+  runUpperWorkflow: (payload: { symbols: string[]; horizon?: string; source?: string; asset_class?: string; account_equity?: number; buying_power?: number; allow_mock?: boolean; promote_to_candidate_universe?: boolean }) =>
+    request<UpperWorkflowResponse>("/api/upper-workflow/run", { method: "POST", body: JSON.stringify(payload) }),
+  getLatestUpperWorkflow: () => request<UpperWorkflowResponse | { message: string; status: string }>("/api/upper-workflow/latest"),
 };

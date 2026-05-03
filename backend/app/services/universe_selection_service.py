@@ -16,6 +16,10 @@ from uuid import uuid4
 from pydantic import BaseModel, ConfigDict, Field
 
 from app.services.candidate_universe_service import add_candidate
+from app.services.data_freshness_gate_service import (
+    DataFreshnessCheckRequest,
+    run_data_freshness_check,
+)
 from app.services.timing_cadence_service import (
     CadencePlan,
     ScannerDepth,
@@ -81,11 +85,22 @@ class UniverseSelectionCandidate(BaseModel):
     expires_at: str | None = None
 
 
+class DataFreshnessSummary(BaseModel):
+    """Summary of data freshness gate results."""
+
+    run_id: str
+    status: str
+    usable_count: int
+    degraded_count: int
+    blocked_count: int
+    total_checked: int
+
+
 class UniverseSelectionResponse(BaseModel):
     """Response from universe selection run."""
 
     run_id: str
-    status: Literal["completed", "partial", "failed", "no_symbols"]
+    status: Literal["completed", "partial", "failed", "no_symbols", "blocked_by_data_freshness"]
     market_phase: str
     active_loop: str
     cadence_plan: CadencePlan
@@ -93,6 +108,8 @@ class UniverseSelectionResponse(BaseModel):
     ranked_candidates: list[UniverseSelectionCandidate]
     selected_watchlist: list[UniverseSelectionCandidate]
     rejected_candidates: list[UniverseSelectionCandidate]
+    data_freshness_status: str | None = None
+    data_freshness_summary: DataFreshnessSummary | None = None
     blockers: list[str]
     warnings: list[str]
     started_at: str
@@ -289,11 +306,95 @@ def run_universe_selection(request: UniverseSelectionRequest) -> UniverseSelecti
     # Deduplicate symbols
     unique_symbols = list(dict.fromkeys([s.strip().upper() for s in request.symbols if s.strip()]))
 
-    # Score each symbol
+    # STEP 1: Data Freshness Gate
+    # Run data freshness check BEFORE scoring
+    freshness_check = run_data_freshness_check(DataFreshnessCheckRequest(
+        symbols=unique_symbols,
+        asset_class=request.asset_class,
+        source=request.source,
+        horizon=request.horizon,
+        allow_mock=request.include_mock,
+    ))
+
+    # Build data freshness summary for response
+    data_freshness_summary = DataFreshnessSummary(
+        run_id=freshness_check.run_id,
+        status=freshness_check.status,
+        usable_count=freshness_check.summary.usable_count,
+        degraded_count=freshness_check.summary.degraded_count,
+        blocked_count=freshness_check.summary.blocked_count,
+        total_checked=freshness_check.summary.total_checked,
+    )
+
+    # Get usable symbols (those that passed data freshness)
+    usable_symbols = [
+        r.symbol for r in freshness_check.results
+        if r.decision in ["usable", "degraded"]
+    ]
+
+    # If all symbols blocked, return early
+    if not usable_symbols:
+        completed_at = datetime.now(timezone.utc)
+        duration_ms = int((completed_at - started_at).total_seconds() * 1000)
+
+        # Build rejected candidates for blocked symbols
+        rejected_candidates = []
+        for r in freshness_check.results:
+            rejected_candidates.append(UniverseSelectionCandidate(
+                symbol=r.symbol,
+                asset_class=request.asset_class,
+                horizon=request.horizon,
+                rank=0,
+                universe_score=0,
+                blockers=r.blockers or ["Blocked by data freshness gate"],
+                warnings=r.warnings or [],
+                data_quality=r.data_quality,
+                provider=r.provider,
+            ))
+
+        return UniverseSelectionResponse(
+            run_id=run_id,
+            status="blocked_by_data_freshness",
+            market_phase=market_phase.value,
+            active_loop=active_loop.value,
+            cadence_plan=cadence_plan,
+            requested_symbols=unique_symbols,
+            ranked_candidates=[],
+            selected_watchlist=[],
+            rejected_candidates=rejected_candidates,
+            data_freshness_status=freshness_check.status,
+            data_freshness_summary=data_freshness_summary,
+            blockers=freshness_check.blockers + ["All symbols blocked by data freshness checks"],
+            warnings=freshness_check.warnings,
+            started_at=started_at.isoformat(),
+            completed_at=completed_at.isoformat(),
+            duration_ms=duration_ms,
+        )
+
+    # Add warnings from freshness check
+    warnings.extend(freshness_check.warnings)
+
+    # STEP 2: Score usable symbols only
     ranked_candidates: list[UniverseSelectionCandidate] = []
     rejected_candidates: list[UniverseSelectionCandidate] = []
 
-    for symbol in unique_symbols:
+    # First add blocked symbols from freshness check to rejected
+    for r in freshness_check.results:
+        if r.decision == "blocked":
+            rejected_candidates.append(UniverseSelectionCandidate(
+                symbol=r.symbol,
+                asset_class=request.asset_class,
+                horizon=request.horizon,
+                rank=0,
+                universe_score=0,
+                blockers=r.blockers or ["Blocked by data freshness gate"],
+                warnings=r.warnings or [],
+                data_quality=r.data_quality,
+                provider=r.provider,
+            ))
+
+    # Now score only usable symbols
+    for symbol in usable_symbols:
         candidate = _weighted_universe_ranker_v1(
             symbol=symbol,
             asset_class=request.asset_class,
@@ -313,7 +414,7 @@ def run_universe_selection(request: UniverseSelectionRequest) -> UniverseSelecti
                     horizon=request.horizon,
                     rank=0,
                     universe_score=0,
-                    blockers=["Failed data quality gate"],
+                    blockers=["Failed internal data quality gate"],
                 )
             )
             continue
@@ -350,8 +451,9 @@ def run_universe_selection(request: UniverseSelectionRequest) -> UniverseSelecti
     selected_watchlist = [c for c in selected_watchlist if c.universe_score >= request.min_score]
 
     # Build status
+    status: Literal["completed", "partial", "failed", "no_symbols", "blocked_by_data_freshness"]
     if not selected_watchlist and not ranked_candidates:
-        status: Literal["completed", "partial", "failed", "no_symbols"] = "failed"
+        status = "failed"
         blockers.append("No symbols passed data quality gate")
     elif len(selected_watchlist) < len(ranked_candidates):
         status = "partial"
@@ -372,6 +474,8 @@ def run_universe_selection(request: UniverseSelectionRequest) -> UniverseSelecti
         ranked_candidates=ranked_candidates,
         selected_watchlist=selected_watchlist,
         rejected_candidates=rejected_candidates,
+        data_freshness_status=freshness_check.status,
+        data_freshness_summary=data_freshness_summary,
         blockers=blockers,
         warnings=warnings,
         started_at=started_at.isoformat(),
