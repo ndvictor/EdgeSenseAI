@@ -15,7 +15,7 @@ DEFAULT_MIN_REWARD_RISK_RATIO = 3.0
 
 
 class DecisionWorkflowRunRequest(BaseModel):
-    symbols: list[str] = Field(default_factory=lambda: ["AAPL", "MSFT", "NVDA", "AMD"])
+    symbols: list[str] = Field(default_factory=list)
     asset_class: str = "stock"
     horizon: Literal["intraday", "day_trade", "swing", "one_month"] | str = "swing"
     source: str = "auto"
@@ -72,6 +72,27 @@ class DecisionWorkflowRunResponse(BaseModel):
 
 _LATEST_DECISION_RUN: DecisionWorkflowRunResponse | None = None
 _DECISION_RUNS: list[DecisionWorkflowRunResponse] = []
+
+
+def _empty_response(request: DecisionWorkflowRunRequest, started_at: datetime, message: str) -> DecisionWorkflowRunResponse:
+    completed_at = datetime.utcnow()
+    return DecisionWorkflowRunResponse(
+        run_id=f"dwf-{uuid4().hex[:12]}",
+        status="no_symbols_selected",
+        source=request.source,
+        horizon=request.horizon,
+        symbols_requested=[],
+        candidates=[],
+        top_action=None,
+        recommendations=[],
+        feature_runs=[],
+        model_runs=[],
+        blockers=[message],
+        warnings=[],
+        started_at=started_at,
+        completed_at=completed_at,
+        duration_ms=max(0, int((completed_at - started_at).total_seconds() * 1000)),
+    )
 
 
 def _as_float(value: Any) -> float | None:
@@ -290,7 +311,11 @@ def run_decision_workflow(request: DecisionWorkflowRunRequest, account_profile: 
     blockers: list[str] = []
     symbols = [symbol.strip().upper() for symbol in request.symbols if symbol.strip()]
     if not symbols:
-        symbols = ["AAPL", "MSFT", "NVDA", "AMD"]
+        response = _empty_response(request, started_at, "No symbols selected. Add symbols from a watchlist, scanner, or explicit workflow request.")
+        _LATEST_DECISION_RUN = response
+        _DECISION_RUNS.insert(0, response)
+        del _DECISION_RUNS[100:]
+        return response
     if request.source == "mock" and not request.allow_mock:
         blockers.append("source=mock requested but allow_mock=false. Candidates will be blocked from actionable status.")
 
@@ -362,7 +387,7 @@ def list_decision_workflow_runs(limit: int = 20) -> list[DecisionWorkflowRunResp
 def build_default_decision_workflow(account_profile: AccountRiskProfile | None = None) -> DecisionWorkflowRunResponse:
     return run_decision_workflow(
         DecisionWorkflowRunRequest(
-            symbols=["AAPL", "MSFT", "NVDA", "AMD"],
+            symbols=[],
             source="auto",
             horizon="swing",
             max_candidates=5,
