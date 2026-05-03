@@ -111,7 +111,6 @@ app.include_router(memory_router, prefix="/api")
 app.include_router(decision_workflows_router, prefix="/api")
 
 _ACCOUNT_PROFILE = AccountRiskProfile()
-_COMMAND_CENTER_SYMBOLS = ["AAPL", "MSFT", "NVDA", "AMD", "BTC-USD"]
 
 
 def agents() -> list[AgentStatus]:
@@ -120,14 +119,14 @@ def agents() -> list[AgentStatus]:
         AgentStatus(name="Feature Store Agent", role="feature_store", status="source_backed", status_label="Building feature rows"),
         AgentStatus(name="Model Orchestrator", role="model_orchestrator", status="source_backed", status_label="Running eligible models"),
         AgentStatus(name="Risk Agent", role="account_risk", status="checked", status_label="Risk gate required"),
-        AgentStatus(name="Recommendation Engine", role="recommendation_engine", status="source_backed", status_label="Ranking candidates"),
+        AgentStatus(name="Recommendation Engine", role="recommendation_engine", status="source_backed", status_label="Waiting for selected candidates"),
     ]
 
 
 def _build_decision_command_center() -> CommandCenterResponse:
     workflow = run_decision_workflow(
         DecisionWorkflowRunRequest(
-            symbols=_COMMAND_CENTER_SYMBOLS,
+            symbols=[],
             asset_class="stock",
             horizon="swing",
             source="auto",
@@ -154,7 +153,7 @@ def _build_decision_command_center() -> CommandCenterResponse:
         agents=agents(),
         source_data_status=source_status,
         dashboard_mode=f"decision_workflow:{workflow.status}",
-        cost_usage_message=f"Decision workflow {workflow.run_id} processed {len(workflow.symbols_requested)} symbols through source data, feature store, model orchestrator, and risk-gated watch output.",
+        cost_usage_message="No symbols selected. Add candidates through watchlist, scanner, Stocks search, or explicit decision workflow run before Command Center ranks anything.",
     )
 
 
