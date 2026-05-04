@@ -4,10 +4,11 @@ Implements Step 6 of the Adaptive Agentic Quant Workflow:
 - Numerically rank strategies after debate
 - Deterministic scoring based on debate fit_score + adjustments
 - Returns active/conditional/disabled status per strategy
+- Separates production-approved strategies from research candidates
 """
 
 from datetime import datetime, timezone
-from typing import Literal
+from typing import Any, Literal
 from uuid import uuid4
 
 from pydantic import BaseModel, ConfigDict, Field
@@ -19,7 +20,7 @@ from app.services.strategy_debate_service import (
     get_latest_strategy_debate,
     run_strategy_debate,
 )
-from app.strategies.registry import StrategyConfig, get_strategy, list_strategies
+from app.strategies.registry import StrategyConfig, get_strategy
 
 
 class RankedStrategy(BaseModel):
@@ -31,13 +32,15 @@ class RankedStrategy(BaseModel):
     strategy_family: str
     rank: int = 0
     strategy_score: float = Field(default=50.0, ge=0.0, le=100.0)
-    status: Literal["active", "conditional", "disabled"] = "conditional"
+    status: Literal["active", "conditional", "disabled", "research_candidate"] = "conditional"
     model_stack_hint: list[str] = Field(default_factory=list)
     scanner_needs: list[str] = Field(default_factory=list)
     data_needs: list[str] = Field(default_factory=list)
     reason: str = ""
     blockers: list[str] = Field(default_factory=list)
     warnings: list[str] = Field(default_factory=list)
+    research_candidate: bool = False
+    production_approved: bool = True
 
 
 class StrategyRankingRequest(BaseModel):
@@ -45,7 +48,7 @@ class StrategyRankingRequest(BaseModel):
 
     model_config = ConfigDict(protected_namespaces=())
 
-    debate_run_id: str | None = None  # Use latest if not provided
+    debate_run_id: str | None = None
     market_phase: str
     active_loop: str
     regime: str
@@ -53,7 +56,8 @@ class StrategyRankingRequest(BaseModel):
     account_equity: float | None = None
     buying_power: float | None = None
     strategy_keys: list[str] | None = None
-    source: str | None = None  # Data source availability check
+    source: str | None = None
+    research_mode: bool = False
 
 
 class StrategyRankingResponse(BaseModel):
@@ -72,117 +76,110 @@ class StrategyRankingResponse(BaseModel):
     active_strategies: list[str]
     disabled_strategies: list[str]
     top_strategy_key: str | None
+    recommended_active_strategy_keys: list[str] = Field(default_factory=list)
+    recommended_research_candidate_keys: list[str] = Field(default_factory=list)
     warnings: list[str] = Field(default_factory=list)
     blockers: list[str] = Field(default_factory=list)
     created_at: str
 
 
-# In-memory storage
 _LATEST_RANKING: StrategyRankingResponse | None = None
 _RANKING_HISTORY: list[StrategyRankingResponse] = []
 
 
-def _adjust_score_for_market_phase(base_score: float, market_phase: str, strategy: StrategyConfig) -> float:
-    """Adjust score based on market phase."""
-    adjustments = {
-        "market_open_first_30_min": {"stock_day_trading": 10, "crypto_intraday": 10, "stock_swing": -5},
-        "pre_market": {"stock_day_trading": 5, "stock_swing": 5, "options_day_trading": -10},
-        "market_open": {"stock_swing": 5, "crypto_swing": 5},
-        "midday": {"stock_day_trading": -10, "crypto_intraday": -5},
-        "power_hour": {"stock_day_trading": 8, "crypto_intraday": 5, "stock_one_month": -5},
-        "after_hours": {"stock_swing": -5, "stock_day_trading": -15, "options_swing": -10},
-        "market_closed": {"stock_swing": 0, "stock_one_month": 5},  # Favors research/planning
-    }
+def _is_research_candidate(strategy: StrategyConfig, argument: StrategyArgument | None = None) -> bool:
+    if argument is not None and getattr(argument, "research_candidate", False):
+        return True
+    return (
+        strategy.status == "candidate"
+        or strategy.promotion_status == "candidate"
+        or strategy.paper_research_only
+        or strategy.requires_backtest
+        or strategy.requires_owner_approval_for_promotion
+    )
 
-    strategy_family = f"{strategy.asset_class}_{strategy.timeframe}"
-    adjustment = adjustments.get(market_phase, {}).get(strategy_family, 0)
-    return base_score + adjustment
+
+def _is_production_approved(strategy: StrategyConfig) -> bool:
+    return (
+        strategy.status in {"active", "approved"}
+        and strategy.promotion_status == "active"
+        and not strategy.paper_research_only
+        and not strategy.disabled_reason
+    )
+
+
+def _normalize_service_result(result: Any) -> Any:
+    """Unwrap accidental tuple returns from service/helper functions.
+
+    The canonical service contract is a response object. This is defensive so a
+    tuple-shaped result cannot break upper workflow with missing `.run_id`.
+    """
+    if isinstance(result, tuple):
+        for item in result:
+            if isinstance(item, (StrategyDebateResponse, StrategyRankingResponse)):
+                return item
+        return result[0] if result else None
+    return result
+
+
+def _strategy_family(strategy: StrategyConfig) -> str:
+    return f"{strategy.asset_class}_{strategy.timeframe}"
+
+
+def _adjust_score_for_market_phase(base_score: float, market_phase: str, strategy: StrategyConfig) -> float:
+    adjustments = {
+        "market_open_first_30_min": {"stock_day_trade": 10, "crypto_intraday": 10, "stock_swing": -5},
+        "pre_market": {"stock_day_trade": 5, "stock_swing": 5, "option_day_trade": -10},
+        "market_open": {"stock_swing": 5, "crypto_swing": 5},
+        "midday": {"stock_day_trade": -10, "crypto_intraday": -5},
+        "power_hour": {"stock_day_trade": 8, "crypto_intraday": 5, "stock_one_month": -5},
+        "after_hours": {"stock_swing": -5, "stock_day_trade": -15, "option_swing": -10},
+        "market_closed": {"stock_swing": 0, "stock_one_month": 5},
+    }
+    return base_score + adjustments.get(market_phase, {}).get(_strategy_family(strategy), 0)
 
 
 def _adjust_score_for_regime(base_score: float, regime: str, strategy: StrategyConfig) -> float:
-    """Adjust score based on regime."""
     adjustments = {
-        "risk_on": {"stock_swing": 15, "crypto_swing": 15, "stock_day_trading": 10, "options_earnings": -10},
+        "risk_on": {"stock_swing": 15, "crypto_swing": 15, "stock_day_trade": 10, "option_earnings": -10},
         "risk_off": {"stock_swing": 10, "stock_one_month": 5, "crypto_swing": -20, "crypto_intraday": -15},
-        "chop": {"stock_swing": -5, "stock_day_trading": -5, "crypto_swing": -10},
-        "momentum": {"stock_swing": 15, "crypto_swing": 15, "stock_day_trading": 10, "options_swing": 5},
-        "mean_reversion": {"stock_day_trading": 10, "crypto_intraday": 10, "stock_swing": -5},
-        "volatility_expansion": {"stock_swing": -10, "stock_day_trading": -20, "options_swing": -10, "crypto_intraday": -10},
+        "chop": {"stock_swing": -5, "stock_day_trade": -5, "crypto_swing": -10},
+        "momentum": {"stock_swing": 15, "crypto_swing": 15, "stock_day_trade": 10, "option_swing": 5},
+        "mean_reversion": {"stock_day_trade": 10, "crypto_intraday": 10, "stock_swing": -5},
+        "volatility_expansion": {"stock_swing": -10, "stock_day_trade": -20, "option_swing": -10, "crypto_intraday": -10},
         "unknown": {},
     }
-
-    strategy_family = f"{strategy.asset_class}_{strategy.timeframe}"
-    adjustment = adjustments.get(regime, {}).get(strategy_family, 0)
-    return base_score + adjustment
+    return base_score + adjustments.get(regime, {}).get(_strategy_family(strategy), 0)
 
 
-def _adjust_score_for_data_availability(
-    base_score: float,
-    strategy: StrategyConfig,
-    source: str | None,
-) -> float:
-    """Adjust score based on data source availability."""
-    # Simplified - in real implementation check actual provider status
-    adjustment = 0
-
-    # Options strategies need options data
+def _adjust_score_for_data_availability(base_score: float, strategy: StrategyConfig, source: str | None) -> float:
     if strategy.asset_class == "option":
-        # Would check if options provider configured
-        adjustment -= 5  # Slight penalty for complexity
-
-    # Crypto strategies need crypto data
-    if strategy.asset_class == "crypto":
-        # Would check if crypto provider configured
-        pass
-
-    return base_score + adjustment
+        return base_score - 5
+    return base_score
 
 
-def _adjust_score_for_account_constraints(
-    base_score: float,
-    strategy: StrategyConfig,
-    account_equity: float | None,
-    buying_power: float | None,
-) -> float:
-    """Adjust score based on account constraints."""
-    adjustment = 0
-
-    # Small accounts favor liquid strategies
-    if account_equity is not None:
-        if account_equity < 25000 and strategy.timeframe == "day_trade":
-            # PDT rule consideration
-            adjustment -= 10
-
-    # Buying power constraints
-    if buying_power is not None:
-        if buying_power < 5000 and strategy.asset_class == "option":
-            # Limited options buying power
-            adjustment -= 5
-
-    return base_score + adjustment
+def _adjust_score_for_account_constraints(base_score: float, strategy: StrategyConfig, account_equity: float | None, buying_power: float | None) -> float:
+    score = base_score
+    if account_equity is not None and account_equity < 25000 and strategy.timeframe == "day_trade":
+        score -= 10
+    if buying_power is not None and buying_power < 5000 and strategy.asset_class == "option":
+        score -= 5
+    return score
 
 
 def _calculate_model_stack_hint(strategy: StrategyConfig, score: float) -> list[str]:
-    """Determine recommended model stack for strategy."""
-    stack = ["weighted_ranker_v1"]  # Always available
-
+    stack = ["weighted_ranker_v1"]
     if score >= 70:
-        # High confidence - can use more models
         if "xgboost_ranker" in strategy.required_models or "xgboost_ranker" in strategy.optional_models:
-            stack.append("xgboost_ranker")
+            stack.append("xgboost_ranker_not_trained")
         if "hmm_regime" in strategy.optional_models:
             stack.append("hmm_regime")
-
-    if score >= 60:
-        if "historical_similarity" in strategy.optional_models:
-            stack.append("historical_similarity_model")
-
+    if score >= 60 and "historical_similarity" in strategy.optional_models:
+        stack.append("historical_similarity_model")
     if strategy.asset_class == "option":
         stack.append("options_validation_model")
-
     if strategy.asset_class == "crypto":
         stack.append("liquidity_model")
-
     return stack
 
 
@@ -190,19 +187,43 @@ def _determine_strategy_status(
     score: float,
     allowed: bool,
     disable_reason: str | None,
+    research_candidate: bool,
+    production_approved: bool,
+    research_mode: bool,
 ) -> tuple[str, list[str], list[str]]:
-    """Determine strategy status and any blockers/warnings."""
     if not allowed:
         return "disabled", [disable_reason or "Strategy disabled"], []
-
+    if research_candidate and not research_mode:
+        return "research_candidate", [], ["Research candidate only; not eligible for active production recommendation."]
+    if not production_approved and not research_mode:
+        return "disabled", ["Strategy is not production-approved."], []
     if score >= 70:
         return "active", [], []
-    elif score >= 50:
+    if score >= 50:
         return "conditional", [], [f"Score {score:.1f} is moderate - use with caution"]
-    elif score >= 30:
+    if score >= 30:
         return "conditional", [], [f"Low score {score:.1f} - review carefully"]
-    else:
-        return "conditional", [], [f"Very low score {score:.1f} - consider avoiding"]
+    return "conditional", [], [f"Very low score {score:.1f} - consider avoiding"]
+
+
+def _resolve_debate(request: StrategyRankingRequest) -> StrategyDebateResponse | None:
+    latest = _normalize_service_result(get_latest_strategy_debate())
+    if isinstance(latest, StrategyDebateResponse):
+        if request.debate_run_id is None or latest.run_id == request.debate_run_id:
+            return latest
+
+    return _normalize_service_result(run_strategy_debate(
+        StrategyDebateRequest(
+            market_phase=request.market_phase,
+            active_loop=request.active_loop,
+            regime=request.regime,
+            horizon=request.horizon,
+            account_equity=request.account_equity,
+            buying_power=request.buying_power,
+            strategy_keys=request.strategy_keys,
+            research_mode=request.research_mode,
+        )
+    ))
 
 
 def run_strategy_ranking(request: StrategyRankingRequest) -> StrategyRankingResponse:
@@ -211,37 +232,13 @@ def run_strategy_ranking(request: StrategyRankingRequest) -> StrategyRankingResp
 
     run_id = f"rank-{uuid4().hex[:12]}"
     created_at = datetime.now(timezone.utc).isoformat()
+    debate = _resolve_debate(request)
 
-    # Get debate results
-    debate: StrategyDebateResponse | None = None
-    if request.debate_run_id:
-        # Find specific debate in history
-        for d in get_latest_strategy_debate() or []:
-            if isinstance(d, list):
-                continue
-            if d.run_id == request.debate_run_id:
-                debate = d
-                break
-
-    if not debate:
-        # Run new debate
-        debate = run_strategy_debate(
-            StrategyDebateRequest(
-                market_phase=request.market_phase,
-                active_loop=request.active_loop,
-                regime=request.regime,
-                horizon=request.horizon,
-                account_equity=request.account_equity,
-                buying_power=request.buying_power,
-                strategy_keys=request.strategy_keys,
-            )
-        )
-
-    if not debate or not debate.strategy_arguments:
-        return StrategyRankingResponse(
+    if not isinstance(debate, StrategyDebateResponse) or not debate.strategy_arguments:
+        response = StrategyRankingResponse(
             run_id=run_id,
             status="failed",
-            debate_run_id=debate.run_id if debate else None,
+            debate_run_id=getattr(debate, "run_id", None),
             market_phase=request.market_phase,
             active_loop=request.active_loop,
             regime=request.regime,
@@ -254,11 +251,14 @@ def run_strategy_ranking(request: StrategyRankingRequest) -> StrategyRankingResp
             warnings=[],
             created_at=created_at,
         )
+        _LATEST_RANKING = response
+        _RANKING_HISTORY.append(response)
+        return response
 
-    # Rank each strategy
     ranked: list[RankedStrategy] = []
     active_keys: list[str] = []
     disabled_keys: list[str] = []
+    research_keys: list[str] = []
     all_warnings: list[str] = []
 
     for arg in debate.strategy_arguments:
@@ -266,26 +266,26 @@ def run_strategy_ranking(request: StrategyRankingRequest) -> StrategyRankingResp
         if not strategy:
             continue
 
-        # Start with debate fit_score
-        base_score = arg.fit_score
-
-        # Apply adjustments
-        score = _adjust_score_for_market_phase(base_score, request.market_phase, strategy)
+        score = _adjust_score_for_market_phase(arg.fit_score, request.market_phase, strategy)
         score = _adjust_score_for_regime(score, request.regime, strategy)
         score = _adjust_score_for_data_availability(score, strategy, request.source)
         score = _adjust_score_for_account_constraints(score, strategy, request.account_equity, request.buying_power)
-
-        # Cap at 0-100
         score = max(0.0, min(100.0, score))
 
-        # Determine status
-        status, blockers, warnings = _determine_strategy_status(score, arg.allowed, arg.disable_reason)
+        research_candidate = _is_research_candidate(strategy, arg)
+        production_approved = _is_production_approved(strategy)
+        status, blockers, warnings = _determine_strategy_status(
+            score=score,
+            allowed=arg.allowed,
+            disable_reason=arg.disable_reason,
+            research_candidate=research_candidate,
+            production_approved=production_approved,
+            research_mode=request.research_mode,
+        )
 
-        # Build ranked strategy
         ranked_strategy = RankedStrategy(
             strategy_key=arg.strategy_key,
             strategy_family=arg.strategy_family,
-            rank=0,  # Will be set after sorting
             strategy_score=score,
             status=status,
             model_stack_hint=_calculate_model_stack_hint(strategy, score),
@@ -294,33 +294,34 @@ def run_strategy_ranking(request: StrategyRankingRequest) -> StrategyRankingResp
             reason=arg.bull_case if score >= 50 else arg.bear_case,
             blockers=blockers,
             warnings=warnings,
+            research_candidate=research_candidate,
+            production_approved=production_approved,
         )
-
         ranked.append(ranked_strategy)
 
-        if status == "active":
+        if status == "active" and production_approved and not research_candidate:
             active_keys.append(arg.strategy_key)
         elif status == "disabled":
             disabled_keys.append(arg.strategy_key)
+        elif research_candidate:
+            research_keys.append(arg.strategy_key)
 
         all_warnings.extend(warnings)
 
-    # Sort by score descending
     ranked.sort(key=lambda x: x.strategy_score, reverse=True)
+    for index, item in enumerate(ranked):
+        item.rank = index + 1
 
-    # Assign ranks
-    for i, r in enumerate(ranked):
-        r.rank = i + 1
+    active_ranked = [item for item in ranked if item.status == "active" and item.production_approved and not item.research_candidate]
+    top_strategy = active_ranked[0].strategy_key if active_ranked else None
 
-    # Determine top strategy
-    top_strategy = ranked[0].strategy_key if ranked else None
+    if not top_strategy and research_keys:
+        all_warnings.append("Only research candidate strategies available; no active strategy selected.")
 
-    # Deduplicate warnings
-    all_warnings = list(set(all_warnings))
-
+    all_warnings = sorted(set(all_warnings))
     response = StrategyRankingResponse(
         run_id=run_id,
-        status="completed" if ranked else "failed",
+        status="completed" if ranked and top_strategy else "partial" if ranked else "failed",
         debate_run_id=debate.run_id,
         market_phase=request.market_phase,
         active_loop=request.active_loop,
@@ -330,18 +331,17 @@ def run_strategy_ranking(request: StrategyRankingRequest) -> StrategyRankingResp
         active_strategies=active_keys,
         disabled_strategies=disabled_keys,
         top_strategy_key=top_strategy,
+        recommended_active_strategy_keys=active_keys,
+        recommended_research_candidate_keys=sorted(set(research_keys)),
         warnings=all_warnings,
-        blockers=[],
+        blockers=[] if ranked else ["No strategies ranked"],
         created_at=created_at,
     )
 
     _LATEST_RANKING = response
     _RANKING_HISTORY.append(response)
-
-    # Keep only last 100
     if len(_RANKING_HISTORY) > 100:
         del _RANKING_HISTORY[:-100]
-
     return response
 
 
@@ -356,14 +356,14 @@ def list_strategy_ranking_history(limit: int = 20) -> list[StrategyRankingRespon
 
 
 def get_top_strategy_from_ranking() -> str | None:
-    """Get top strategy key from latest ranking."""
+    """Get top active production strategy key from latest ranking."""
     if not _LATEST_RANKING:
         return None
     return _LATEST_RANKING.top_strategy_key
 
 
 def get_active_strategies_from_ranking() -> list[str]:
-    """Get list of active strategy keys from latest ranking."""
+    """Get list of active production strategy keys from latest ranking."""
     if not _LATEST_RANKING:
         return []
     return _LATEST_RANKING.active_strategies
