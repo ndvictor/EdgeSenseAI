@@ -1,7 +1,7 @@
 "use client";
 
 import Link from "next/link";
-import { Activity, Crown, DatabaseZap, Gauge, Settings, TrendingUp, Waves, Zap } from "lucide-react";
+import { Activity, Crown, DatabaseZap, Gauge, LogIn, Settings, TrendingUp, Waves } from "lucide-react";
 
 const ticker = [
   { label: "SPY", value: "530.74", change: "+0.68%", positive: true },
@@ -22,10 +22,13 @@ export default function Home() {
 
       <div className="relative z-10 flex min-h-screen flex-col px-10 py-7">
         <header className="flex items-center justify-end gap-5">
-          <div className="flex items-center gap-2 rounded-xl border border-white/10 bg-white/[0.03] px-4 py-2 text-sm text-slate-200 backdrop-blur">
-            <span className="h-2 w-2 rounded-full bg-emerald-400 shadow-[0_0_14px_rgba(52,211,153,0.9)]" />
-            Markets Open
-          </div>
+          <Link
+            href="/login"
+            className="flex items-center gap-2 rounded-xl border border-emerald-400/25 bg-emerald-400/[0.06] px-4 py-2 text-sm font-semibold text-emerald-300 backdrop-blur transition hover:border-emerald-300/60 hover:bg-emerald-400/10"
+          >
+            <LogIn className="h-4 w-4" />
+            Login
+          </Link>
           <div className="flex h-10 w-10 items-center justify-center rounded-full border border-white/10 bg-white/[0.03] text-slate-300">N</div>
         </header>
 
@@ -45,13 +48,13 @@ export default function Home() {
 
           <div className="mt-12 flex w-full max-w-md flex-col gap-5">
             <Link
-              href="/command-center"
+              href="/login?next=/command-center"
               className="rounded-2xl border border-emerald-300/20 bg-gradient-to-b from-emerald-400 to-emerald-700 px-8 py-5 text-lg font-semibold text-white shadow-[0_18px_60px_rgba(16,185,129,0.26)] transition hover:-translate-y-0.5 hover:shadow-[0_24px_70px_rgba(16,185,129,0.34)]"
             >
               Open Command Center →
             </Link>
             <Link
-              href="/owner"
+              href="/login?next=/owner"
               className="rounded-2xl border border-emerald-400/35 bg-black/40 px-8 py-5 text-lg font-semibold text-emerald-300 shadow-[0_0_40px_rgba(16,185,129,0.10)] backdrop-blur transition hover:-translate-y-0.5 hover:bg-emerald-400/10"
             >
               Open Owner Command Center →
@@ -59,7 +62,7 @@ export default function Home() {
           </div>
 
           <div className="mt-16 grid w-full max-w-5xl grid-cols-1 gap-6 md:grid-cols-2">
-            <Link href="/owner" className="group rounded-3xl border border-emerald-400/20 bg-black/35 p-7 text-left backdrop-blur transition hover:border-emerald-300/45 hover:bg-emerald-400/[0.06]">
+            <Link href="/login?next=/owner" className="group rounded-3xl border border-emerald-400/20 bg-black/35 p-7 text-left backdrop-blur transition hover:border-emerald-300/45 hover:bg-emerald-400/[0.06]">
               <div className="flex items-start gap-5">
                 <div className="flex h-16 w-16 items-center justify-center rounded-2xl border border-emerald-400/25 bg-emerald-400/10 text-emerald-300">
                   <Crown className="h-8 w-8" />
@@ -71,7 +74,7 @@ export default function Home() {
                 </div>
               </div>
             </Link>
-            <Link href="/command-center" className="group rounded-3xl border border-emerald-400/20 bg-black/35 p-7 text-left backdrop-blur transition hover:border-emerald-300/45 hover:bg-emerald-400/[0.06]">
+            <Link href="/login?next=/command-center" className="group rounded-3xl border border-emerald-400/20 bg-black/35 p-7 text-left backdrop-blur transition hover:border-emerald-300/45 hover:bg-emerald-400/[0.06]">
               <div className="flex items-start gap-5">
                 <div className="flex h-16 w-16 items-center justify-center rounded-2xl border border-emerald-400/25 bg-emerald-400/10 text-emerald-300">
                   <Settings className="h-8 w-8" />
