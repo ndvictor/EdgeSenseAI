@@ -3,7 +3,7 @@
 import Link from "next/link";
 import { signIn } from "next-auth/react";
 import { useSearchParams } from "next/navigation";
-import { Activity, ArrowLeft, Chrome, Crown, Gauge, ShieldCheck } from "lucide-react";
+import { Activity, ArrowLeft, Crown, Gauge, LogIn, ShieldCheck } from "lucide-react";
 
 function getSafeNext(next: string | null) {
   if (next === "/command-center" || next === "/owner") return next;
@@ -84,7 +84,7 @@ export default function LoginPage() {
                 onClick={() => signIn("google", { callbackUrl: next })}
                 className="mt-7 flex w-full items-center justify-center gap-3 rounded-2xl border border-emerald-300/20 bg-gradient-to-b from-emerald-400 to-emerald-700 px-6 py-5 text-base font-semibold text-white shadow-[0_18px_60px_rgba(16,185,129,0.26)] transition hover:-translate-y-0.5 hover:shadow-[0_24px_70px_rgba(16,185,129,0.34)]"
               >
-                <Chrome className="h-5 w-5" />
+                <LogIn className="h-5 w-5" />
                 Log in with Google
               </button>
 
