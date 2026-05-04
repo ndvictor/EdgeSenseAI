@@ -574,3 +574,43 @@ def test_memory_and_persistence_fallback_contracts():
     assert "postgres_persistence_status" in summary_payload
     assert "vector_memory_status" in summary_payload
     assert summary_payload["recent_memory_count"] >= 1
+
+
+def test_upper_workflow_provider_failure_returns_degraded_response(monkeypatch):
+    from app.services import upper_workflow_service
+
+    def fail_freshness(_request):
+        raise RuntimeError("yfinance throttled: 429 Too Many Requests")
+
+    monkeypatch.setattr(upper_workflow_service, "run_data_freshness_check", fail_freshness)
+    response = client.post(
+        "/api/upper-workflow/run",
+        json={
+            "symbols": ["TSLA", "META", "PLTR"],
+            "source": "auto",
+            "horizon": "swing",
+            "allow_mock": False,
+            "build_trigger_rules": True,
+            "run_event_scanner": True,
+            "run_signal_scoring": True,
+            "run_meta_model": True,
+            "run_recommendation_pipeline": False,
+            "promote_to_candidate_universe": False,
+        },
+    )
+    assert response.status_code == 200
+    payload = response.json()
+    assert payload["status"] == "blocked_by_data_freshness"
+    assert payload["blockers"]
+    assert any("Data freshness check failed" in blocker for blocker in payload["blockers"])
+    assert any("No mock data was used" in warning for warning in payload["warnings"])
+    stages = [stage["stage"] for stage in payload["stages"]]
+    assert "data_freshness" in stages
+    assert "universe_selection" not in stages
+
+    latest = client.get("/api/upper-workflow/latest")
+    assert latest.status_code == 200
+    assert latest.json()["run_id"] == payload["run_id"]
+    history = client.get("/api/upper-workflow/history")
+    assert history.status_code == 200
+    assert any(run["run_id"] == payload["run_id"] for run in history.json()["runs"])

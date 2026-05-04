@@ -1,3 +1,4 @@
+import concurrent.futures
 from collections.abc import Generator
 from functools import lru_cache
 from typing import Any
@@ -50,16 +51,28 @@ def open_session() -> Session | None:
         return None
 
 
-def check_database_health() -> dict[str, Any]:
-    engine = get_engine()
-    if engine is None:
-        return {"status": "not_configured", "connected": False, "message": "DATABASE_URL is not configured or engine creation failed."}
-    try:
+def _check_db_with_timeout(engine, timeout: float = 3.0) -> dict[str, Any]:
+    """Check DB health with explicit timeout to prevent hanging."""
+    def _check():
         with engine.connect() as connection:
             connection.execute(text("SELECT 1"))
             pgvector = connection.execute(text("SELECT EXISTS (SELECT 1 FROM pg_extension WHERE extname = 'vector')")).scalar()
         return {"status": "connected", "connected": True, "pgvector_status": "enabled" if pgvector else "not_enabled", "message": "Postgres connection is healthy."}
-    except SQLAlchemyError as exc:
-        return {"status": "unavailable", "connected": False, "pgvector_status": "unknown", "message": str(exc)}
-    except Exception as exc:
-        return {"status": "unavailable", "connected": False, "pgvector_status": "unknown", "message": str(exc)}
+    
+    with concurrent.futures.ThreadPoolExecutor(max_workers=1) as executor:
+        future = executor.submit(_check)
+        try:
+            return future.result(timeout=timeout)
+        except concurrent.futures.TimeoutError:
+            return {"status": "timeout", "connected": False, "pgvector_status": "unknown", "message": f"Connection timeout after {timeout}s"}
+        except SQLAlchemyError as exc:
+            return {"status": "unavailable", "connected": False, "pgvector_status": "unknown", "message": str(exc)}
+        except Exception as exc:
+            return {"status": "unavailable", "connected": False, "pgvector_status": "unknown", "message": str(exc)}
+
+
+def check_database_health() -> dict[str, Any]:
+    engine = get_engine()
+    if engine is None:
+        return {"status": "not_configured", "connected": False, "message": "DATABASE_URL is not configured or engine creation failed."}
+    return _check_db_with_timeout(engine, timeout=3.0)

@@ -21,6 +21,7 @@ Live trading disabled, human approval required.
 """
 
 from datetime import datetime, timezone
+import logging
 from typing import Literal
 from uuid import uuid4
 
@@ -138,7 +139,7 @@ class UpperWorkflowResponse(BaseModel):
     model_config = ConfigDict(protected_namespaces=())
 
     run_id: str
-    status: Literal["completed", "partial", "failed", "blocked"]
+    status: Literal["completed", "partial", "failed", "blocked", "blocked_by_data_freshness"]
     market_phase: str
     active_loop: str
     stages: list[UpperWorkflowStage]
@@ -164,6 +165,30 @@ class UpperWorkflowResponse(BaseModel):
 # In-memory storage
 _LATEST_UPPER_WORKFLOW: UpperWorkflowResponse | None = None
 _UPPER_WORKFLOW_HISTORY: list[UpperWorkflowResponse] = []
+logger = logging.getLogger(__name__)
+
+
+def _safe_trace_workflow_step(workflow_name: str, step_name: str, status: str, metadata: dict | None = None) -> None:
+    try:
+        trace_workflow_step(workflow_name, step_name, status, metadata)
+    except Exception as exc:
+        logger.warning("Upper workflow trace step failed but workflow will continue: %s", exc)
+
+
+def _safe_trace_event(*args, **kwargs) -> None:
+    try:
+        trace_event(*args, **kwargs)
+    except Exception as exc:
+        logger.warning("Upper workflow trace event failed but workflow will continue: %s", exc)
+
+
+def _save_upper_workflow_run(response: UpperWorkflowResponse) -> UpperWorkflowResponse:
+    global _LATEST_UPPER_WORKFLOW
+    _LATEST_UPPER_WORKFLOW = response
+    _UPPER_WORKFLOW_HISTORY.append(response)
+    if len(_UPPER_WORKFLOW_HISTORY) > 100:
+        del _UPPER_WORKFLOW_HISTORY[:-100]
+    return response
 
 
 def run_upper_workflow(request: UpperWorkflowRequest) -> UpperWorkflowResponse:
@@ -177,13 +202,13 @@ def run_upper_workflow(request: UpperWorkflowRequest) -> UpperWorkflowResponse:
     warnings: list[str] = []
 
     # Trace workflow start
-    trace_workflow_step("upper_workflow", "started", "running", {"run_id": run_id, "symbols_count": len(request.symbols)})
+    _safe_trace_workflow_step("upper_workflow", "started", "running", {"run_id": run_id, "symbols_count": len(request.symbols)})
 
     # Require explicit symbols
     if not request.symbols:
         completed_at = datetime.now(timezone.utc)
         duration_ms = int((completed_at - started_at).total_seconds() * 1000)
-        return UpperWorkflowResponse(
+        return _save_upper_workflow_run(UpperWorkflowResponse(
             run_id=run_id,
             status="blocked",
             market_phase="unknown",
@@ -194,7 +219,7 @@ def run_upper_workflow(request: UpperWorkflowRequest) -> UpperWorkflowResponse:
             started_at=started_at.isoformat(),
             completed_at=completed_at.isoformat(),
             duration_ms=duration_ms,
-        )
+        ))
 
     # 1. Runtime Cadence
     try:
@@ -209,7 +234,7 @@ def run_upper_workflow(request: UpperWorkflowRequest) -> UpperWorkflowResponse:
     except Exception as e:
         completed_at = datetime.now(timezone.utc)
         duration_ms = int((completed_at - started_at).total_seconds() * 1000)
-        return UpperWorkflowResponse(
+        return _save_upper_workflow_run(UpperWorkflowResponse(
             run_id=run_id,
             status="failed",
             market_phase="unknown",
@@ -220,7 +245,7 @@ def run_upper_workflow(request: UpperWorkflowRequest) -> UpperWorkflowResponse:
             started_at=started_at.isoformat(),
             completed_at=completed_at.isoformat(),
             duration_ms=duration_ms,
-        )
+        ))
 
     # 2. Data Freshness Check
     freshness: DataFreshnessCheckResponse | None = None
@@ -248,9 +273,9 @@ def run_upper_workflow(request: UpperWorkflowRequest) -> UpperWorkflowResponse:
             if freshness.summary.blocked_count == len(request.symbols):
                 completed_at = datetime.now(timezone.utc)
                 duration_ms = int((completed_at - started_at).total_seconds() * 1000)
-                return UpperWorkflowResponse(
+                return _save_upper_workflow_run(UpperWorkflowResponse(
                     run_id=run_id,
-                    status="blocked",
+                    status="blocked_by_data_freshness",
                     market_phase=market_phase,
                     active_loop=active_loop,
                     stages=stages,
@@ -260,7 +285,7 @@ def run_upper_workflow(request: UpperWorkflowRequest) -> UpperWorkflowResponse:
                     started_at=started_at.isoformat(),
                     completed_at=completed_at.isoformat(),
                     duration_ms=duration_ms,
-                )
+                ))
         else:
             stages.append(UpperWorkflowStage(
                 stage="data_freshness",
@@ -269,7 +294,7 @@ def run_upper_workflow(request: UpperWorkflowRequest) -> UpperWorkflowResponse:
                 warnings=freshness.warnings,
             ))
             warnings.extend(freshness.warnings)
-            trace_workflow_step("upper_workflow", "data_freshness", "completed", {"run_id": freshness.run_id})
+            _safe_trace_workflow_step("upper_workflow", "data_freshness", "completed", {"run_id": freshness.run_id})
     except Exception as e:
         stages.append(UpperWorkflowStage(
             stage="data_freshness",
@@ -277,6 +302,22 @@ def run_upper_workflow(request: UpperWorkflowRequest) -> UpperWorkflowResponse:
             blockers=[str(e)],
         ))
         blockers.append(f"Data freshness check failed: {e}")
+        warnings.append("Data provider failure blocked upper workflow before strategy/universe/scoring stages. No mock data was used.")
+        completed_at = datetime.now(timezone.utc)
+        duration_ms = int((completed_at - started_at).total_seconds() * 1000)
+        return _save_upper_workflow_run(UpperWorkflowResponse(
+            run_id=run_id,
+            status="blocked_by_data_freshness",
+            market_phase=market_phase,
+            active_loop=active_loop,
+            stages=stages,
+            data_freshness=freshness,
+            blockers=blockers,
+            warnings=warnings,
+            started_at=started_at.isoformat(),
+            completed_at=completed_at.isoformat(),
+            duration_ms=duration_ms,
+        ))
 
     # Get usable symbols after freshness check
     usable_symbols = request.symbols
@@ -285,9 +326,9 @@ def run_upper_workflow(request: UpperWorkflowRequest) -> UpperWorkflowResponse:
         if not usable_symbols:
             completed_at = datetime.now(timezone.utc)
             duration_ms = int((completed_at - started_at).total_seconds() * 1000)
-            return UpperWorkflowResponse(
+            return _save_upper_workflow_run(UpperWorkflowResponse(
                 run_id=run_id,
-                status="blocked",
+                status="blocked_by_data_freshness",
                 market_phase=market_phase,
                 active_loop=active_loop,
                 stages=stages,
@@ -297,7 +338,7 @@ def run_upper_workflow(request: UpperWorkflowRequest) -> UpperWorkflowResponse:
                 started_at=started_at.isoformat(),
                 completed_at=completed_at.isoformat(),
                 duration_ms=duration_ms,
-            )
+            ))
 
     # 3. Market Regime Model
     regime: MarketRegimeResponse | None = None
@@ -326,7 +367,7 @@ def run_upper_workflow(request: UpperWorkflowRequest) -> UpperWorkflowResponse:
                 warnings=regime.warnings,
             ))
             warnings.extend(regime.warnings)
-            trace_workflow_step("upper_workflow", "market_regime", "completed", {"regime": regime.regime})
+            _safe_trace_workflow_step("upper_workflow", "market_regime", "completed", {"regime": regime.regime})
     except Exception as e:
         stages.append(UpperWorkflowStage(
             stage="market_regime",
@@ -334,7 +375,7 @@ def run_upper_workflow(request: UpperWorkflowRequest) -> UpperWorkflowResponse:
             blockers=[str(e)],
         ))
         warnings.append(f"Market regime detection failed: {e}")
-        trace_workflow_step("upper_workflow", "market_regime", "failed")
+        _safe_trace_workflow_step("upper_workflow", "market_regime", "failed")
 
     regime_value = regime.regime if regime else "unknown"
 
@@ -387,7 +428,7 @@ def run_upper_workflow(request: UpperWorkflowRequest) -> UpperWorkflowResponse:
             warnings=ranking.warnings,
         ))
         warnings.extend(ranking.warnings)
-        trace_workflow_step("upper_workflow", "strategy_ranking", "completed", {"top_strategy": ranking.top_strategy_key})
+        _safe_trace_workflow_step("upper_workflow", "strategy_ranking", "completed", {"top_strategy": ranking.top_strategy_key})
     except Exception as e:
         stages.append(UpperWorkflowStage(
             stage="strategy_ranking",
@@ -395,7 +436,7 @@ def run_upper_workflow(request: UpperWorkflowRequest) -> UpperWorkflowResponse:
             blockers=[str(e)],
         ))
         warnings.append(f"Strategy ranking failed: {e}")
-        trace_workflow_step("upper_workflow", "strategy_ranking", "failed")
+        _safe_trace_workflow_step("upper_workflow", "strategy_ranking", "failed")
 
     # 6. Model Selection (for top strategy)
     model_sel: ModelSelectionResponse | None = None
@@ -461,7 +502,7 @@ def run_upper_workflow(request: UpperWorkflowRequest) -> UpperWorkflowResponse:
                 warnings=universe.warnings,
             ))
             warnings.extend(universe.warnings)
-            trace_workflow_step("upper_workflow", "universe_selection", "completed", {"candidates_count": len(universe.selected_watchlist) if universe.selected_watchlist else 0})
+            _safe_trace_workflow_step("upper_workflow", "universe_selection", "completed", {"candidates_count": len(universe.selected_watchlist) if universe.selected_watchlist else 0})
         except Exception as e:
             stages.append(UpperWorkflowStage(
                 stage="universe_selection",
@@ -469,7 +510,7 @@ def run_upper_workflow(request: UpperWorkflowRequest) -> UpperWorkflowResponse:
                 blockers=[str(e)],
             ))
             warnings.append(f"Universe selection failed: {e}")
-            trace_workflow_step("upper_workflow", "universe_selection", "failed")
+            _safe_trace_workflow_step("upper_workflow", "universe_selection", "failed")
     else:
         skip_reason = "No usable symbols" if not usable_symbols else "No active strategy"
         stages.append(UpperWorkflowStage(
@@ -603,7 +644,7 @@ def run_upper_workflow(request: UpperWorkflowRequest) -> UpperWorkflowResponse:
                 warnings=meta_model_ensemble.warnings,
             ))
             warnings.extend(meta_model_ensemble.warnings)
-            trace_workflow_step("upper_workflow", "meta_model_ensemble", "completed")
+            _safe_trace_workflow_step("upper_workflow", "meta_model_ensemble", "completed")
         except Exception as e:
             stages.append(UpperWorkflowStage(
                 stage="meta_model_ensemble",
@@ -611,7 +652,7 @@ def run_upper_workflow(request: UpperWorkflowRequest) -> UpperWorkflowResponse:
                 blockers=[str(e)],
             ))
             warnings.append(f"Meta-model ensemble failed: {e}")
-            trace_workflow_step("upper_workflow", "meta_model_ensemble", "failed")
+            _safe_trace_workflow_step("upper_workflow", "meta_model_ensemble", "failed")
     else:
         skip_reason = "run_meta_model=false" if not request.run_meta_model else "No scored signals"
         stages.append(UpperWorkflowStage(
@@ -699,7 +740,7 @@ def run_upper_workflow(request: UpperWorkflowRequest) -> UpperWorkflowResponse:
                 warnings=recommendation_pipeline.warnings,
             ))
             warnings.extend(recommendation_pipeline.warnings)
-            trace_workflow_step("upper_workflow", "recommendation_pipeline", recommendation_pipeline.status)
+            _safe_trace_workflow_step("upper_workflow", "recommendation_pipeline", recommendation_pipeline.status)
         except Exception as e:
             stages.append(UpperWorkflowStage(
                 stage="recommendation_pipeline",
@@ -707,7 +748,7 @@ def run_upper_workflow(request: UpperWorkflowRequest) -> UpperWorkflowResponse:
                 blockers=[str(e)],
             ))
             warnings.append(f"Recommendation pipeline failed: {e}")
-            trace_workflow_step("upper_workflow", "recommendation_pipeline", "failed")
+            _safe_trace_workflow_step("upper_workflow", "recommendation_pipeline", "failed")
     else:
         skip_reason = "run_recommendation_pipeline=false" if not request.run_recommendation_pipeline else "No ensemble signals available"
         stages.append(UpperWorkflowStage(
@@ -733,7 +774,7 @@ def run_upper_workflow(request: UpperWorkflowRequest) -> UpperWorkflowResponse:
     duration_ms = int((completed_at - started_at).total_seconds() * 1000)
 
     # Trace workflow completion
-    trace_workflow_step("upper_workflow", "completed", final_status, {"duration_ms": duration_ms, "stages_count": len(stages)})
+    _safe_trace_workflow_step("upper_workflow", "completed", final_status, {"duration_ms": duration_ms, "stages_count": len(stages)})
 
     response = UpperWorkflowResponse(
         run_id=run_id,
@@ -760,14 +801,7 @@ def run_upper_workflow(request: UpperWorkflowRequest) -> UpperWorkflowResponse:
         duration_ms=duration_ms,
     )
 
-    _LATEST_UPPER_WORKFLOW = response
-    _UPPER_WORKFLOW_HISTORY.append(response)
-
-    # Keep only last 100
-    if len(_UPPER_WORKFLOW_HISTORY) > 100:
-        _UPPER_WORKFLOW_HISTORY = _UPPER_WORKFLOW_HISTORY[-100:]
-
-    return response
+    return _save_upper_workflow_run(response)
 
 
 def get_latest_upper_workflow() -> UpperWorkflowResponse | None:
