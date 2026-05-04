@@ -41,6 +41,7 @@ const items = [
   { label: "Live Watchlist", href: "/live-watchlist", icon: BellRing },
   { label: "Edge Signals", href: "/edge-signals", icon: Activity },
   { label: "Model Lab", href: "/model-lab", icon: FlaskConical },
+  { label: "Model Registry", href: "/model-registry", icon: ShieldCheck },
   { label: "Data Sources", href: "/data-sources", icon: DatabaseZap },
   { label: "Platform Readiness", href: "/platform-readiness", icon: ShieldCheck },
   { label: "Stocks", href: "/stocks", icon: TrendingUp },
