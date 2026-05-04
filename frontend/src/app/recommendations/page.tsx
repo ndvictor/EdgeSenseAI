@@ -157,7 +157,7 @@ export default function RecommendationsPage() {
   const pendingRecommendations = recommendations.filter(r => r.status === "pending_review");
   const approvedRecommendations = recommendations.filter(r => r.status === "approved" || r.status === "paper_trade_created");
   const rejectedRecommendations = recommendations.filter(r => r.status === "rejected" || r.status === "expired");
-  const pipelineProvenance = pipelineRun?.source_provenance as ProvenanceLike | undefined;
+  const pipelineProvenance = (pipelineRun as unknown as { source_provenance?: ProvenanceLike } | null)?.source_provenance;
   const recommendationProvenance = pipelineRun?.recommendation as (typeof pipelineRun.recommendation & ProvenanceLike) | null | undefined;
 
   return (
