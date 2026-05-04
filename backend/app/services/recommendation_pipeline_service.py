@@ -111,6 +111,17 @@ class PipelineRecommendation(BaseModel):
     live_trading_allowed: bool = False
     approval_required: bool = True
     reason: str
+    data_source: str = "pipeline_generated"
+    signal_source: str = "meta_model_ensemble"
+    model_source: str = "meta_model_ensemble_service"
+    model_used: str = "ensemble_signal"
+    agent_source: str = "agent_validation_service,risk_manager_service,no_trade_service,capital_allocation_service"
+    llm_source: str = "llm_budget_gate_service"
+    llm_used: str = "none_paid_dry_run_policy"
+    market_data_source: str = "placeholder_current_price"
+    price_source_detail: str = "capital allocation currently uses placeholder current_price=100.0; not live market price"
+    real_market_data_used: bool = False
+    final_trade_decision_allowed: bool = False
 
 
 class RecommendationPipelineResponse(BaseModel):
@@ -139,12 +150,29 @@ class RecommendationPipelineResponse(BaseModel):
     stages: list[PipelineStage]
     blockers: list[str] = Field(default_factory=list)
     warnings: list[str] = Field(default_factory=list)
+    source_provenance: dict[str, Any] = Field(default_factory=dict)
     started_at: datetime
     completed_at: datetime
 
 
 # In-memory storage
 _LATEST_PIPELINE_RUN: RecommendationPipelineResponse | None = None
+
+
+def _build_source_provenance(real_market_data_used: bool = False) -> dict[str, Any]:
+    return {
+        "data_source": "pipeline_generated",
+        "signal_source": "meta_model_ensemble_service",
+        "model_source": "meta_model_ensemble_service",
+        "model_used": "ensemble_signal",
+        "agent_source": "agent_validation_service,risk_manager_service,no_trade_service,capital_allocation_service",
+        "llm_source": "llm_budget_gate_service",
+        "llm_used": "none_paid_dry_run_policy",
+        "market_data_source": "placeholder_current_price",
+        "price_source_detail": "capital allocation currently uses placeholder current_price=100.0; not live market price",
+        "real_market_data_used": real_market_data_used,
+        "final_trade_decision_allowed": False,
+    }
 
 
 def _pipeline_from_record(row: dict) -> RecommendationPipelineResponse | None:
@@ -166,11 +194,36 @@ def _pipeline_from_record(row: dict) -> RecommendationPipelineResponse | None:
             "stages": stages,
             "blockers": row.get("blockers") or [],
             "warnings": row.get("warnings") or [],
+            "source_provenance": row.get("source_provenance") or _build_source_provenance(False),
             "started_at": row.get("started_at"),
             "completed_at": row.get("completed_at"),
         })
     except Exception:
         return None
+
+
+def _blocked_response(
+    run_id: str,
+    status: str,
+    symbol: str | None,
+    stages: list[PipelineStage],
+    blockers: list[str],
+    warnings: list[str],
+    started_at: datetime,
+    **kwargs: Any,
+) -> RecommendationPipelineResponse:
+    return RecommendationPipelineResponse(
+        run_id=run_id,
+        status=status,  # type: ignore[arg-type]
+        symbol=symbol,
+        stages=stages,
+        blockers=blockers,
+        warnings=warnings,
+        started_at=started_at,
+        completed_at=datetime.now(timezone.utc),
+        source_provenance=_build_source_provenance(False),
+        **kwargs,
+    )
 
 
 def run_recommendation_pipeline(request: RecommendationPipelineRequest) -> RecommendationPipelineResponse:
@@ -205,21 +258,20 @@ def run_recommendation_pipeline(request: RecommendationPipelineRequest) -> Recom
         ensemble_signal = EnsembleSignal(**request.ensemble_signal)
 
     if ensemble_signal is None:
-        return RecommendationPipelineResponse(
+        return _blocked_response(
             run_id=run_id,
             status="no_signal_available",
             symbol=request.symbol,
+            stages=[PipelineStage(stage="ensemble_signal", status="blocked", blockers=["no_ensemble_signal_available"])],
+            blockers=["no_ensemble_signal_available"],
+            warnings=warnings,
+            started_at=started_at,
             llm_budget_gate=None,
             agent_validation=None,
             risk_review=None,
             no_trade=None,
             capital_allocation=None,
             recommendation=None,
-            stages=[PipelineStage(stage="ensemble_signal", status="blocked", blockers=["no_ensemble_signal_available"])],
-            blockers=["no_ensemble_signal_available"],
-            warnings=warnings,
-            started_at=started_at,
-            completed_at=datetime.now(timezone.utc),
         )
 
     symbol = ensemble_signal.symbol
@@ -268,7 +320,7 @@ def run_recommendation_pipeline(request: RecommendationPipelineRequest) -> Recom
     )
 
     if agent_val.status == "blocked":
-        return RecommendationPipelineResponse(
+        return _blocked_response(
             run_id=run_id,
             status="agent_validation_blocked",
             symbol=symbol,
@@ -282,7 +334,6 @@ def run_recommendation_pipeline(request: RecommendationPipelineRequest) -> Recom
             blockers=agent_val.blockers,
             warnings=warnings + agent_val.warnings,
             started_at=started_at,
-            completed_at=datetime.now(timezone.utc),
         )
 
     # Step 4: Risk Review
@@ -306,7 +357,7 @@ def run_recommendation_pipeline(request: RecommendationPipelineRequest) -> Recom
     )
 
     if risk_review.status == "blocked":
-        return RecommendationPipelineResponse(
+        return _blocked_response(
             run_id=run_id,
             status="risk_blocked",
             symbol=symbol,
@@ -320,7 +371,6 @@ def run_recommendation_pipeline(request: RecommendationPipelineRequest) -> Recom
             blockers=risk_review.blockers,
             warnings=warnings + risk_review.warnings,
             started_at=started_at,
-            completed_at=datetime.now(timezone.utc),
         )
 
     # Step 5: No-Trade Evaluation
@@ -343,7 +393,7 @@ def run_recommendation_pipeline(request: RecommendationPipelineRequest) -> Recom
     )
 
     if no_trade.decision in ("no_trade", "preserve_capital"):
-        return RecommendationPipelineResponse(
+        return _blocked_response(
             run_id=run_id,
             status="no_trade",
             symbol=symbol,
@@ -357,12 +407,12 @@ def run_recommendation_pipeline(request: RecommendationPipelineRequest) -> Recom
             blockers=no_trade.blockers,
             warnings=warnings + no_trade.warnings,
             started_at=started_at,
-            completed_at=datetime.now(timezone.utc),
         )
 
     # Step 6: Capital Allocation
-    # Get current price from signal or use placeholder
-    current_price = 100.0  # Placeholder - real would fetch market data
+    # Explicit placeholder until wired to provider-backed quote/feature row.
+    current_price = 100.0
+    warnings.append("capital_allocation_current_price_is_placeholder_100_not_live_market_data")
 
     cap_alloc = create_capital_allocation_plan(
         CapitalAllocationRequest(
@@ -385,7 +435,7 @@ def run_recommendation_pipeline(request: RecommendationPipelineRequest) -> Recom
     )
 
     if cap_alloc.status == "blocked":
-        return RecommendationPipelineResponse(
+        return _blocked_response(
             run_id=run_id,
             status="capital_allocation_blocked",
             symbol=symbol,
@@ -399,7 +449,6 @@ def run_recommendation_pipeline(request: RecommendationPipelineRequest) -> Recom
             blockers=cap_alloc.blockers,
             warnings=warnings + cap_alloc.warnings,
             started_at=started_at,
-            completed_at=datetime.now(timezone.utc),
         )
 
     # Step 7: Create Recommendation
@@ -412,11 +461,12 @@ def run_recommendation_pipeline(request: RecommendationPipelineRequest) -> Recom
         action_label=action_label,
         reason=f"Pipeline passed all gates. RR={cap_alloc.reward_risk_ratio:.2f}. "
                f"Risk: {risk_review.status}. No-trade: {no_trade.decision}.",
-        risk_factors=risk_review.warnings + risk_review.blockers,
+        risk_factors=risk_review.warnings + risk_review.blockers + ["price_source_placeholder_100_not_live_market_data"],
         workflow_run_id=run_id,
     )
 
     rec_record = create_recommendation(rec_request)
+    provenance = _build_source_provenance(False)
 
     pipeline_rec = PipelineRecommendation(
         id=rec_record.id,
@@ -439,6 +489,7 @@ def run_recommendation_pipeline(request: RecommendationPipelineRequest) -> Recom
         live_trading_allowed=False,
         approval_required=True,
         reason=rec_record.reason,
+        **provenance,
     )
 
     stages.append(PipelineStage(stage="recommendation", status="completed"))
@@ -456,6 +507,7 @@ def run_recommendation_pipeline(request: RecommendationPipelineRequest) -> Recom
         stages=stages,
         blockers=[],
         warnings=warnings,
+        source_provenance=provenance,
         started_at=started_at,
         completed_at=datetime.now(timezone.utc),
     )
