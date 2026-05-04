@@ -8,8 +8,9 @@ const publicRoutes = new Set(["/", "/login"]);
 export function AppShell({ children }: { children: React.ReactNode }) {
   const pathname = usePathname();
   const isPublicRoute = publicRoutes.has(pathname);
+  const isOwnerPlatformRoute = pathname === "/owner" || pathname.startsWith("/owner/");
 
-  if (isPublicRoute) {
+  if (isPublicRoute || isOwnerPlatformRoute) {
     return <main className="min-h-screen bg-[#03070b]">{children}</main>;
   }
 
