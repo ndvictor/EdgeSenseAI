@@ -3,6 +3,7 @@ from typing import Any, Literal
 from pydantic import BaseModel, ConfigDict, Field
 
 from app.services.feature_store_service import FeatureStoreRow, get_feature_row_by_id, get_feature_rows_for_symbol
+from app.services.model_registry_service import get_model_selection_summary, is_model_eligible_for_active_scoring, skipped_model_record
 from app.services.model_runner_service import run_selected_models
 from app.strategies.registry import StrategyConfig, get_strategy
 
@@ -12,7 +13,7 @@ class ModelRegistryItem(BaseModel):
     name: str
     status: str
     should_run_when: list[str]
-    data_source: str = "placeholder"
+    data_source: str = "model_registry"
 
 
 class ModelRunPlanRequest(BaseModel):
@@ -31,7 +32,7 @@ class PlannedModel(BaseModel):
     status: str
     should_run: bool
     reason: str
-    data_source: str = "placeholder"
+    data_source: str = "model_registry"
 
 
 class ModelRunPlanResponse(BaseModel):
@@ -58,47 +59,29 @@ class ModelRunResponse(BaseModel):
     blocked_models: list[dict[str, Any]] = Field(default_factory=list)
     placeholder_models: list[dict[str, Any]] = Field(default_factory=list)
     not_trained_models: list[dict[str, Any]] = Field(default_factory=list)
+    skipped_models: list[dict[str, Any]] = Field(default_factory=list)
     next_action: str = "Review model outputs with risk filter before recommendation."
     warnings: list[str] = Field(default_factory=list)
 
 
-def _xgboost_installed() -> bool:
-    try:
-        import xgboost  # noqa: F401
-
-        return True
-    except Exception:
-        return False
-
-
 def get_model_registry() -> dict[str, Any]:
-    xgboost_available = _xgboost_installed()
-    models = [
-        ModelRegistryItem(
-            key="weighted_ranker",
-            name="Weighted Ranker",
-            status="available",
-            should_run_when=["feature row exists", "data quality is pass or warn"],
-            data_source="source_backed",
-        ),
-        ModelRegistryItem(
-            key="xgboost_ranker",
-            name="XGBoost Ranker",
-            status="available_if_xgboost_installed" if xgboost_available else "unavailable_dependency_missing",
-            should_run_when=["xgboost installed", "feature row exists", "trained model artifact exists", "walk-forward validation complete"],
-            data_source="source_backed" if xgboost_available else "placeholder",
-        ),
-        ModelRegistryItem(key="garch_volatility", name="GARCH Volatility", status="placeholder", should_run_when=["sufficient historical candles exist"]),
-        ModelRegistryItem(key="hmm_regime", name="HMM Regime", status="placeholder", should_run_when=["regime feature set exists"]),
-        ModelRegistryItem(key="arimax_forecast", name="ARIMAX Forecast", status="placeholder", should_run_when=["macro and historical features exist"]),
-        ModelRegistryItem(key="kalman_trend_filter", name="Kalman Trend Filter", status="placeholder", should_run_when=["historical candles exist"]),
-        ModelRegistryItem(key="finbert_sentiment", name="FinBERT Sentiment", status="placeholder", should_run_when=["news or sentiment events exist"]),
-    ]
+    summary = get_model_selection_summary()
+    active = summary["active_models"]
+    candidates = summary["candidate_models"]
+    untrained = summary["untrained_internal_models"]
+    blocked = summary["blocked_models"]
+    all_models = active + untrained + blocked + [model for group in candidates.values() for model in group]
     return {
-        "data_source": "source_backed",
-        "models": [model.model_dump() for model in models],
-        "available_model_count": len([model for model in models if model.status in {"available", "available_if_xgboost_installed"}]),
-        "placeholder_model_count": len([model for model in models if model.status == "placeholder"]),
+        "data_source": "model_registry",
+        "models": all_models,
+        "available_model_count": len(active),
+        "placeholder_model_count": len([model for model in all_models if model.get("group") != "active_working_models"]),
+        "active_models": active,
+        "candidate_models": candidates,
+        "untrained_internal_models": untrained,
+        "blocked_models": blocked,
+        "eligible_active_scoring_models": summary["eligible_active_scoring_models"],
+        "product_truth": summary["product_truth"],
     }
 
 
@@ -110,39 +93,55 @@ def plan_model_runs(request: ModelRunPlanRequest) -> ModelRunPlanResponse:
     rows = request.feature_rows or []
     has_rows = bool(rows)
     usable_rows = [row for row in rows if row.data_quality in {"pass", "warn"} and _feature_fields_available(row)]
-    has_options = any(row.options_score is not None for row in rows)
-    has_sentiment = any(row.sentiment_score is not None for row in rows)
     warnings: list[str] = []
     if not has_rows:
         warnings.append("No feature rows were supplied; run endpoint will build feature rows before scoring.")
     if rows and not usable_rows:
-        warnings.append("Feature rows exist, but quality or required feature fields block live scoring.")
+        warnings.append("Feature rows exist, but quality or required feature fields block active scoring.")
 
-    models = [
-        PlannedModel(
-            key="weighted_ranker",
-            status="available",
-            should_run=bool(has_rows and usable_rows),
-            reason="Runs when a feature row exists, quality is pass or warn, and core technical fields are present.",
-            data_source="source_backed" if usable_rows else "placeholder",
-        ),
-        PlannedModel(
-            key="xgboost_ranker",
-            status="available_if_xgboost_installed" if _xgboost_installed() else "unavailable_dependency_missing",
-            should_run=bool(usable_rows and _xgboost_installed()),
-            reason="Eligible for wrapper execution when xgboost is installed and feature rows have sufficient fields; inference still requires a trained artifact.",
-            data_source="source_backed" if usable_rows and _xgboost_installed() else "placeholder",
-        ),
-        PlannedModel(key="garch_volatility", status="placeholder", should_run=False, reason="Requires sufficient historical candles.", data_source="placeholder"),
-        PlannedModel(key="hmm_regime", status="placeholder", should_run=False, reason="Requires production regime feature set.", data_source="placeholder"),
-        PlannedModel(key="arimax_forecast", status="placeholder", should_run=False, reason="Requires macro and historical feature matrix.", data_source="placeholder"),
-        PlannedModel(key="kalman_trend_filter", status="placeholder", should_run=False, reason="Requires historical candles.", data_source="placeholder"),
-        PlannedModel(key="finbert_sentiment", status="placeholder", should_run=False, reason="Requires news/sentiment inputs." if not has_sentiment else "Sentiment exists but model is placeholder.", data_source="placeholder"),
-    ]
-    if request.asset_class == "option" and not has_options:
-        warnings.append("Options asset class requested, but options feature fields are missing.")
+    summary = get_model_selection_summary()
+    models: list[PlannedModel] = []
+    for model in summary["active_models"]:
+        key = model["model_key"]
+        eligible = is_model_eligible_for_active_scoring(key)
+        models.append(PlannedModel(
+            key=key,
+            status=model["status"],
+            should_run=bool(has_rows and usable_rows and eligible),
+            reason="Eligible active baseline; runs only when usable feature rows exist." if eligible else model.get("blocked_reason") or "Not eligible for active scoring.",
+            data_source="source_backed" if usable_rows and eligible else "model_registry",
+        ))
+
+    for model in summary["untrained_internal_models"]:
+        models.append(PlannedModel(
+            key=model["model_key"],
+            status=model["status"],
+            should_run=False,
+            reason=model.get("blocked_reason") or "Untrained internal model is not eligible for active scoring.",
+            data_source="model_registry",
+        ))
+
+    for group_models in summary["candidate_models"].values():
+        for model in group_models:
+            models.append(PlannedModel(
+                key=model["model_key"],
+                status="candidate_not_active",
+                should_run=False,
+                reason=model.get("blocked_reason") or "Research candidate; not eligible for active scoring.",
+                data_source="model_registry",
+            ))
+
+    for model in summary["blocked_models"]:
+        models.append(PlannedModel(
+            key=model["model_key"],
+            status="blocked",
+            should_run=False,
+            reason=model.get("blocked_reason") or "Blocked by model registry.",
+            data_source="model_registry",
+        ))
+
     return ModelRunPlanResponse(
-        data_source="source_backed" if any(model.data_source == "source_backed" for model in models) else "placeholder",
+        data_source="source_backed" if any(model.data_source == "source_backed" for model in models) else "model_registry",
         models=models,
         feature_rows_used=len(rows),
         warnings=warnings,
@@ -172,6 +171,13 @@ def _rows_for_request(request: ModelRunRequest) -> list[FeatureStoreRow]:
     return rows
 
 
+def _default_selected_models(plan: ModelRunPlanResponse, usable_rows: list[FeatureStoreRow]) -> list[str]:
+    eligible = [model.key for model in plan.models if model.should_run and is_model_eligible_for_active_scoring(model.key)]
+    if usable_rows and "weighted_ranker_v1" not in eligible and is_model_eligible_for_active_scoring("weighted_ranker_v1"):
+        eligible.insert(0, "weighted_ranker_v1")
+    return eligible
+
+
 def run_model_orchestrator(request: ModelRunRequest) -> ModelRunResponse:
     rows = _rows_for_request(request)
     warnings: list[str] = []
@@ -179,7 +185,7 @@ def run_model_orchestrator(request: ModelRunRequest) -> ModelRunResponse:
         plan = plan_model_runs(ModelRunPlanRequest(**request.model_dump(exclude={"feature_rows"}), feature_rows=[]))
         return ModelRunResponse(
             status="blocked",
-            data_source="placeholder",
+            data_source="model_registry",
             plan=plan,
             feature_rows=[],
             results=[],
@@ -190,28 +196,36 @@ def run_model_orchestrator(request: ModelRunRequest) -> ModelRunResponse:
 
     plan = plan_model_runs(ModelRunPlanRequest(**request.model_dump(exclude={"feature_rows"}), feature_rows=rows))
     usable_rows = [row for row in rows if row.data_quality in {"pass", "warn"} and _feature_fields_available(row)]
-    selected_models = request.selected_models or [model.key for model in plan.models if model.should_run]
-    if "weighted_ranker" not in selected_models and usable_rows:
-        selected_models.insert(0, "weighted_ranker")
+    requested_models = ["weighted_ranker_v1" if model == "weighted_ranker" else model for model in (request.selected_models or [])]
+    eligible_requested = [model for model in requested_models if is_model_eligible_for_active_scoring(model)]
+    explicitly_skipped = [skipped_model_record(model, status="not_trained" if model == "xgboost_ranker" else "candidate_not_active") for model in requested_models if not is_model_eligible_for_active_scoring(model)]
+    selected_models = eligible_requested or _default_selected_models(plan, usable_rows)
     strategy = _strategy_for_request(request)
-    runner_outputs = {"completed_models": [], "blocked_models": [], "placeholder_models": [], "not_trained_models": [], "model_outputs": []}
+    runner_outputs = {"completed_models": [], "blocked_models": [], "placeholder_models": [], "not_trained_models": [], "skipped_models": [], "model_outputs": []}
     for row in usable_rows:
-        row_outputs = run_selected_models(row, strategy, selected_models)
+        row_outputs = run_selected_models(row, strategy, selected_models + [model for model in requested_models if model not in selected_models])
         for key, values in row_outputs.items():
             runner_outputs[key].extend(values)
 
-    for model in plan.models:
-        if not model.should_run and model.status == "placeholder":
-            runner_outputs["placeholder_models"].append({"model": model.key, "model_name": model.key, "status": "placeholder_not_run", "reason": model.reason, "data_source": "placeholder"})
+    if explicitly_skipped:
+        runner_outputs["skipped_models"].extend(explicitly_skipped)
 
-    model_outputs = runner_outputs["model_outputs"] + runner_outputs["placeholder_models"]
+    for model in plan.models:
+        if not model.should_run and model.key not in selected_models and model.key not in requested_models:
+            record = skipped_model_record(model.key, status="not_trained" if model.key == "xgboost_ranker" else model.status)
+            if record.get("status") == "not_trained":
+                runner_outputs["not_trained_models"].append(record)
+            else:
+                runner_outputs["skipped_models"].append(record)
+
+    model_outputs = runner_outputs["model_outputs"] + runner_outputs["placeholder_models"] + runner_outputs["skipped_models"]
     completed = runner_outputs["completed_models"]
     not_trained = runner_outputs["not_trained_models"]
     next_action = "Review weighted_ranker_v1 with risk filter before recommendation." if completed else "Resolve blocked model inputs before treating outputs as actionable."
 
     return ModelRunResponse(
         status="completed",
-        data_source="source_backed" if any(row.data_source == "source_backed" for row in rows) else "placeholder",
+        data_source="source_backed" if any(row.data_source == "source_backed" for row in rows) else "model_registry",
         plan=plan,
         feature_rows=rows,
         results=model_outputs,
@@ -220,6 +234,7 @@ def run_model_orchestrator(request: ModelRunRequest) -> ModelRunResponse:
         blocked_models=runner_outputs["blocked_models"],
         placeholder_models=runner_outputs["placeholder_models"],
         not_trained_models=not_trained,
+        skipped_models=runner_outputs["skipped_models"],
         next_action=next_action,
         warnings=warnings + plan.warnings,
     )
