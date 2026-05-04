@@ -64,12 +64,33 @@ class ModelRunResponse(BaseModel):
     warnings: list[str] = Field(default_factory=list)
 
 
+def _legacy_model_contract(model: dict[str, Any]) -> dict[str, Any]:
+    """Preserve /api/model-runs/registry compatibility while exposing governed registry fields."""
+    should_run_when = model.get("should_run_when") or []
+    if not should_run_when:
+        if model.get("group") == "active_working_models":
+            should_run_when = ["feature row exists", "data quality is pass or warn", "model registry eligibility passes"]
+        elif model.get("group") == "untrained_internal_models":
+            should_run_when = ["trained artifact exists", "evaluation passed", "calibration passed", "owner approved"]
+        else:
+            should_run_when = ["research wrapper exists", "evaluation passed", "owner approved"]
+    return {
+        **model,
+        "key": model.get("key") or model.get("model_key"),
+        "name": model.get("name") or model.get("display_name") or model.get("model_key"),
+        "should_run_when": should_run_when,
+    }
+
+
 def get_model_registry() -> dict[str, Any]:
     summary = get_model_selection_summary()
-    active = summary["active_models"]
-    candidates = summary["candidate_models"]
-    untrained = summary["untrained_internal_models"]
-    blocked = summary["blocked_models"]
+    active = [_legacy_model_contract(model) for model in summary["active_models"]]
+    candidates = {
+        group: [_legacy_model_contract(model) for model in models]
+        for group, models in summary["candidate_models"].items()
+    }
+    untrained = [_legacy_model_contract(model) for model in summary["untrained_internal_models"]]
+    blocked = [_legacy_model_contract(model) for model in summary["blocked_models"]]
     all_models = active + untrained + blocked + [model for group in candidates.values() for model in group]
     return {
         "data_source": "model_registry",
@@ -80,7 +101,7 @@ def get_model_registry() -> dict[str, Any]:
         "candidate_models": candidates,
         "untrained_internal_models": untrained,
         "blocked_models": blocked,
-        "eligible_active_scoring_models": summary["eligible_active_scoring_models"],
+        "eligible_active_scoring_models": [_legacy_model_contract(model) for model in summary["eligible_active_scoring_models"]],
         "product_truth": summary["product_truth"],
     }
 
