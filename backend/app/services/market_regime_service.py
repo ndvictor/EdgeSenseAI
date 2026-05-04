@@ -1,3 +1,5 @@
+from datetime import datetime, timezone
+
 from pydantic import BaseModel
 
 
@@ -6,6 +8,8 @@ class RegimeFactor(BaseModel):
     value: str
     signal: str
     impact: str
+    data_source: str = "hardcoded_prototype"
+    source_detail: str = "Static placeholder factor from market_regime_service.py"
 
 
 class MarketRegimeResponse(BaseModel):
@@ -16,6 +20,16 @@ class MarketRegimeResponse(BaseModel):
     blocked_strategies: list[str]
     factors: list[RegimeFactor]
     notes: list[str]
+    data_source: str = "hardcoded_prototype"
+    source_type: str = "static_placeholder"
+    source_detail: str = "backend/app/services/market_regime_service.py returns static prototype values. No live provider data is used here yet."
+    provider: str = "none"
+    model_used: str = "none"
+    llm_used: str = "none"
+    agent_used: str = "none"
+    calculation_engine: str = "static_rule_placeholder"
+    real_data_used: bool = False
+    generated_at: datetime
 
 
 def build_market_regime() -> MarketRegimeResponse:
@@ -41,7 +55,9 @@ def build_market_regime() -> MarketRegimeResponse:
             RegimeFactor(name="BTC correlation", value="risk-on alignment", signal="crypto_supportive", impact="crypto watchlist allowed but risk reviewed"),
         ],
         notes=[
-            "Prototype regime data. Replace with VIX, breadth, SPY/QQQ trend, sector ETF, and BTC liquidity inputs.",
+            "Prototype regime data. This is hard-coded/static, not real market data yet.",
+            "Replace with VIX, breadth, SPY/QQQ trend, sector ETF, yields, DXY, and BTC liquidity inputs before treating regime as source-backed.",
             "Regime should gate strategy selection before recommendations are promoted.",
         ],
+        generated_at=datetime.now(timezone.utc),
     )
