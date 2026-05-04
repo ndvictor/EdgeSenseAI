@@ -52,6 +52,7 @@ from app.api.routes.strategy_debate import router as strategy_debate_router
 from app.api.routes.strategy_ranking import router as strategy_ranking_router
 from app.api.routes.strategy_workflows import router as strategy_workflows_router
 from app.api.routes.trade_quality import router as trade_quality_router
+from app.api.routes.tradenow import router as tradenow_router
 from app.api.routes.trigger_rules import router as trigger_rules_router
 from app.api.routes.universe_selection import router as universe_selection_router
 from app.api.routes.upper_workflow import router as upper_workflow_router
@@ -167,6 +168,7 @@ app.include_router(model_strategy_update_router, prefix="/api")
 app.include_router(memory_update_router, prefix="/api")
 app.include_router(platform_readiness_router, prefix="/api")
 app.include_router(tracing_router, prefix="/api")
+app.include_router(tradenow_router, prefix="/api")
 
 _ACCOUNT_PROFILE = AccountRiskProfile()
 

@@ -25,11 +25,13 @@ import {
   TrendingUp,
   Users,
   WalletCards,
+  Zap,
 } from "lucide-react";
 
 const items = [
   { label: "Account Risk Center", href: "/account-risk", icon: WalletCards },
   { label: "Command Center", href: "/command-center", icon: Gauge },
+  { label: "TradeNow", href: "/tradenow", icon: Zap },
   { label: "Strategies", href: "/strategies", icon: Rocket },
   { label: "Universe", href: "/universe", icon: Globe },
   { label: "Strategy Lab", href: "/strategy-lab", icon: Brain },
