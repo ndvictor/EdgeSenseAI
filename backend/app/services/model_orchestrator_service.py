@@ -64,6 +64,20 @@ class ModelRunResponse(BaseModel):
     warnings: list[str] = Field(default_factory=list)
 
 
+def _legacy_model_key(model: dict[str, Any]) -> str | None:
+    model_key = model.get("model_key") or model.get("key")
+    if model_key == "weighted_ranker_v1":
+        return "weighted_ranker"
+    return model_key
+
+
+def _legacy_model_name(model: dict[str, Any]) -> str | None:
+    model_key = model.get("model_key") or model.get("key")
+    if model_key == "weighted_ranker_v1":
+        return "Weighted Ranker"
+    return model.get("name") or model.get("display_name") or model_key
+
+
 def _legacy_model_contract(model: dict[str, Any]) -> dict[str, Any]:
     """Preserve /api/model-runs/registry compatibility while exposing governed registry fields."""
     should_run_when = model.get("should_run_when") or []
@@ -76,8 +90,8 @@ def _legacy_model_contract(model: dict[str, Any]) -> dict[str, Any]:
             should_run_when = ["research wrapper exists", "evaluation passed", "owner approved"]
     return {
         **model,
-        "key": model.get("key") or model.get("model_key"),
-        "name": model.get("name") or model.get("display_name") or model.get("model_key"),
+        "key": _legacy_model_key(model),
+        "name": _legacy_model_name(model),
         "should_run_when": should_run_when,
     }
 
