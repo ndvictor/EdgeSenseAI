@@ -5,6 +5,7 @@ Implements Phase 1 of the Adaptive Agentic Quant Workflow.
 
 from fastapi import APIRouter
 
+from app.services.runtime_speed_policy_service import RuntimeSpeedPolicyResponse, get_runtime_speed_policy
 from app.services.timing_cadence_service import (
     RuntimeCadenceResponse,
     RuntimeCadenceSimulateRequest,
@@ -35,6 +36,12 @@ def get_current_runtime_cadence():
     human_approval_required is always true.
     """
     return get_runtime_cadence()
+
+
+@router.get("/runtime/speed-policy", response_model=RuntimeSpeedPolicyResponse)
+def get_speed_policy():
+    """Get hot/warm/cold runtime speed policy for operational loops."""
+    return get_runtime_speed_policy()
 
 
 @router.post("/runtime/cadence/simulate", response_model=RuntimeCadenceResponse)
