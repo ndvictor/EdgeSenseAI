@@ -3,19 +3,20 @@
 import { usePathname } from "next/navigation";
 import { Sidebar } from "@/components/Sidebar";
 
+const publicRoutes = new Set(["/", "/login"]);
+
 export function AppShell({ children }: { children: React.ReactNode }) {
   const pathname = usePathname();
-  const isHome = pathname === "/";
+  const isPublicRoute = publicRoutes.has(pathname);
 
-  if (isHome) {
-    return <main className="flex flex-col min-h-screen bg-white flex items-center justify-center">{children}</main>;
+  if (isPublicRoute) {
+    return <main className="min-h-screen bg-[#03070b]">{children}</main>;
   }
 
-  // Changed to white / very light green-white
   return (
-    <div className="flex flex-col min-h-screen bg-white flex items-center justify-center">
+    <div className="flex min-h-screen">
       <Sidebar />
-      <main className="min-w-0 flex-1 p-8">{children}</main>
+      <main className="min-h-screen flex-1 min-w-0 bg-[#03070b]">{children}</main>
     </div>
   );
 }

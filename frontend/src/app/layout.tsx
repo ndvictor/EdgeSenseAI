@@ -1,19 +1,17 @@
 import type { Metadata } from "next";
 import "./globals.css";
-import { Sidebar } from "@/components/Sidebar";
+import { AppShell } from "@/components/AppShell";
+
+export const metadata: Metadata = {
+  title: "EdgeSenseAI",
+  description: "Personal trading intelligence operating system for account growth, risk control, and high-quality trade selection.",
+};
 
 export default function RootLayout({ children }: { children: React.ReactNode }) {
   return (
     <html lang="en">
-      <body className="bg-slate-950 text-slate-100">
-        <div className="flex min-h-screen">   {/* This is key */}
-          <Sidebar />
-          
-          {/* Main content area - also full height */}
-          <main className="flex-1 min-w-0 bg-slate-500 min-h-screen">
-            {children}
-          </main>
-        </div>
+      <body className="bg-[#03070b] text-slate-100">
+        <AppShell>{children}</AppShell>
       </body>
     </html>
   );
