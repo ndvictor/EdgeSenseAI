@@ -1,6 +1,7 @@
 from typing import Any
 
 from app.db.models import Base
+from app.db import research_models  # noqa: F401 - registers research/promotion tables on Base.metadata
 from app.db.session import check_database_health, get_engine
 
 
