@@ -2,24 +2,30 @@
 
 Reliability audit for workflow state persistence. This document only marks an object as persisted when code currently writes to or reads from Postgres through the EdgeSenseAI persistence layer.
 
-| Object/state | Currently persisted? | Current storage mode | Table exists? | Required table name | Priority | Next implementation note |
+| Object/state | Currently persisted? | Table name | Read path | Write path | Fallback behavior | Remaining gaps |
 | --- | --- | --- | --- | --- | --- | --- |
-| candidate_universe | yes | Postgres with memory fallback | yes | `candidate_universe` | high | Existing service writes and reads candidate entries through persistence helpers. Keep explicit symbol inputs only. |
-| decision_workflow_runs | yes | Postgres with latest in-memory cache | yes | `decision_workflow_runs` | high | Decision workflow writes completed and blocked runs. Command Center GET remains read-only and uses latest stored run only. |
-| recommendation_lifecycle | yes | Postgres with memory fallback | yes | `recommendation_lifecycle` | high | Lifecycle records persist when DB is available and expose `persistence_mode`. |
-| paper_trade_outcomes | partial | Table and persistence helper exist; lifecycle wiring requires verification | yes | `paper_trade_outcomes` | high | Audit paper trading lifecycle write path before claiming full source-of-truth persistence. No live execution. |
-| model_training_examples | partial | Table exists; training-example production not fully wired | yes | `model_training_examples` | medium | Wire only from labeled paper outcomes or validated journal outcomes. Do not create fake labels. |
-| upper_workflow_runs | no | In-memory history only | no | `upper_workflow_runs` | high | Add a dedicated run table or map safely to a generic workflow run table with full stage trace, blockers, and warnings. |
-| trigger_rules | no | In-memory latest/history | no | `trigger_rules` | medium | Persist generated deterministic trigger rules and active-rule snapshots; keep mock/source labels intact. |
-| event_scanner_runs | no | In-memory/service response only | no | `event_scanner_runs` | medium | Persist scanner inputs, skipped reasons, matched events, and provider/data-source labels. |
-| signal_scoring_runs | no | In-memory latest/history | no | `signal_scoring_runs` | medium | Persist scores, missing inputs, blockers, and model eligibility details. |
-| meta_model_ensemble_runs | no | In-memory latest/history | no | `meta_model_ensemble_runs` | medium | Persist ensemble inputs, eligible models, placeholder models, and final rank outputs. |
-| recommendation_pipeline_runs | no | In-memory latest only | no | `recommendation_pipeline_runs` | high | Persist paper/research-only recommendation pipeline outputs, approval state, and no-execution safety flags. |
-| journal_outcomes | partial | Memory with persistence helper attempted | yes | `journal_entries` | high | Current service stores memory first and attempts DB write, but persistence helper signature should be fully aligned in a follow-up. |
-| performance_drift_runs | no | In-memory latest/history | no | `performance_drift_runs` | medium | Persist drift windows, metrics, and detected gaps without fabricating model performance. |
-| research_priority_runs | no | In-memory latest/history | no | `research_priority_runs` | low | Persist generated research tasks and evidence references. No paid LLM calls by default. |
-| model_strategy_update_runs | no | In-memory latest/history | no | `model_strategy_update_runs` | low | Persist proposed model/strategy updates as reviewable artifacts only. |
-| memory_updates | partial | Vector memory store with in-memory fallback; update run history not persisted | yes | `vector_memories` plus future `memory_update_runs` | medium | Vector memories persist when pgvector/Postgres is available. Add explicit memory update run records for audit history. |
+| candidate_universe | yes | `candidate_universe` | DB-first with memory fallback | DB best-effort plus memory | Uses memory when DB unavailable | None for current candidate registry behavior. |
+| decision_workflow_runs | yes | `decision_workflow_runs` | DB-first for latest/list | DB best-effort plus latest memory cache | Command Center GET remains read-only and falls back to latest memory run | None for current workflow run durability. |
+| recommendation_lifecycle | yes | `recommendation_lifecycle` | DB-first with memory fallback | DB best-effort plus memory | Uses memory when DB unavailable | None for current lifecycle statuses. |
+| paper_trade_outcomes | partial | `paper_trade_outcomes` | DB-backed helper exists | DB helper writes paper outcomes | Helper returns honest DB unavailable result | Audit every paper lifecycle route before calling coverage complete. No live execution. |
+| model_training_examples | partial | `model_training_examples` | Table exists | Training examples created from closed paper outcomes where available | No fake labels when source data absent | Needs fuller labeled-outcome pipeline coverage. |
+| upper_workflow_runs | yes | `upper_workflow_runs` | DB-first latest/history, memory fallback | Every upper workflow run attempts DB write | `_UPPER_WORKFLOW_HISTORY` remains fallback | Stage-specific payloads are persisted; full original request metadata can be expanded later. |
+| trigger_rules | yes | `trigger_rule_runs` | DB-first latest/history, memory fallback | Trigger rule builds attempt DB write | In-memory active rules remain fallback/runtime cache | Active rule state is still runtime memory; build history is durable. |
+| event_scanner_runs | yes | `event_scanner_runs` | DB-first latest/list, memory fallback | Event scanner runs attempt DB write | `_SCAN_HISTORY` remains fallback | Duration is reconstructed from timestamps. |
+| signal_scoring_runs | yes | `signal_scoring_runs` | DB-first latest/list, memory fallback | Signal scoring runs attempt DB write | `_SCORING_HISTORY` remains fallback | Skipped signal detail can be expanded in a future migration if needed. |
+| meta_model_ensemble_runs | yes | `meta_model_ensemble_runs` | DB-first latest/list, memory fallback | Ensemble runs attempt DB write | `_ENSEMBLE_HISTORY` remains fallback | Promoted candidate ids remain in runtime response; table stores ensemble signals and weights. |
+| recommendation_pipeline_runs | yes | `recommendation_pipeline_runs` | DB-first latest, memory fallback | Recommendation pipeline runs attempt DB write | Latest memory run remains fallback | List endpoint can be added later if product needs it. |
+| journal_outcomes | yes | `journal_outcomes` | DB-first list/get/summary when DB mode is postgres, memory fallback | Journal creation writes memory and attempts DB | Does not fake outcomes; memory summary used when DB unavailable | Existing legacy `journal_entries` remains for generic records; journal outcome source of truth is `journal_outcomes`. |
+| performance_drift_runs | yes | `performance_drift_runs` | DB-first latest/history, memory fallback | Drift checks attempt DB write | `_DRIFT_HISTORY` remains fallback | Uses only observed journal/paper evidence; insufficient data remains honest. |
+| research_priority_runs | yes | `research_priority_runs` | DB-first latest/history, memory fallback | Research priority runs attempt DB write | `_RESEARCH_HISTORY` remains fallback | Task status updates still mutate latest in-memory object only. |
+| model_strategy_update_runs | yes | `model_strategy_update_runs` | DB-first latest/history, memory fallback | Update proposal runs attempt DB write | `_UPDATE_HISTORY` remains fallback | Applying proposals remains explicit and not automated. |
+| memory_updates | yes | `memory_update_runs` plus `vector_memories` | DB-first latest/history, memory fallback | Memory update attempts write audit row; vector storage writes separately | No fake `memory_id` when vector storage unavailable | Memory update run audit is durable; vector similarity still falls back honestly if pgvector unavailable. |
+
+## Current Durability Status
+
+- Core required tables: `candidate_universe`, `decision_workflow_runs`, `recommendation_lifecycle`, `paper_trade_outcomes`, `model_training_examples`.
+- Workflow durability tables: `upper_workflow_runs`, `trigger_rule_runs`, `event_scanner_runs`, `signal_scoring_runs`, `meta_model_ensemble_runs`, `recommendation_pipeline_runs`, `journal_outcomes`, `performance_drift_runs`, `research_priority_runs`, `model_strategy_update_runs`, `memory_update_runs`.
+- Platform readiness should be `partial` if Postgres is connected but workflow durability tables are missing.
 
 ## Notes
 

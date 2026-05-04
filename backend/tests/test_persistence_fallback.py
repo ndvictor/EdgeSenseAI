@@ -27,6 +27,29 @@ from app.services.memory_update_service import (
 )
 
 
+def test_remaining_workflow_state_migration_exists():
+    """Migration 003 should define all workflow durability tables."""
+    from pathlib import Path
+
+    migration = Path(__file__).parent.parent / "db" / "migrations" / "003_remaining_workflow_state.sql"
+    assert migration.exists()
+    sql = migration.read_text()
+    for table in [
+        "upper_workflow_runs",
+        "trigger_rule_runs",
+        "event_scanner_runs",
+        "signal_scoring_runs",
+        "meta_model_ensemble_runs",
+        "recommendation_pipeline_runs",
+        "journal_outcomes",
+        "performance_drift_runs",
+        "research_priority_runs",
+        "model_strategy_update_runs",
+        "memory_update_runs",
+    ]:
+        assert f"CREATE TABLE IF NOT EXISTS {table}" in sql
+
+
 class TestPersistenceFallback:
     """Tests for graceful fallback to memory when DB unavailable."""
 

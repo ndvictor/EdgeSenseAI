@@ -110,13 +110,10 @@ def get_journal_outcomes(
     )
 
 
-@router.get("/journal/outcomes/{entry_id}", response_model=JournalEntryResponse)
-def get_journal_outcome(entry_id: str):
-    """Get a specific journal outcome by ID."""
-    entry = get_journal_entry(entry_id)
-    if entry is None:
-        raise HTTPException(status_code=404, detail="Journal entry not found")
-    return entry
+@router.get("/journal/outcomes/summary")
+def get_journal_outcomes_summary():
+    """Get summary statistics of journal outcomes."""
+    return get_journal_summary()
 
 
 @router.post("/journal/outcomes/label-from-paper-trade", response_model=JournalEntryResponse)
@@ -135,7 +132,10 @@ def post_label_from_paper_trade(request: LabelFromPaperTradeRequest):
     )
 
 
-@router.get("/journal/outcomes/summary")
-def get_journal_outcomes_summary():
-    """Get summary statistics of journal outcomes."""
-    return get_journal_summary()
+@router.get("/journal/outcomes/{entry_id}", response_model=JournalEntryResponse)
+def get_journal_outcome(entry_id: str):
+    """Get a specific journal outcome by ID."""
+    entry = get_journal_entry(entry_id)
+    if entry is None:
+        raise HTTPException(status_code=404, detail="Journal entry not found")
+    return entry

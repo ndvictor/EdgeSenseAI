@@ -13,6 +13,11 @@ from uuid import uuid4
 
 from pydantic import BaseModel, ConfigDict, Field
 
+from app.services.persistence_service import (
+    get_latest_performance_drift_run,
+    list_performance_drift_runs,
+    save_performance_drift_run,
+)
 from app.services.journal_outcome_service import (
     JournalEntryCreateRequest,
     JournalEntryResponse,
@@ -70,6 +75,28 @@ class PerformanceDriftResponse(BaseModel):
 # In-memory storage
 _LATEST_DRIFT_CHECK: PerformanceDriftResponse | None = None
 _DRIFT_HISTORY: list[PerformanceDriftResponse] = []
+
+
+def _drift_from_record(row: dict) -> PerformanceDriftResponse | None:
+    try:
+        return PerformanceDriftResponse.model_validate({
+            "run_id": row.get("run_id"),
+            "status": row.get("status"),
+            "sample_count": row.get("sample_count") or 0,
+            "calibration_buckets": row.get("calibration_buckets") or [],
+            "false_positive_rate": row.get("false_positive_rate"),
+            "win_rate": row.get("win_rate"),
+            "average_realized_r": row.get("average_realized_r"),
+            "confidence_error": row.get("confidence_error"),
+            "affected_models": row.get("affected_models") or [],
+            "affected_strategies": row.get("affected_strategies") or [],
+            "recommended_actions": row.get("recommended_actions") or [],
+            "blockers": row.get("blockers") or [],
+            "warnings": row.get("warnings") or [],
+            "checked_at": row.get("checked_at") or row.get("created_at"),
+        })
+    except Exception:
+        return None
 
 
 def _get_relevant_entries(
@@ -376,6 +403,7 @@ def run_performance_drift_check(request: PerformanceDriftRequest) -> Performance
     global _LATEST_DRIFT_CHECK, _DRIFT_HISTORY
     _LATEST_DRIFT_CHECK = response
     _DRIFT_HISTORY.append(response)
+    save_performance_drift_run({**response.model_dump(mode="json"), "lookback_days": request.lookback_days, "strategy_key": request.strategy_key, "model_name": request.model_name})
     
     # Keep only last 100
     if len(_DRIFT_HISTORY) > 100:
@@ -386,9 +414,19 @@ def run_performance_drift_check(request: PerformanceDriftRequest) -> Performance
 
 def get_latest_drift_check() -> PerformanceDriftResponse | None:
     """Get the latest drift check."""
+    row = get_latest_performance_drift_run()
+    if row:
+        restored = _drift_from_record(row)
+        if restored:
+            return restored
     return _LATEST_DRIFT_CHECK
 
 
 def list_drift_history(limit: int = 20) -> list[PerformanceDriftResponse]:
     """List recent drift checks."""
+    rows = list_performance_drift_runs(limit)
+    restored = [_drift_from_record(row) for row in rows]
+    db_runs = [run for run in restored if run is not None]
+    if db_runs:
+        return db_runs
     return _DRIFT_HISTORY[-limit:]

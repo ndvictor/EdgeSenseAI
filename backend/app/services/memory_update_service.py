@@ -19,6 +19,11 @@ from app.services.journal_outcome_service import (
     get_latest_journal_entry,
 )
 from app.services.persistence_service import get_database_table_status
+from app.services.persistence_service import (
+    get_latest_memory_update_run,
+    list_memory_update_runs,
+    save_memory_update_run,
+)
 from app.services.research_priority_service import get_latest_research_priority
 from app.services.vector_memory_service import create_memory_record
 
@@ -58,13 +63,36 @@ _LATEST_MEMORY_UPDATE: MemoryUpdateResponse | None = None
 _MEMORY_UPDATE_HISTORY: list[MemoryUpdateResponse] = []
 
 
-def _save_memory_update(response: MemoryUpdateResponse) -> MemoryUpdateResponse:
+def _save_memory_update(response: MemoryUpdateResponse, request: MemoryUpdateRequest | None = None) -> MemoryUpdateResponse:
     global _LATEST_MEMORY_UPDATE
     _LATEST_MEMORY_UPDATE = response
     _MEMORY_UPDATE_HISTORY.append(response)
     if len(_MEMORY_UPDATE_HISTORY) > 100:
         del _MEMORY_UPDATE_HISTORY[:-100]
+    payload = response.model_dump(mode="json")
+    if request:
+        payload.update({
+            "source_id": request.source_id,
+            "title": request.title,
+            "metadata": request.metadata,
+        })
+    save_memory_update_run(payload)
     return response
+
+
+def _memory_update_from_record(row: dict) -> MemoryUpdateResponse | None:
+    try:
+        return MemoryUpdateResponse.model_validate({
+            "run_id": row.get("run_id"),
+            "status": row.get("status"),
+            "memory_id": row.get("memory_id"),
+            "source_type": row.get("source_type"),
+            "warnings": row.get("warnings") or [],
+            "blockers": row.get("blockers") or [],
+            "created_at": row.get("created_at"),
+        })
+    except Exception:
+        return None
 
 
 def store_memory(request: MemoryUpdateRequest) -> MemoryUpdateResponse:
@@ -88,7 +116,7 @@ def store_memory(request: MemoryUpdateRequest) -> MemoryUpdateResponse:
             warnings=["Dry run - memory not stored"],
             blockers=[],
             created_at=created_at,
-        ))
+        ), request)
     
     # Try to store via vector memory service
     try:
@@ -124,7 +152,7 @@ def store_memory(request: MemoryUpdateRequest) -> MemoryUpdateResponse:
                 warnings=["Memory stored in fallback only - DB/pgvector unavailable"],
                 blockers=[],
                 created_at=created_at,
-            ))
+            ), request)
         
         return _save_memory_update(MemoryUpdateResponse(
             run_id=run_id,
@@ -134,7 +162,7 @@ def store_memory(request: MemoryUpdateRequest) -> MemoryUpdateResponse:
             warnings=[],
             blockers=[],
             created_at=created_at,
-        ))
+        ), request)
     
     except Exception as e:
         return _save_memory_update(MemoryUpdateResponse(
@@ -145,7 +173,7 @@ def store_memory(request: MemoryUpdateRequest) -> MemoryUpdateResponse:
             warnings=[str(e)],
             blockers=["Memory storage failed"],
             created_at=created_at,
-        ))
+        ), request)
 
 
 def store_latest_journal_to_memory() -> MemoryUpdateResponse:
@@ -239,11 +267,21 @@ def store_latest_research_to_memory() -> MemoryUpdateResponse:
 
 def get_latest_memory_update() -> MemoryUpdateResponse | None:
     """Get the latest memory update."""
+    row = get_latest_memory_update_run()
+    if row:
+        restored = _memory_update_from_record(row)
+        if restored:
+            return restored
     return _LATEST_MEMORY_UPDATE
 
 
 def list_memory_update_history(limit: int = 20) -> list[MemoryUpdateResponse]:
     """List recent memory updates."""
+    rows = list_memory_update_runs(limit)
+    restored = [_memory_update_from_record(row) for row in rows]
+    db_runs = [run for run in restored if run is not None]
+    if db_runs:
+        return db_runs
     return _MEMORY_UPDATE_HISTORY[-limit:]
 
 

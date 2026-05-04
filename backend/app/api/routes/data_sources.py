@@ -146,7 +146,7 @@ def _platform_persistence_status() -> dict:
 
     # Count existing tables
     existing_tables = {name: info for name, info in tables.items() if info.get("exists", False)}
-    total_tables = 5  # candidate_universe, decision_workflow_runs, recommendation_lifecycle, paper_trade_outcomes, model_training_examples
+    total_tables = len(tables)
 
     if len(existing_tables) == total_tables:
         return {

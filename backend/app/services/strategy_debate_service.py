@@ -358,7 +358,7 @@ def run_strategy_debate(request: StrategyDebateRequest) -> StrategyDebateRespons
 
     # Keep only last 100
     if len(_DEBATE_HISTORY) > 100:
-        _DEBATE_HISTORY = _DEBATE_HISTORY[-100:]
+        del _DEBATE_HISTORY[:-100]
 
     return response
 

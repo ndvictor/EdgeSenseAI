@@ -116,7 +116,7 @@ class TestPersistenceStatusService:
         assert "pgvector_available" in status
         assert "pgvector_status" in status
 
-        assert status["mode"] in ["postgres", "memory", "unavailable"]
+        assert status["mode"] in ["postgres", "partial", "memory", "unavailable"]
         assert isinstance(status["database_connected"], bool)
         assert isinstance(status["required_tables"], list)
         assert isinstance(status["existing_tables"], list)
@@ -132,6 +132,8 @@ class TestPersistenceStatusService:
         assert "recommendation_lifecycle" in required
         assert "paper_trade_outcomes" in required
         assert "model_training_examples" in required
+        assert "upper_workflow_runs" in required
+        assert "memory_update_runs" in required
 
     def test_persistence_mode_consistency(self):
         """Mode should be consistent with connection status."""
@@ -139,7 +141,7 @@ class TestPersistenceStatusService:
 
         # If DB is connected, mode should be postgres (or unavailable on error)
         if status["database_connected"]:
-            assert status["mode"] in ["postgres", "memory"]
+            assert status["mode"] in ["postgres", "partial", "memory"]
         else:
             assert status["mode"] in ["memory", "unavailable"]
 
@@ -147,6 +149,26 @@ class TestPersistenceStatusService:
         """is_postgres_available should return a boolean."""
         result = is_postgres_available()
         assert isinstance(result, bool)
+
+    def test_workflow_durability_missing_reports_partial(self, monkeypatch):
+        """Connected DB with core tables but missing workflow durability is partial, not fake-ready."""
+        from app.services import platform_persistence_status_service as service
+
+        monkeypatch.setattr(service, "check_database_url", lambda: (True, "configured"))
+        monkeypatch.setattr(service, "check_postgres_connection", lambda: (True, "connected"))
+        monkeypatch.setattr(service, "check_pgvector", lambda: (True, "available"))
+        monkeypatch.setattr(
+            service,
+            "check_tables_exist",
+            lambda: (
+                service.CORE_REQUIRED_TABLES + ["schema_migrations"],
+                service.WORKFLOW_DURABILITY_TABLES,
+            ),
+        )
+
+        status = service.get_persistence_status()
+        assert status["mode"] == "partial"
+        assert status["missing_workflow_durability_tables"] == service.WORKFLOW_DURABILITY_TABLES
 
 
 class TestTracingEndpoint:

@@ -51,7 +51,7 @@ def run_command(cmd: list[str], cwd: Path | None = None, timeout: int = 30) -> t
         return 1, "", str(e)
 
 
-def check_backend_running(base_url: str = "http://localhost:8000") -> bool:
+def check_backend_running(base_url: str = "http://localhost:8900") -> bool:
     """Check if backend API is running."""
     import urllib.request
     try:
@@ -225,7 +225,7 @@ Examples:
     parser.add_argument("--verbose", "-v", action="store_true", help="Verbose output")
     parser.add_argument("--strict", action="store_true", help="Fail on warnings too")
     parser.add_argument("--enable-tracing", action="store_true", help="Enable tracing for tests")
-    parser.add_argument("--base-url", default="http://localhost:8000", help="Base URL for API")
+    parser.add_argument("--base-url", default="http://localhost:8900", help="Base URL for API")
     args = parser.parse_args()
     
     def log(msg: str):

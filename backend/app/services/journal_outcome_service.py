@@ -12,7 +12,12 @@ from uuid import uuid4
 
 from pydantic import BaseModel, ConfigDict, Field
 
-from app.services.persistence_service import get_database_table_status, save_journal_entry
+from app.services.persistence_service import (
+    get_database_table_status,
+    get_journal_outcome as get_persisted_journal_outcome,
+    list_journal_outcomes,
+    save_journal_entry,
+)
 
 
 class JournalEntryCreateRequest(BaseModel):
@@ -86,6 +91,29 @@ class JournalOutcomeSummary(BaseModel):
 # In-memory storage
 _JOURNAL_ENTRIES: dict[str, JournalEntryResponse] = {}
 _JOURNAL_CREATE_REQUESTS: dict[str, JournalEntryCreateRequest] = {}  # Store original request for updates
+
+
+def _journal_response_from_row(row: dict) -> JournalEntryResponse | None:
+    try:
+        return JournalEntryResponse.model_validate({
+            "id": row.get("id"),
+            "source_type": row.get("source_type"),
+            "source_id": row.get("source_id"),
+            "symbol": row.get("symbol"),
+            "outcome_label": row.get("outcome_label", "unknown"),
+            "mfe_percent": row.get("mfe_percent"),
+            "mae_percent": row.get("mae_percent"),
+            "realized_r": row.get("realized_r"),
+            "time_to_result_minutes": row.get("time_to_result_minutes"),
+            "followed_plan": row.get("followed_plan"),
+            "confidence_error": row.get("confidence_error"),
+            "expected_vs_actual": row.get("expected_vs_actual"),
+            "lessons": row.get("lessons") or [],
+            "created_at": row.get("created_at"),
+            "updated_at": row.get("updated_at") or row.get("created_at"),
+        })
+    except Exception:
+        return None
 
 
 def _compute_outcome_label(
@@ -316,6 +344,12 @@ def create_journal_entry(request: JournalEntryCreateRequest) -> JournalEntryResp
 
 def get_journal_entry(entry_id: str) -> JournalEntryResponse | None:
     """Get a journal entry by ID."""
+    if get_persistence_mode() == "postgres":
+        row = get_persisted_journal_outcome(entry_id)
+        if row:
+            restored = _journal_response_from_row(row)
+            if restored:
+                return restored
     return _JOURNAL_ENTRIES.get(entry_id)
 
 
@@ -326,6 +360,18 @@ def list_journal_entries(
     limit: int = 100,
 ) -> list[JournalEntryResponse]:
     """List journal entries with optional filters."""
+    rows = list_journal_outcomes(limit) if get_persistence_mode() == "postgres" else []
+    if rows:
+        restored = [_journal_response_from_row(row) for row in rows]
+        entries = [entry for entry in restored if entry is not None]
+        if source_type:
+            entries = [e for e in entries if e.source_type == source_type]
+        if symbol:
+            entries = [e for e in entries if e.symbol and e.symbol.upper() == symbol.upper()]
+        if outcome_label:
+            entries = [e for e in entries if e.outcome_label == outcome_label]
+        return entries[:limit]
+
     entries = list(_JOURNAL_ENTRIES.values())
     
     if source_type:
@@ -345,6 +391,39 @@ def list_journal_entries(
 
 def get_journal_summary() -> JournalOutcomeSummary:
     """Get summary of journal outcomes."""
+    persisted_rows = list_journal_outcomes(1000) if get_persistence_mode() == "postgres" else []
+    if persisted_rows:
+        entries = [entry for entry in (_journal_response_from_row(row) for row in persisted_rows) if entry is not None]
+        total = len(entries)
+        wins = sum(1 for e in entries if e.outcome_label == "win")
+        losses = sum(1 for e in entries if e.outcome_label == "loss")
+        breakeven = sum(1 for e in entries if e.outcome_label == "breakeven")
+        unknown = sum(1 for e in entries if e.outcome_label == "unknown")
+        realized_rs = [e.realized_r for e in entries if e.realized_r is not None]
+        by_source_type: dict[str, int] = {}
+        by_symbol: dict[str, int] = {}
+        by_strategy: dict[str, int] = {}
+        for row, entry in zip(persisted_rows, entries):
+            by_source_type[entry.source_type] = by_source_type.get(entry.source_type, 0) + 1
+            if entry.symbol:
+                by_symbol[entry.symbol] = by_symbol.get(entry.symbol, 0) + 1
+            if row.get("strategy_key"):
+                by_strategy[row["strategy_key"]] = by_strategy.get(row["strategy_key"], 0) + 1
+        return JournalOutcomeSummary(
+            total_entries=total,
+            wins=wins,
+            losses=losses,
+            breakeven=breakeven,
+            unknown=unknown,
+            win_rate=wins / (wins + losses) if (wins + losses) > 0 else 0.0,
+            average_realized_r=sum(realized_rs) / len(realized_rs) if realized_rs else None,
+            by_source_type=by_source_type,
+            by_symbol=by_symbol,
+            by_strategy=by_strategy,
+            recent_entries=entries[:10],
+            persistence_mode="postgres",
+        )
+
     entries = list(_JOURNAL_ENTRIES.values())
     
     total = len(entries)
@@ -422,6 +501,11 @@ def create_journal_entry_from_paper_trade(
 
 def get_latest_journal_entry() -> JournalEntryResponse | None:
     """Get the most recent journal entry."""
+    rows = list_journal_outcomes(1) if get_persistence_mode() == "postgres" else []
+    if rows:
+        restored = _journal_response_from_row(rows[0])
+        if restored:
+            return restored
     entries = list(_JOURNAL_ENTRIES.values())
     if not entries:
         return None

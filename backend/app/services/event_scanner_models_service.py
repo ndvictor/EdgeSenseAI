@@ -22,6 +22,11 @@ from uuid import uuid4
 
 from pydantic import BaseModel, ConfigDict, Field
 
+from app.services.persistence_service import (
+    get_latest_event_scanner_run,
+    list_event_scanner_runs,
+    save_event_scanner_run,
+)
 from app.services.data_freshness_gate_service import (
     DataFreshnessCheckRequest,
     run_data_freshness_check,
@@ -90,6 +95,30 @@ class EventScannerResponse(BaseModel):
 # In-memory storage
 _LATEST_SCAN: EventScannerResponse | None = None
 _SCAN_HISTORY: list[EventScannerResponse] = []
+
+
+def _event_scan_from_record(row: dict) -> EventScannerResponse | None:
+    try:
+        started = row.get("started_at")
+        completed = row.get("completed_at")
+        duration_ms = 0
+        if hasattr(started, "timestamp") and hasattr(completed, "timestamp"):
+            duration_ms = int((completed - started).total_seconds() * 1000)
+        return EventScannerResponse.model_validate({
+            "run_id": row.get("run_id"),
+            "status": row.get("status"),
+            "scanned_symbols": row.get("scanned_symbols") or [],
+            "matched_events": row.get("matched_events") or [],
+            "skipped_symbols": row.get("skipped_symbols") or [],
+            "source": row.get("source") or "auto",
+            "warnings": row.get("warnings") or [],
+            "blockers": row.get("blockers") or [],
+            "started_at": started.isoformat() if hasattr(started, "isoformat") else started,
+            "completed_at": completed.isoformat() if hasattr(completed, "isoformat") else completed,
+            "duration_ms": duration_ms,
+        })
+    except Exception:
+        return None
 
 
 def _determine_symbols_to_scan(request: EventScannerRequest) -> list[str]:
@@ -298,6 +327,7 @@ def run_event_scanner(request: EventScannerRequest) -> EventScannerResponse:
     # Store
     _LATEST_SCAN = response
     _SCAN_HISTORY.append(response)
+    save_event_scanner_run(response)
 
     if len(_SCAN_HISTORY) > 100:
         _SCAN_HISTORY = _SCAN_HISTORY[-100:]
@@ -307,9 +337,19 @@ def run_event_scanner(request: EventScannerRequest) -> EventScannerResponse:
 
 def get_latest_event_scan() -> EventScannerResponse | None:
     """Get the most recent event scanner run."""
+    row = get_latest_event_scanner_run()
+    if row:
+        restored = _event_scan_from_record(row)
+        if restored:
+            return restored
     return _LATEST_SCAN
 
 
 def list_event_scan_runs(limit: int = 20) -> list[EventScannerResponse]:
     """List recent event scanner runs."""
+    rows = list_event_scanner_runs(limit)
+    restored = [_event_scan_from_record(row) for row in rows]
+    db_runs = [run for run in restored if run is not None]
+    if db_runs:
+        return db_runs
     return _SCAN_HISTORY[-limit:]

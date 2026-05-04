@@ -42,6 +42,10 @@ from app.services.no_trade_service import (
     evaluate_no_trade,
     get_latest_no_trade,
 )
+from app.services.persistence_service import (
+    get_latest_recommendation_pipeline_run,
+    save_recommendation_pipeline_run,
+)
 from app.services.recommendation_lifecycle_service import (
     CreateRecommendationRequest,
     RecommendationLifecycleRecord,
@@ -141,6 +145,32 @@ class RecommendationPipelineResponse(BaseModel):
 
 # In-memory storage
 _LATEST_PIPELINE_RUN: RecommendationPipelineResponse | None = None
+
+
+def _pipeline_from_record(row: dict) -> RecommendationPipelineResponse | None:
+    try:
+        stages = []
+        for key in ["llm_budget_gate", "agent_validation", "risk_review", "no_trade", "capital_allocation"]:
+            if row.get(key):
+                stages.append({"stage": key, "status": "completed", "result": row.get(key), "blockers": [], "warnings": []})
+        return RecommendationPipelineResponse.model_validate({
+            "run_id": row.get("run_id"),
+            "status": row.get("status"),
+            "symbol": row.get("symbol"),
+            "llm_budget_gate": row.get("llm_budget_gate"),
+            "agent_validation": row.get("agent_validation"),
+            "risk_review": row.get("risk_review"),
+            "no_trade": row.get("no_trade"),
+            "capital_allocation": row.get("capital_allocation"),
+            "recommendation": row.get("recommendation"),
+            "stages": stages,
+            "blockers": row.get("blockers") or [],
+            "warnings": row.get("warnings") or [],
+            "started_at": row.get("started_at"),
+            "completed_at": row.get("completed_at"),
+        })
+    except Exception:
+        return None
 
 
 def run_recommendation_pipeline(request: RecommendationPipelineRequest) -> RecommendationPipelineResponse:
@@ -433,10 +463,16 @@ def run_recommendation_pipeline(request: RecommendationPipelineRequest) -> Recom
     # Store latest
     global _LATEST_PIPELINE_RUN
     _LATEST_PIPELINE_RUN = result
+    save_recommendation_pipeline_run(result)
 
     return result
 
 
 def get_latest_recommendation_pipeline() -> RecommendationPipelineResponse | None:
     """Get the latest recommendation pipeline run."""
+    row = get_latest_recommendation_pipeline_run()
+    if row:
+        restored = _pipeline_from_record(row)
+        if restored:
+            return restored
     return _LATEST_PIPELINE_RUN

@@ -13,6 +13,11 @@ from uuid import uuid4
 
 from pydantic import BaseModel, ConfigDict, Field
 
+from app.services.persistence_service import (
+    get_latest_trigger_rule_run,
+    list_trigger_rule_runs,
+    save_trigger_rule_run,
+)
 from app.services.universe_selection_service import (
     UniverseSelectionCandidate,
     get_latest_universe_selection,
@@ -80,6 +85,25 @@ class TriggerRuleBuildResponse(BaseModel):
 _LATEST_TRIGGER_RULES: TriggerRuleBuildResponse | None = None
 _TRIGGER_RULES_HISTORY: list[TriggerRuleBuildResponse] = []
 _ACTIVE_RULES: dict[str, TriggerRule] = {}  # rule_id -> rule
+
+
+def _trigger_response_from_record(row: dict) -> TriggerRuleBuildResponse | None:
+    try:
+        rules = row.get("rules") or []
+        created_at = row.get("created_at")
+        return TriggerRuleBuildResponse.model_validate({
+            "run_id": row.get("run_id"),
+            "status": row.get("status"),
+            "rules": rules,
+            "active_rules": [rule.get("rule_id") for rule in rules if isinstance(rule, dict) and rule.get("status") == "active"],
+            "expired_rules": [rule.get("rule_id") for rule in rules if isinstance(rule, dict) and rule.get("status") == "expired"],
+            "total_rules": len(rules),
+            "blockers": row.get("blockers") or [],
+            "warnings": row.get("warnings") or [],
+            "created_at": created_at.isoformat() if hasattr(created_at, "isoformat") else created_at,
+        })
+    except Exception:
+        return None
 
 
 # Baseline rule templates by strategy family
@@ -344,6 +368,7 @@ def run_trigger_rule_build(
     # Store in history
     _LATEST_TRIGGER_RULES = response
     _TRIGGER_RULES_HISTORY.append(response)
+    save_trigger_rule_run(response)
 
     # Keep only last 100
     if len(_TRIGGER_RULES_HISTORY) > 100:
@@ -354,11 +379,21 @@ def run_trigger_rule_build(
 
 def get_latest_trigger_rules() -> TriggerRuleBuildResponse | None:
     """Get the most recent trigger rule build."""
+    row = get_latest_trigger_rule_run()
+    if row:
+        restored = _trigger_response_from_record(row)
+        if restored:
+            return restored
     return _LATEST_TRIGGER_RULES
 
 
 def list_trigger_rule_builds(limit: int = 20) -> list[TriggerRuleBuildResponse]:
     """List recent trigger rule builds."""
+    rows = list_trigger_rule_runs(limit)
+    restored = [_trigger_response_from_record(row) for row in rows]
+    db_runs = [run for run in restored if run is not None]
+    if db_runs:
+        return db_runs
     return _TRIGGER_RULES_HISTORY[-limit:]
 
 

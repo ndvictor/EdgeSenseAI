@@ -31,14 +31,27 @@ from sqlalchemy import create_engine, text
 from app.core.settings import settings
 
 
-# Required tables for full persistence
-REQUIRED_TABLES = [
+CORE_REQUIRED_TABLES = [
     "candidate_universe",
     "decision_workflow_runs",
     "recommendation_lifecycle",
     "paper_trade_outcomes",
     "model_training_examples",
 ]
+WORKFLOW_DURABILITY_TABLES = [
+    "upper_workflow_runs",
+    "trigger_rule_runs",
+    "event_scanner_runs",
+    "signal_scoring_runs",
+    "meta_model_ensemble_runs",
+    "recommendation_pipeline_runs",
+    "journal_outcomes",
+    "performance_drift_runs",
+    "research_priority_runs",
+    "model_strategy_update_runs",
+    "memory_update_runs",
+]
+REQUIRED_TABLES = [*CORE_REQUIRED_TABLES, *WORKFLOW_DURABILITY_TABLES]
 
 
 def check_database_url() -> tuple[bool, str]:
@@ -180,9 +193,14 @@ def run_all_checks() -> dict:
     human_approval_ok, human_approval_msg = check_human_approval()
     paid_llm_ok, paid_llm_msg = check_paid_llm_calls()
 
+    missing_core = [table for table in CORE_REQUIRED_TABLES if table in missing_tables]
+    missing_workflow = [table for table in WORKFLOW_DURABILITY_TABLES if table in missing_tables]
+
     # Determine persistence mode
-    if pg_ok and len(existing_tables) >= len(REQUIRED_TABLES):
+    if pg_ok and not missing_core and not missing_workflow:
         persistence_mode = "postgres"
+    elif pg_ok and not missing_core and missing_workflow:
+        persistence_mode = "partial"
     else:
         persistence_mode = "memory"
 
@@ -201,8 +219,10 @@ def run_all_checks() -> dict:
         warnings.append("DATABASE_URL not configured - using memory fallback")
     elif not pg_ok:
         warnings.append("Database unreachable - using memory fallback")
-    elif missing_tables:
-        warnings.append(f"Missing tables: {', '.join(missing_tables)}")
+    elif missing_core:
+        warnings.append(f"Missing core persistence tables: {', '.join(missing_core)}")
+    elif missing_workflow:
+        warnings.append(f"Missing workflow durability tables: {', '.join(missing_workflow)}")
     if not redis_ok:
         warnings.append("Redis not configured - caching disabled")
     if not langsmith_ok and langsmith_details.get("tracing_enabled"):
@@ -217,8 +237,12 @@ def run_all_checks() -> dict:
             "postgres_connected": pg_ok,
             "postgres_status": pg_msg,
             "required_tables": REQUIRED_TABLES,
+            "core_required_tables": CORE_REQUIRED_TABLES,
+            "workflow_durability_tables": WORKFLOW_DURABILITY_TABLES,
             "existing_tables": existing_tables,
             "missing_tables": missing_tables,
+            "missing_core_tables": missing_core,
+            "missing_workflow_durability_tables": missing_workflow,
         },
         "redis": {
             "configured": redis_ok,

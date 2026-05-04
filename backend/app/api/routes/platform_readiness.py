@@ -8,7 +8,7 @@ from fastapi import APIRouter
 from pydantic import BaseModel, Field
 
 from app.db.session import check_database_health
-from app.services.persistence_service import get_persistence_status
+from app.services.platform_persistence_status_service import get_database_health_check
 
 router = APIRouter()
 
@@ -69,13 +69,13 @@ def _check_postgres_connection() -> ReadinessCheck:
 
 def _check_persistence_tables() -> ReadinessCheck:
     """Check if key persistence tables exist."""
-    health = check_database_health()
-    if health.get("connected") and health.get("tables_ready"):
+    health = get_database_health_check()
+    if health.get("connected") and health.get("core_tables_complete") and health.get("workflow_durability_tables_complete"):
         return ReadinessCheck(
             key="persistence_tables",
             label="Persistence tables exist",
             status="pass",
-            message="All required tables exist",
+            message="Core and workflow durability tables exist",
             required_for="persistence",
         )
     if not health.get("connected"):
@@ -86,11 +86,13 @@ def _check_persistence_tables() -> ReadinessCheck:
             message="Cannot verify tables - Postgres not connected",
             required_for="persistence",
         )
+    missing_workflow = health.get("workflow_durability_tables", {}).get("missing", [])
+    missing_message = f"Missing workflow durability tables: {', '.join(missing_workflow[:5])}" if missing_workflow else "Some persistence tables may be missing - run migrations"
     return ReadinessCheck(
         key="persistence_tables",
         label="Persistence tables exist",
         status="warn",
-        message="Some tables may be missing - run migrations",
+        message=missing_message,
         required_for="persistence",
     )
 

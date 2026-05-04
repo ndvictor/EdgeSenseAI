@@ -13,6 +13,11 @@ from uuid import uuid4
 
 from pydantic import BaseModel, ConfigDict, Field
 
+from app.services.persistence_service import (
+    get_latest_model_strategy_update_run,
+    list_model_strategy_update_runs,
+    save_model_strategy_update_run,
+)
 from app.services.research_priority_service import (
     _LATEST_RESEARCH_PRIORITY,
 )
@@ -87,6 +92,24 @@ class ModelStrategyUpdateResponse(BaseModel):
 # In-memory storage
 _LATEST_UPDATE: ModelStrategyUpdateResponse | None = None
 _UPDATE_HISTORY: list[ModelStrategyUpdateResponse] = []
+
+
+def _update_from_record(row: dict) -> ModelStrategyUpdateResponse | None:
+    try:
+        return ModelStrategyUpdateResponse.model_validate({
+            "run_id": row.get("run_id"),
+            "status": row.get("status"),
+            "strategy_weight_updates": row.get("strategy_weight_updates") or [],
+            "model_weight_updates": row.get("model_weight_updates") or [],
+            "paused_strategies": row.get("paused_strategies") or [],
+            "retraining_requests": row.get("retraining_requests") or [],
+            "evaluation_jobs": row.get("evaluation_jobs") or [],
+            "blockers": row.get("blockers") or [],
+            "warnings": row.get("warnings") or [],
+            "created_at": row.get("created_at"),
+        })
+    except Exception:
+        return None
 
 
 # Mock current weights (in real system these would come from meta-model)
@@ -292,6 +315,7 @@ def propose_model_strategy_updates(request: ModelStrategyUpdateRequest) -> Model
     global _LATEST_UPDATE, _UPDATE_HISTORY
     _LATEST_UPDATE = response
     _UPDATE_HISTORY.append(response)
+    save_model_strategy_update_run(response)
     
     # Keep only last 100
     if len(_UPDATE_HISTORY) > 100:
@@ -302,9 +326,19 @@ def propose_model_strategy_updates(request: ModelStrategyUpdateRequest) -> Model
 
 def get_latest_update_proposal() -> ModelStrategyUpdateResponse | None:
     """Get the latest update proposal."""
+    row = get_latest_model_strategy_update_run()
+    if row:
+        restored = _update_from_record(row)
+        if restored:
+            return restored
     return _LATEST_UPDATE
 
 
 def list_update_history(limit: int = 20) -> list[ModelStrategyUpdateResponse]:
     """List recent update proposals."""
+    rows = list_model_strategy_update_runs(limit)
+    restored = [_update_from_record(row) for row in rows]
+    db_runs = [run for run in restored if run is not None]
+    if db_runs:
+        return db_runs
     return _UPDATE_HISTORY[-limit:]

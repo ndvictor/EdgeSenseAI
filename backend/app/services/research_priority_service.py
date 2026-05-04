@@ -13,6 +13,11 @@ from uuid import uuid4
 
 from pydantic import BaseModel, ConfigDict, Field
 
+from app.services.persistence_service import (
+    get_latest_research_priority_run,
+    list_research_priority_runs,
+    save_research_priority_run,
+)
 from app.services.journal_outcome_service import (
     _JOURNAL_CREATE_REQUESTS,
     _JOURNAL_ENTRIES,
@@ -69,6 +74,20 @@ class ResearchPriorityResponse(BaseModel):
 # In-memory storage
 _LATEST_RESEARCH_PRIORITY: ResearchPriorityResponse | None = None
 _RESEARCH_HISTORY: list[ResearchPriorityResponse] = []
+
+
+def _research_from_record(row: dict) -> ResearchPriorityResponse | None:
+    try:
+        return ResearchPriorityResponse.model_validate({
+            "run_id": row.get("run_id"),
+            "status": row.get("status"),
+            "tasks": row.get("tasks") or [],
+            "blockers": row.get("blockers") or [],
+            "warnings": row.get("warnings") or [],
+            "created_at": row.get("created_at"),
+        })
+    except Exception:
+        return None
 
 
 def _collect_evidence(
@@ -372,6 +391,7 @@ def generate_research_priorities(request: ResearchPriorityRequest) -> ResearchPr
     global _LATEST_RESEARCH_PRIORITY, _RESEARCH_HISTORY
     _LATEST_RESEARCH_PRIORITY = response
     _RESEARCH_HISTORY.append(response)
+    save_research_priority_run(response)
     
     # Keep only last 100
     if len(_RESEARCH_HISTORY) > 100:
@@ -382,19 +402,30 @@ def generate_research_priorities(request: ResearchPriorityRequest) -> ResearchPr
 
 def get_latest_research_priority() -> ResearchPriorityResponse | None:
     """Get the latest research priority run."""
+    row = get_latest_research_priority_run()
+    if row:
+        restored = _research_from_record(row)
+        if restored:
+            return restored
     return _LATEST_RESEARCH_PRIORITY
 
 
 def list_research_history(limit: int = 20) -> list[ResearchPriorityResponse]:
     """List recent research priority runs."""
+    rows = list_research_priority_runs(limit)
+    restored = [_research_from_record(row) for row in rows]
+    db_runs = [run for run in restored if run is not None]
+    if db_runs:
+        return db_runs
     return _RESEARCH_HISTORY[-limit:]
 
 
 def get_open_tasks() -> list[ResearchTask]:
     """Get all open tasks from latest research priority."""
-    if _LATEST_RESEARCH_PRIORITY is None:
+    latest = get_latest_research_priority()
+    if latest is None:
         return []
-    return [t for t in _LATEST_RESEARCH_PRIORITY.tasks if t.status == "open"]
+    return [t for t in latest.tasks if t.status == "open"]
 
 
 def update_task_status(task_id: str, status: str) -> ResearchTask | None:

@@ -261,3 +261,223 @@ class ModelTrainingExampleRecord(Base, TimestampMixin):
     features: Mapped[dict | list] = mapped_column(JSON, default=dict)
     label: Mapped[dict | list] = mapped_column(JSON, default=dict)
     label_type: Mapped[str] = mapped_column(String(40), default="paper_trade_outcome")
+
+
+class UpperWorkflowRunRecord(Base):
+    __tablename__ = "upper_workflow_runs"
+
+    id: Mapped[str] = mapped_column(String(80), primary_key=True)
+    run_id: Mapped[str] = mapped_column(String(80), unique=True, index=True)
+    status: Mapped[str] = mapped_column(String(80), index=True)
+    horizon: Mapped[str | None] = mapped_column(String(40))
+    source: Mapped[str | None] = mapped_column(String(40))
+    symbols_requested: Mapped[dict | list] = mapped_column(JSON, default=list)
+    market_phase: Mapped[str | None] = mapped_column(String(80))
+    active_loop: Mapped[str | None] = mapped_column(String(120))
+    data_freshness: Mapped[dict | list | None] = mapped_column(JSON)
+    market_regime: Mapped[dict | list | None] = mapped_column(JSON)
+    strategy_debate: Mapped[dict | list | None] = mapped_column(JSON)
+    strategy_ranking: Mapped[dict | list | None] = mapped_column(JSON)
+    model_selection: Mapped[dict | list | None] = mapped_column(JSON)
+    universe_selection: Mapped[dict | list | None] = mapped_column(JSON)
+    trigger_rules: Mapped[dict | list | None] = mapped_column(JSON)
+    event_scanner: Mapped[dict | list | None] = mapped_column(JSON)
+    signal_scoring: Mapped[dict | list | None] = mapped_column(JSON)
+    meta_model_ensemble: Mapped[dict | list | None] = mapped_column(JSON)
+    recommendation_pipeline: Mapped[dict | list | None] = mapped_column(JSON)
+    blockers: Mapped[dict | list] = mapped_column(JSON, default=list)
+    warnings: Mapped[dict | list] = mapped_column(JSON, default=list)
+    started_at: Mapped[datetime | None] = mapped_column(DateTime(timezone=True))
+    completed_at: Mapped[datetime | None] = mapped_column(DateTime(timezone=True))
+    duration_ms: Mapped[int | None] = mapped_column(Integer, default=0)
+    created_at: Mapped[datetime] = mapped_column(DateTime(timezone=True), default=utcnow, index=True)
+
+
+class TriggerRuleRunRecord(Base):
+    __tablename__ = "trigger_rule_runs"
+
+    id: Mapped[str] = mapped_column(String(80), primary_key=True)
+    run_id: Mapped[str] = mapped_column(String(80), unique=True, index=True)
+    status: Mapped[str] = mapped_column(String(80), index=True)
+    strategy_key: Mapped[str | None] = mapped_column(String(120), index=True)
+    horizon: Mapped[str | None] = mapped_column(String(40))
+    rules: Mapped[dict | list] = mapped_column(JSON, default=list)
+    blockers: Mapped[dict | list] = mapped_column(JSON, default=list)
+    warnings: Mapped[dict | list] = mapped_column(JSON, default=list)
+    created_at: Mapped[datetime] = mapped_column(DateTime(timezone=True), default=utcnow, index=True)
+
+
+class EventScannerRunRecord(Base):
+    __tablename__ = "event_scanner_runs"
+
+    id: Mapped[str] = mapped_column(String(80), primary_key=True)
+    run_id: Mapped[str] = mapped_column(String(80), unique=True, index=True)
+    status: Mapped[str] = mapped_column(String(80), index=True)
+    source: Mapped[str | None] = mapped_column(String(40))
+    horizon: Mapped[str | None] = mapped_column(String(40))
+    scanned_symbols: Mapped[dict | list] = mapped_column(JSON, default=list)
+    matched_events: Mapped[dict | list] = mapped_column(JSON, default=list)
+    skipped_symbols: Mapped[dict | list] = mapped_column(JSON, default=list)
+    blockers: Mapped[dict | list] = mapped_column(JSON, default=list)
+    warnings: Mapped[dict | list] = mapped_column(JSON, default=list)
+    started_at: Mapped[datetime | None] = mapped_column(DateTime(timezone=True))
+    completed_at: Mapped[datetime | None] = mapped_column(DateTime(timezone=True))
+    created_at: Mapped[datetime] = mapped_column(DateTime(timezone=True), default=utcnow, index=True)
+
+
+class SignalScoringRunRecord(Base):
+    __tablename__ = "signal_scoring_runs"
+
+    id: Mapped[str] = mapped_column(String(80), primary_key=True)
+    run_id: Mapped[str] = mapped_column(String(80), unique=True, index=True)
+    status: Mapped[str] = mapped_column(String(80), index=True)
+    horizon: Mapped[str | None] = mapped_column(String(40))
+    strategy_key: Mapped[str | None] = mapped_column(String(120), index=True)
+    scored_signals: Mapped[dict | list] = mapped_column(JSON, default=list)
+    blockers: Mapped[dict | list] = mapped_column(JSON, default=list)
+    warnings: Mapped[dict | list] = mapped_column(JSON, default=list)
+    started_at: Mapped[datetime | None] = mapped_column(DateTime(timezone=True))
+    completed_at: Mapped[datetime | None] = mapped_column(DateTime(timezone=True))
+    created_at: Mapped[datetime] = mapped_column(DateTime(timezone=True), default=utcnow, index=True)
+
+
+class MetaModelEnsembleRunRecord(Base):
+    __tablename__ = "meta_model_ensemble_runs"
+
+    id: Mapped[str] = mapped_column(String(80), primary_key=True)
+    run_id: Mapped[str] = mapped_column(String(80), unique=True, index=True)
+    status: Mapped[str] = mapped_column(String(80), index=True)
+    horizon: Mapped[str | None] = mapped_column(String(40))
+    strategy_key: Mapped[str | None] = mapped_column(String(120), index=True)
+    ensemble_signals: Mapped[dict | list] = mapped_column(JSON, default=list)
+    model_weights_used: Mapped[dict | list] = mapped_column(JSON, default=dict)
+    blockers: Mapped[dict | list] = mapped_column(JSON, default=list)
+    warnings: Mapped[dict | list] = mapped_column(JSON, default=list)
+    started_at: Mapped[datetime | None] = mapped_column(DateTime(timezone=True))
+    completed_at: Mapped[datetime | None] = mapped_column(DateTime(timezone=True))
+    created_at: Mapped[datetime] = mapped_column(DateTime(timezone=True), default=utcnow, index=True)
+
+
+class RecommendationPipelineRunRecord(Base):
+    __tablename__ = "recommendation_pipeline_runs"
+
+    id: Mapped[str] = mapped_column(String(80), primary_key=True)
+    run_id: Mapped[str] = mapped_column(String(80), unique=True, index=True)
+    status: Mapped[str] = mapped_column(String(80), index=True)
+    symbol: Mapped[str | None] = mapped_column(String(40), index=True)
+    llm_budget_gate: Mapped[dict | list | None] = mapped_column(JSON)
+    agent_validation: Mapped[dict | list | None] = mapped_column(JSON)
+    risk_review: Mapped[dict | list | None] = mapped_column(JSON)
+    no_trade: Mapped[dict | list | None] = mapped_column(JSON)
+    capital_allocation: Mapped[dict | list | None] = mapped_column(JSON)
+    recommendation: Mapped[dict | list | None] = mapped_column(JSON)
+    blockers: Mapped[dict | list] = mapped_column(JSON, default=list)
+    warnings: Mapped[dict | list] = mapped_column(JSON, default=list)
+    started_at: Mapped[datetime | None] = mapped_column(DateTime(timezone=True))
+    completed_at: Mapped[datetime | None] = mapped_column(DateTime(timezone=True))
+    created_at: Mapped[datetime] = mapped_column(DateTime(timezone=True), default=utcnow, index=True)
+
+
+class JournalOutcomeRecord(Base):
+    __tablename__ = "journal_outcomes"
+
+    id: Mapped[str] = mapped_column(String(80), primary_key=True)
+    source_type: Mapped[str] = mapped_column(String(80))
+    source_id: Mapped[str | None] = mapped_column(String(100))
+    symbol: Mapped[str | None] = mapped_column(String(40), index=True)
+    asset_class: Mapped[str | None] = mapped_column(String(40), default="stock")
+    horizon: Mapped[str | None] = mapped_column(String(40), default="swing")
+    strategy_key: Mapped[str | None] = mapped_column(String(120), index=True)
+    regime: Mapped[str | None] = mapped_column(String(80))
+    model_stack: Mapped[dict | list] = mapped_column(JSON, default=list)
+    expected_outcome: Mapped[str | None] = mapped_column(Text)
+    actual_outcome: Mapped[str | None] = mapped_column(Text)
+    outcome_label: Mapped[str] = mapped_column(String(60), default="unknown", index=True)
+    entry_price: Mapped[float | None] = mapped_column(Float)
+    exit_price: Mapped[float | None] = mapped_column(Float)
+    target_price: Mapped[float | None] = mapped_column(Float)
+    stop_loss: Mapped[float | None] = mapped_column(Float)
+    max_favorable_price: Mapped[float | None] = mapped_column(Float)
+    max_adverse_price: Mapped[float | None] = mapped_column(Float)
+    mfe_percent: Mapped[float | None] = mapped_column(Float)
+    mae_percent: Mapped[float | None] = mapped_column(Float)
+    realized_r: Mapped[float | None] = mapped_column(Float)
+    time_to_result_minutes: Mapped[float | None] = mapped_column(Float)
+    followed_plan: Mapped[bool | None] = mapped_column(Boolean)
+    confidence_error: Mapped[float | None] = mapped_column(Float)
+    expected_vs_actual: Mapped[str | None] = mapped_column(Text)
+    lessons: Mapped[dict | list] = mapped_column(JSON, default=list)
+    notes: Mapped[str | None] = mapped_column(Text)
+    tags: Mapped[dict | list] = mapped_column(JSON, default=list)
+    opened_at: Mapped[datetime | None] = mapped_column(DateTime(timezone=True))
+    closed_at: Mapped[datetime | None] = mapped_column(DateTime(timezone=True))
+    created_at: Mapped[datetime] = mapped_column(DateTime(timezone=True), default=utcnow, index=True)
+    updated_at: Mapped[datetime] = mapped_column(DateTime(timezone=True), default=utcnow, onupdate=utcnow)
+
+
+class PerformanceDriftRunRecord(Base):
+    __tablename__ = "performance_drift_runs"
+
+    id: Mapped[str] = mapped_column(String(80), primary_key=True)
+    run_id: Mapped[str] = mapped_column(String(80), unique=True, index=True)
+    status: Mapped[str] = mapped_column(String(80), index=True)
+    sample_count: Mapped[int | None] = mapped_column(Integer, default=0)
+    lookback_days: Mapped[int | None] = mapped_column(Integer)
+    strategy_key: Mapped[str | None] = mapped_column(String(120), index=True)
+    model_name: Mapped[str | None] = mapped_column(String(120))
+    calibration_buckets: Mapped[dict | list] = mapped_column(JSON, default=list)
+    false_positive_rate: Mapped[float | None] = mapped_column(Float)
+    win_rate: Mapped[float | None] = mapped_column(Float)
+    average_realized_r: Mapped[float | None] = mapped_column(Float)
+    confidence_error: Mapped[float | None] = mapped_column(Float)
+    affected_models: Mapped[dict | list] = mapped_column(JSON, default=list)
+    affected_strategies: Mapped[dict | list] = mapped_column(JSON, default=list)
+    recommended_actions: Mapped[dict | list] = mapped_column(JSON, default=list)
+    blockers: Mapped[dict | list] = mapped_column(JSON, default=list)
+    warnings: Mapped[dict | list] = mapped_column(JSON, default=list)
+    checked_at: Mapped[datetime | None] = mapped_column(DateTime(timezone=True))
+    created_at: Mapped[datetime] = mapped_column(DateTime(timezone=True), default=utcnow, index=True)
+
+
+class ResearchPriorityRunRecord(Base):
+    __tablename__ = "research_priority_runs"
+
+    id: Mapped[str] = mapped_column(String(80), primary_key=True)
+    run_id: Mapped[str] = mapped_column(String(80), unique=True, index=True)
+    status: Mapped[str] = mapped_column(String(80), index=True)
+    tasks: Mapped[dict | list] = mapped_column(JSON, default=list)
+    blockers: Mapped[dict | list] = mapped_column(JSON, default=list)
+    warnings: Mapped[dict | list] = mapped_column(JSON, default=list)
+    created_at: Mapped[datetime] = mapped_column(DateTime(timezone=True), default=utcnow, index=True)
+
+
+class ModelStrategyUpdateRunRecord(Base):
+    __tablename__ = "model_strategy_update_runs"
+
+    id: Mapped[str] = mapped_column(String(80), primary_key=True)
+    run_id: Mapped[str] = mapped_column(String(80), unique=True, index=True)
+    status: Mapped[str] = mapped_column(String(80), index=True)
+    strategy_weight_updates: Mapped[dict | list] = mapped_column(JSON, default=list)
+    model_weight_updates: Mapped[dict | list] = mapped_column(JSON, default=list)
+    paused_strategies: Mapped[dict | list] = mapped_column(JSON, default=list)
+    retraining_requests: Mapped[dict | list] = mapped_column(JSON, default=list)
+    evaluation_jobs: Mapped[dict | list] = mapped_column(JSON, default=list)
+    blockers: Mapped[dict | list] = mapped_column(JSON, default=list)
+    warnings: Mapped[dict | list] = mapped_column(JSON, default=list)
+    created_at: Mapped[datetime] = mapped_column(DateTime(timezone=True), default=utcnow, index=True)
+
+
+class MemoryUpdateRunRecord(Base):
+    __tablename__ = "memory_update_runs"
+
+    id: Mapped[str] = mapped_column(String(80), primary_key=True)
+    run_id: Mapped[str] = mapped_column(String(80), unique=True, index=True)
+    status: Mapped[str] = mapped_column(String(80), index=True)
+    source_type: Mapped[str | None] = mapped_column(String(80), index=True)
+    source_id: Mapped[str | None] = mapped_column(String(100))
+    memory_id: Mapped[str | None] = mapped_column(String(100))
+    title: Mapped[str | None] = mapped_column(Text)
+    metadata_json: Mapped[dict | list] = mapped_column("metadata", JSON, default=dict)
+    blockers: Mapped[dict | list] = mapped_column(JSON, default=list)
+    warnings: Mapped[dict | list] = mapped_column(JSON, default=list)
+    created_at: Mapped[datetime] = mapped_column(DateTime(timezone=True), default=utcnow, index=True)

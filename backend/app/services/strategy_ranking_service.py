@@ -14,6 +14,7 @@ from pydantic import BaseModel, ConfigDict, Field
 
 from app.services.strategy_debate_service import (
     StrategyArgument,
+    StrategyDebateRequest,
     StrategyDebateResponse,
     get_latest_strategy_debate,
     run_strategy_debate,
@@ -339,7 +340,7 @@ def run_strategy_ranking(request: StrategyRankingRequest) -> StrategyRankingResp
 
     # Keep only last 100
     if len(_RANKING_HISTORY) > 100:
-        _RANKING_HISTORY = _RANKING_HISTORY[-100:]
+        del _RANKING_HISTORY[:-100]
 
     return response
 

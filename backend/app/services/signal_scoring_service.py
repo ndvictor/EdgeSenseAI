@@ -15,6 +15,11 @@ from uuid import uuid4
 from pydantic import BaseModel, ConfigDict, Field
 
 from app.models.weighted_ranker import WeightedRankerOutput, run_weighted_ranker_v1
+from app.services.persistence_service import (
+    get_latest_signal_scoring_run,
+    list_signal_scoring_runs as list_persisted_signal_scoring_runs,
+    save_signal_scoring_run,
+)
 from app.services.event_scanner_models_service import (
     EventScannerMatchedEvent,
     get_latest_event_scan,
@@ -85,6 +90,26 @@ class SignalScoringResponse(BaseModel):
 # In-memory storage
 _LATEST_SCORING: SignalScoringResponse | None = None
 _SCORING_HISTORY: list[SignalScoringResponse] = []
+
+
+def _signal_scoring_from_record(row: dict) -> SignalScoringResponse | None:
+    try:
+        started = row.get("started_at")
+        completed = row.get("completed_at")
+        duration_ms = int((completed - started).total_seconds() * 1000) if hasattr(started, "timestamp") and hasattr(completed, "timestamp") else 0
+        return SignalScoringResponse.model_validate({
+            "run_id": row.get("run_id"),
+            "status": row.get("status"),
+            "scored_signals": row.get("scored_signals") or [],
+            "skipped_signals": [],
+            "blockers": row.get("blockers") or [],
+            "warnings": row.get("warnings") or [],
+            "started_at": started.isoformat() if hasattr(started, "isoformat") else started,
+            "completed_at": completed.isoformat() if hasattr(completed, "isoformat") else completed,
+            "duration_ms": duration_ms,
+        })
+    except Exception:
+        return None
 
 
 def _score_with_weighted_ranker(
@@ -392,6 +417,7 @@ def run_signal_scoring(request: SignalScoringRequest) -> SignalScoringResponse:
     # Store
     _LATEST_SCORING = response
     _SCORING_HISTORY.append(response)
+    save_signal_scoring_run(response)
 
     if len(_SCORING_HISTORY) > 100:
         _SCORING_HISTORY = _SCORING_HISTORY[-100:]
@@ -401,9 +427,19 @@ def run_signal_scoring(request: SignalScoringRequest) -> SignalScoringResponse:
 
 def get_latest_signal_scoring() -> SignalScoringResponse | None:
     """Get the most recent signal scoring run."""
+    row = get_latest_signal_scoring_run()
+    if row:
+        restored = _signal_scoring_from_record(row)
+        if restored:
+            return restored
     return _LATEST_SCORING
 
 
 def list_signal_scoring_runs(limit: int = 20) -> list[SignalScoringResponse]:
     """List recent signal scoring runs."""
+    rows = list_persisted_signal_scoring_runs(limit)
+    restored = [_signal_scoring_from_record(row) for row in rows]
+    db_runs = [run for run in restored if run is not None]
+    if db_runs:
+        return db_runs
     return _SCORING_HISTORY[-limit:]

@@ -16,13 +16,33 @@ from sqlalchemy import create_engine, text
 from app.core.settings import settings
 
 
-# Required tables for full persistence
-REQUIRED_TABLES = [
+# Required core source-of-truth tables.
+CORE_REQUIRED_TABLES = [
     "candidate_universe",
     "decision_workflow_runs",
     "recommendation_lifecycle",
     "paper_trade_outcomes",
     "model_training_examples",
+]
+
+# Required workflow durability tables for the remaining 24-step workflow state.
+WORKFLOW_DURABILITY_TABLES = [
+    "upper_workflow_runs",
+    "trigger_rule_runs",
+    "event_scanner_runs",
+    "signal_scoring_runs",
+    "meta_model_ensemble_runs",
+    "recommendation_pipeline_runs",
+    "journal_outcomes",
+    "performance_drift_runs",
+    "research_priority_runs",
+    "model_strategy_update_runs",
+    "memory_update_runs",
+]
+
+REQUIRED_TABLES = [
+    *CORE_REQUIRED_TABLES,
+    *WORKFLOW_DURABILITY_TABLES,
     "schema_migrations",
 ]
 
@@ -123,17 +143,18 @@ def get_persistence_status() -> dict[str, Any]:
     existing_tables, missing_tables = check_tables_exist()
     pgvector_ok, pgvector_msg = check_pgvector()
     
+    core_missing = [table for table in CORE_REQUIRED_TABLES if table in missing_tables]
+    workflow_missing = [table for table in WORKFLOW_DURABILITY_TABLES if table in missing_tables]
+
     # Determine persistence mode
     if not db_url_ok:
         mode = "memory"
     elif not pg_ok:
         mode = "memory"
-    elif missing_tables:
-        # Partial persistence - some tables exist but not all
-        if len(existing_tables) >= 3:  # Threshold for "postgres" mode
-            mode = "postgres"
-        else:
-            mode = "memory"
+    elif core_missing:
+        mode = "memory"
+    elif workflow_missing:
+        mode = "partial"
     else:
         mode = "postgres"
     
@@ -142,8 +163,12 @@ def get_persistence_status() -> dict[str, Any]:
         "database_connected": pg_ok,
         "database_status": pg_msg if pg_ok else (db_url_msg if not db_url_ok else pg_msg),
         "required_tables": REQUIRED_TABLES,
+        "core_required_tables": CORE_REQUIRED_TABLES,
+        "workflow_durability_tables": WORKFLOW_DURABILITY_TABLES,
         "existing_tables": existing_tables,
         "missing_tables": missing_tables,
+        "missing_core_tables": core_missing,
+        "missing_workflow_durability_tables": workflow_missing,
         "pgvector_available": pgvector_ok,
         "pgvector_status": pgvector_msg,
     }
@@ -198,9 +223,14 @@ def get_database_health_check() -> dict[str, Any]:
         },
     }
     
-    # Overall healthy if connected and has at least core tables
-    core_tables = ["candidate_universe", "decision_workflow_runs", "recommendation_lifecycle"]
-    core_tables_exist = all(t in existing_tables for t in core_tables)
-    health["healthy"] = pg_ok and core_tables_exist
+    core_tables_exist = all(t in existing_tables for t in CORE_REQUIRED_TABLES)
+    workflow_tables_exist = all(t in existing_tables for t in WORKFLOW_DURABILITY_TABLES)
+    health["healthy"] = pg_ok and core_tables_exist and workflow_tables_exist
+    health["core_tables_complete"] = core_tables_exist
+    health["workflow_durability_tables_complete"] = workflow_tables_exist
+    health["workflow_durability_tables"] = {
+        "required": WORKFLOW_DURABILITY_TABLES,
+        "missing": [table for table in WORKFLOW_DURABILITY_TABLES if table not in existing_tables],
+    }
     
     return health

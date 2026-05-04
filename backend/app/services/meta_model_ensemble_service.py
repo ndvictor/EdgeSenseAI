@@ -14,6 +14,11 @@ from uuid import uuid4
 from pydantic import BaseModel, ConfigDict, Field
 
 from app.services.candidate_universe_service import add_candidate
+from app.services.persistence_service import (
+    get_latest_meta_model_ensemble_run,
+    list_meta_model_ensemble_runs as list_persisted_meta_model_ensemble_runs,
+    save_meta_model_ensemble_run,
+)
 from app.services.signal_scoring_service import (
     ScoredSignal,
     SignalScoringResponse,
@@ -89,6 +94,31 @@ DEFAULT_WEIGHTS: dict[str, float] = {
 # In-memory storage
 _LATEST_ENSEMBLE: MetaModelEnsembleResponse | None = None
 _ENSEMBLE_HISTORY: list[MetaModelEnsembleResponse] = []
+
+
+def _meta_model_from_record(row: dict) -> MetaModelEnsembleResponse | None:
+    try:
+        started = row.get("started_at")
+        completed = row.get("completed_at")
+        signals = row.get("ensemble_signals") or []
+        duration_ms = int((completed - started).total_seconds() * 1000) if hasattr(started, "timestamp") and hasattr(completed, "timestamp") else 0
+        return MetaModelEnsembleResponse.model_validate({
+            "run_id": row.get("run_id"),
+            "status": row.get("status"),
+            "ensemble_signals": signals,
+            "passed_signals": [signal.get("symbol") for signal in signals if isinstance(signal, dict) and signal.get("status") == "pass"],
+            "watch_signals": [signal.get("symbol") for signal in signals if isinstance(signal, dict) and signal.get("status") == "watch"],
+            "blocked_signals": [signal.get("symbol") for signal in signals if isinstance(signal, dict) and signal.get("status") == "blocked"],
+            "model_weights_used": row.get("model_weights_used") or {},
+            "promoted_candidates": [],
+            "blockers": row.get("blockers") or [],
+            "warnings": row.get("warnings") or [],
+            "started_at": started.isoformat() if hasattr(started, "isoformat") else started,
+            "completed_at": completed.isoformat() if hasattr(completed, "isoformat") else completed,
+            "duration_ms": duration_ms,
+        })
+    except Exception:
+        return None
 
 
 def _normalize_weights(weights: dict[str, float]) -> dict[str, float]:
@@ -380,6 +410,7 @@ def run_meta_model_ensemble(
     # Store
     _LATEST_ENSEMBLE = response
     _ENSEMBLE_HISTORY.append(response)
+    save_meta_model_ensemble_run(response)
 
     if len(_ENSEMBLE_HISTORY) > 100:
         _ENSEMBLE_HISTORY = _ENSEMBLE_HISTORY[-100:]
@@ -389,11 +420,21 @@ def run_meta_model_ensemble(
 
 def get_latest_meta_model_ensemble() -> MetaModelEnsembleResponse | None:
     """Get the most recent meta-model ensemble run."""
+    row = get_latest_meta_model_ensemble_run()
+    if row:
+        restored = _meta_model_from_record(row)
+        if restored:
+            return restored
     return _LATEST_ENSEMBLE
 
 
 def list_meta_model_ensemble_runs(limit: int = 20) -> list[MetaModelEnsembleResponse]:
     """List recent meta-model ensemble runs."""
+    rows = list_persisted_meta_model_ensemble_runs(limit)
+    restored = [_meta_model_from_record(row) for row in rows]
+    db_runs = [run for run in restored if run is not None]
+    if db_runs:
+        return db_runs
     return _ENSEMBLE_HISTORY[-limit:]
 
 

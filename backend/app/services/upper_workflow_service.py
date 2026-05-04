@@ -86,6 +86,11 @@ from app.services.recommendation_pipeline_service import (
     RecommendationPipelineResponse,
     run_recommendation_pipeline,
 )
+from app.services.persistence_service import (
+    get_latest_upper_workflow_run,
+    list_upper_workflow_runs,
+    save_upper_workflow_run,
+)
 from app.services.tracing_service import trace_event, trace_workflow_step
 from app.services.trigger_rules_service import (
     TriggerRuleBuildRequest,
@@ -188,7 +193,40 @@ def _save_upper_workflow_run(response: UpperWorkflowResponse) -> UpperWorkflowRe
     _UPPER_WORKFLOW_HISTORY.append(response)
     if len(_UPPER_WORKFLOW_HISTORY) > 100:
         del _UPPER_WORKFLOW_HISTORY[:-100]
+    save_upper_workflow_run(response)
     return response
+
+
+def _upper_workflow_from_record(row: dict) -> UpperWorkflowResponse | None:
+    try:
+        stage_fields = [
+            "data_freshness",
+            "market_regime",
+            "strategy_debate",
+            "strategy_ranking",
+            "model_selection",
+            "universe_selection",
+            "trigger_rules",
+            "event_scanner",
+            "signal_scoring",
+            "meta_model_ensemble",
+            "recommendation_pipeline",
+        ]
+        stages = [row[field] for field in stage_fields if row.get(field)]
+        return UpperWorkflowResponse.model_validate({
+            "run_id": row.get("run_id"),
+            "status": row.get("status"),
+            "market_phase": row.get("market_phase") or "unknown",
+            "active_loop": row.get("active_loop") or "unknown",
+            "stages": stages,
+            "blockers": row.get("blockers") or [],
+            "warnings": row.get("warnings") or [],
+            "started_at": row.get("started_at"),
+            "completed_at": row.get("completed_at"),
+            "duration_ms": row.get("duration_ms") or 0,
+        })
+    except Exception:
+        return None
 
 
 def run_upper_workflow(request: UpperWorkflowRequest) -> UpperWorkflowResponse:
@@ -806,9 +844,19 @@ def run_upper_workflow(request: UpperWorkflowRequest) -> UpperWorkflowResponse:
 
 def get_latest_upper_workflow() -> UpperWorkflowResponse | None:
     """Get the most recent upper workflow run."""
+    row = get_latest_upper_workflow_run()
+    if row:
+        restored = _upper_workflow_from_record(row)
+        if restored:
+            return restored
     return _LATEST_UPPER_WORKFLOW
 
 
 def list_upper_workflow_history(limit: int = 20) -> list[UpperWorkflowResponse]:
     """List recent upper workflow runs."""
+    rows = list_upper_workflow_runs(limit)
+    restored = [_upper_workflow_from_record(row) for row in rows]
+    db_runs = [run for run in restored if run is not None]
+    if db_runs:
+        return db_runs
     return _UPPER_WORKFLOW_HISTORY[-limit:]

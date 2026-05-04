@@ -1,19 +1,31 @@
+from datetime import datetime, timezone
 from typing import Any
 
 from app.db.init_db import init_db
 from app.db.models import (
     CandidateUniverseRecord,
     DecisionWorkflowRunRecord,
+    EventScannerRunRecord,
     FeatureStoreRowRecord,
     JournalEntryRecord,
+    JournalOutcomeRecord,
     LlmUsageRecord,
     MarketScanRunRecord,
+    MemoryUpdateRunRecord,
+    MetaModelEnsembleRunRecord,
+    ModelStrategyUpdateRunRecord,
     ModelRunOutputRecord,
     ModelTrainingExampleRecord,
     PaperTradeOutcomeRecord,
+    PerformanceDriftRunRecord,
     RecommendationLifecycleRecord,
+    RecommendationPipelineRunRecord,
     RecommendationRecord,
+    ResearchPriorityRunRecord,
+    SignalScoringRunRecord,
     StrategyWorkflowRunRecord,
+    TriggerRuleRunRecord,
+    UpperWorkflowRunRecord,
 )
 from app.db.session import check_database_health, open_session
 
@@ -161,6 +173,201 @@ def _record_to_dict(row: Any) -> dict[str, Any]:
         attr = row.__mapper__.get_property_by_column(column).key
         result[column.name] = getattr(row, attr)
     return result
+
+
+def _latest_record(model: Any) -> dict[str, Any] | None:
+    rows = _list_records(model, 1)
+    return rows[0] if rows else None
+
+
+def save_upper_workflow_run(payload: Any) -> dict[str, Any]:
+    data = _dump(payload)
+    stages = {stage.get("stage"): stage for stage in data.get("stages", []) if isinstance(stage, dict)}
+    return _try_save(UpperWorkflowRunRecord(
+        id=data.get("run_id"),
+        run_id=data.get("run_id"),
+        status=data.get("status"),
+        horizon=data.get("horizon"),
+        source=data.get("source"),
+        symbols_requested=data.get("symbols_requested", []),
+        market_phase=data.get("market_phase"),
+        active_loop=data.get("active_loop"),
+        data_freshness=stages.get("data_freshness"),
+        market_regime=stages.get("market_regime"),
+        strategy_debate=stages.get("strategy_debate"),
+        strategy_ranking=stages.get("strategy_ranking"),
+        model_selection=stages.get("model_selection"),
+        universe_selection=stages.get("universe_selection"),
+        trigger_rules=stages.get("trigger_rules"),
+        event_scanner=stages.get("event_scanner"),
+        signal_scoring=stages.get("signal_scoring"),
+        meta_model_ensemble=stages.get("meta_model_ensemble"),
+        recommendation_pipeline=stages.get("recommendation_pipeline"),
+        blockers=data.get("blockers", []),
+        warnings=data.get("warnings", []),
+        started_at=data.get("started_at"),
+        completed_at=data.get("completed_at"),
+        duration_ms=data.get("duration_ms", 0),
+    ))
+
+
+def list_upper_workflow_runs(limit: int = 20) -> list[dict[str, Any]]:
+    return _list_records(UpperWorkflowRunRecord, limit)
+
+
+def get_latest_upper_workflow_run() -> dict[str, Any] | None:
+    return _latest_record(UpperWorkflowRunRecord)
+
+
+def save_trigger_rule_run(payload: Any) -> dict[str, Any]:
+    data = _dump(payload)
+    first_rule = (data.get("rules") or [{}])[0] if isinstance(data.get("rules"), list) and data.get("rules") else {}
+    return _try_save(TriggerRuleRunRecord(id=data.get("run_id"), run_id=data.get("run_id"), status=data.get("status"), strategy_key=first_rule.get("strategy_key"), horizon=first_rule.get("horizon"), rules=data.get("rules", []), blockers=data.get("blockers", []), warnings=data.get("warnings", []), created_at=data.get("created_at")))
+
+
+def list_trigger_rule_runs(limit: int = 20) -> list[dict[str, Any]]:
+    return _list_records(TriggerRuleRunRecord, limit)
+
+
+def get_latest_trigger_rule_run() -> dict[str, Any] | None:
+    return _latest_record(TriggerRuleRunRecord)
+
+
+def save_event_scanner_run(payload: Any) -> dict[str, Any]:
+    data = _dump(payload)
+    return _try_save(EventScannerRunRecord(id=data.get("run_id"), run_id=data.get("run_id"), status=data.get("status"), source=data.get("source"), horizon=data.get("horizon"), scanned_symbols=data.get("scanned_symbols", []), matched_events=data.get("matched_events", []), skipped_symbols=data.get("skipped_symbols", []), blockers=data.get("blockers", []), warnings=data.get("warnings", []), started_at=data.get("started_at"), completed_at=data.get("completed_at")))
+
+
+def list_event_scanner_runs(limit: int = 20) -> list[dict[str, Any]]:
+    return _list_records(EventScannerRunRecord, limit)
+
+
+def get_latest_event_scanner_run() -> dict[str, Any] | None:
+    return _latest_record(EventScannerRunRecord)
+
+
+def save_signal_scoring_run(payload: Any) -> dict[str, Any]:
+    data = _dump(payload)
+    return _try_save(SignalScoringRunRecord(id=data.get("run_id"), run_id=data.get("run_id"), status=data.get("status"), horizon=data.get("horizon"), strategy_key=data.get("strategy_key"), scored_signals=data.get("scored_signals", []), blockers=data.get("blockers", []), warnings=data.get("warnings", []), started_at=data.get("started_at"), completed_at=data.get("completed_at")))
+
+
+def list_signal_scoring_runs(limit: int = 20) -> list[dict[str, Any]]:
+    return _list_records(SignalScoringRunRecord, limit)
+
+
+def get_latest_signal_scoring_run() -> dict[str, Any] | None:
+    return _latest_record(SignalScoringRunRecord)
+
+
+def save_meta_model_ensemble_run(payload: Any) -> dict[str, Any]:
+    data = _dump(payload)
+    return _try_save(MetaModelEnsembleRunRecord(id=data.get("run_id"), run_id=data.get("run_id"), status=data.get("status"), horizon=data.get("horizon"), strategy_key=data.get("strategy_key"), ensemble_signals=data.get("ensemble_signals", []), model_weights_used=data.get("model_weights_used", {}), blockers=data.get("blockers", []), warnings=data.get("warnings", []), started_at=data.get("started_at"), completed_at=data.get("completed_at")))
+
+
+def list_meta_model_ensemble_runs(limit: int = 20) -> list[dict[str, Any]]:
+    return _list_records(MetaModelEnsembleRunRecord, limit)
+
+
+def get_latest_meta_model_ensemble_run() -> dict[str, Any] | None:
+    return _latest_record(MetaModelEnsembleRunRecord)
+
+
+def save_recommendation_pipeline_run(payload: Any) -> dict[str, Any]:
+    data = _dump(payload)
+    return _try_save(RecommendationPipelineRunRecord(id=data.get("run_id"), run_id=data.get("run_id"), status=data.get("status"), symbol=data.get("symbol"), llm_budget_gate=data.get("llm_budget_gate"), agent_validation=data.get("agent_validation"), risk_review=data.get("risk_review"), no_trade=data.get("no_trade"), capital_allocation=data.get("capital_allocation"), recommendation=data.get("recommendation"), blockers=data.get("blockers", []), warnings=data.get("warnings", []), started_at=data.get("started_at"), completed_at=data.get("completed_at")))
+
+
+def list_recommendation_pipeline_runs(limit: int = 20) -> list[dict[str, Any]]:
+    return _list_records(RecommendationPipelineRunRecord, limit)
+
+
+def get_latest_recommendation_pipeline_run() -> dict[str, Any] | None:
+    return _latest_record(RecommendationPipelineRunRecord)
+
+
+def save_journal_outcome(payload: Any) -> dict[str, Any]:
+    data = _dump(payload)
+    now = datetime.now(timezone.utc)
+    return _try_save(JournalOutcomeRecord(id=data.get("id"), source_type=data.get("source_type", "manual_observation"), source_id=data.get("source_id"), symbol=data.get("symbol"), asset_class=data.get("asset_class", "stock"), horizon=data.get("horizon", "swing"), strategy_key=data.get("strategy_key"), regime=data.get("regime"), model_stack=data.get("model_stack", []), expected_outcome=data.get("expected_outcome"), actual_outcome=data.get("actual_outcome"), outcome_label=data.get("outcome_label", "unknown"), entry_price=data.get("entry_price"), exit_price=data.get("exit_price"), target_price=data.get("target_price"), stop_loss=data.get("stop_loss"), max_favorable_price=data.get("max_favorable_price"), max_adverse_price=data.get("max_adverse_price"), mfe_percent=data.get("mfe_percent"), mae_percent=data.get("mae_percent"), realized_r=data.get("realized_r"), time_to_result_minutes=data.get("time_to_result_minutes"), followed_plan=data.get("followed_plan"), confidence_error=data.get("confidence_error"), expected_vs_actual=data.get("expected_vs_actual"), lessons=data.get("lessons", []), notes=data.get("notes"), tags=data.get("tags", []), opened_at=data.get("opened_at"), closed_at=data.get("closed_at"), created_at=data.get("created_at") or now, updated_at=data.get("updated_at") or now))
+
+
+def list_journal_outcomes(limit: int = 100) -> list[dict[str, Any]]:
+    return _list_records(JournalOutcomeRecord, limit)
+
+
+def get_journal_outcome(entry_id: str) -> dict[str, Any] | None:
+    init_db()
+    session = open_session()
+    if session is None:
+        return None
+    try:
+        row = session.query(JournalOutcomeRecord).filter(JournalOutcomeRecord.id == entry_id).first()
+        return _record_to_dict(row) if row else None
+    except Exception:
+        return None
+    finally:
+        session.close()
+
+
+def get_journal_outcome_summary() -> dict[str, Any]:
+    rows = list_journal_outcomes(1000)
+    by_label: dict[str, int] = {}
+    for row in rows:
+        label = row.get("outcome_label", "unknown")
+        by_label[label] = by_label.get(label, 0) + 1
+    return {"total_entries": len(rows), "by_label": by_label, "persistence_mode": "postgres" if rows else "postgres"}
+
+
+def save_performance_drift_run(payload: Any) -> dict[str, Any]:
+    data = _dump(payload)
+    return _try_save(PerformanceDriftRunRecord(id=data.get("run_id"), run_id=data.get("run_id"), status=data.get("status"), sample_count=data.get("sample_count", 0), lookback_days=data.get("lookback_days"), strategy_key=data.get("strategy_key"), model_name=data.get("model_name"), calibration_buckets=data.get("calibration_buckets", []), false_positive_rate=data.get("false_positive_rate"), win_rate=data.get("win_rate"), average_realized_r=data.get("average_realized_r"), confidence_error=data.get("confidence_error"), affected_models=data.get("affected_models", []), affected_strategies=data.get("affected_strategies", []), recommended_actions=data.get("recommended_actions", []), blockers=data.get("blockers", []), warnings=data.get("warnings", []), checked_at=data.get("checked_at")))
+
+
+def list_performance_drift_runs(limit: int = 20) -> list[dict[str, Any]]:
+    return _list_records(PerformanceDriftRunRecord, limit)
+
+
+def get_latest_performance_drift_run() -> dict[str, Any] | None:
+    return _latest_record(PerformanceDriftRunRecord)
+
+
+def save_research_priority_run(payload: Any) -> dict[str, Any]:
+    data = _dump(payload)
+    return _try_save(ResearchPriorityRunRecord(id=data.get("run_id"), run_id=data.get("run_id"), status=data.get("status"), tasks=data.get("tasks", []), blockers=data.get("blockers", []), warnings=data.get("warnings", []), created_at=data.get("created_at")))
+
+
+def list_research_priority_runs(limit: int = 20) -> list[dict[str, Any]]:
+    return _list_records(ResearchPriorityRunRecord, limit)
+
+
+def get_latest_research_priority_run() -> dict[str, Any] | None:
+    return _latest_record(ResearchPriorityRunRecord)
+
+
+def save_model_strategy_update_run(payload: Any) -> dict[str, Any]:
+    data = _dump(payload)
+    return _try_save(ModelStrategyUpdateRunRecord(id=data.get("run_id"), run_id=data.get("run_id"), status=data.get("status"), strategy_weight_updates=data.get("strategy_weight_updates", []), model_weight_updates=data.get("model_weight_updates", []), paused_strategies=data.get("paused_strategies", []), retraining_requests=data.get("retraining_requests", []), evaluation_jobs=data.get("evaluation_jobs", []), blockers=data.get("blockers", []), warnings=data.get("warnings", []), created_at=data.get("created_at")))
+
+
+def list_model_strategy_update_runs(limit: int = 20) -> list[dict[str, Any]]:
+    return _list_records(ModelStrategyUpdateRunRecord, limit)
+
+
+def get_latest_model_strategy_update_run() -> dict[str, Any] | None:
+    return _latest_record(ModelStrategyUpdateRunRecord)
+
+
+def save_memory_update_run(payload: Any) -> dict[str, Any]:
+    data = _dump(payload)
+    return _try_save(MemoryUpdateRunRecord(id=data.get("run_id"), run_id=data.get("run_id"), status=data.get("status"), source_type=data.get("source_type"), source_id=data.get("source_id"), memory_id=data.get("memory_id"), title=data.get("title"), metadata_json=data.get("metadata", {}), blockers=data.get("blockers", []), warnings=data.get("warnings", []), created_at=data.get("created_at")))
+
+
+def list_memory_update_runs(limit: int = 20) -> list[dict[str, Any]]:
+    return _list_records(MemoryUpdateRunRecord, limit)
+
+
+def get_latest_memory_update_run() -> dict[str, Any] | None:
+    return _latest_record(MemoryUpdateRunRecord)
 
 
 # Platform Workflow Persistence Helpers
@@ -373,37 +580,7 @@ def save_journal_entry(request: Any, response: Any) -> dict[str, Any]:
     """Save a journal entry to Postgres."""
     req_data = _dump(request)
     resp_data = _dump(response)
-    return _try_save(
-        JournalEntryRecord(
-            id=resp_data.get("id"),
-            source_type=req_data.get("source_type", "manual_observation"),
-            source_id=req_data.get("source_id"),
-            symbol=req_data.get("symbol", "").upper() if req_data.get("symbol") else None,
-            asset_class=req_data.get("asset_class", "stock"),
-            horizon=req_data.get("horizon", "swing"),
-            strategy_key=req_data.get("strategy_key"),
-            regime=req_data.get("regime"),
-            model_stack=req_data.get("model_stack", []),
-            entry_price=req_data.get("entry_price"),
-            exit_price=req_data.get("exit_price"),
-            stop_loss=req_data.get("stop_loss"),
-            target_price=req_data.get("target_price"),
-            max_favorable_price=req_data.get("max_favorable_price"),
-            max_adverse_price=req_data.get("max_adverse_price"),
-            outcome_label=resp_data.get("outcome_label", "unknown"),
-            realized_r=resp_data.get("realized_r"),
-            mfe_percent=resp_data.get("mfe_percent"),
-            mae_percent=resp_data.get("mae_percent"),
-            time_to_result_minutes=resp_data.get("time_to_result_minutes"),
-            followed_plan=resp_data.get("followed_plan"),
-            confidence_error=resp_data.get("confidence_error"),
-            lessons=resp_data.get("lessons", []),
-            notes=req_data.get("notes"),
-            tags=req_data.get("tags", []),
-            opened_at=req_data.get("opened_at"),
-            closed_at=req_data.get("closed_at"),
-        )
-    )
+    return save_journal_outcome({**req_data, **resp_data})
 
 
 def create_paper_trade_outcome_from_recommendation(
@@ -586,6 +763,7 @@ def list_paper_trade_outcomes(
 def get_database_table_status() -> dict[str, Any]:
     """Get status of platform persistence tables."""
     from sqlalchemy import inspect
+    from sqlalchemy import text
     init_db()
     session = open_session()
     if session is None:
@@ -605,6 +783,17 @@ def get_database_table_status() -> dict[str, Any]:
             "recommendation_lifecycle",
             "paper_trade_outcomes",
             "model_training_examples",
+            "upper_workflow_runs",
+            "trigger_rule_runs",
+            "event_scanner_runs",
+            "signal_scoring_runs",
+            "meta_model_ensemble_runs",
+            "recommendation_pipeline_runs",
+            "journal_outcomes",
+            "performance_drift_runs",
+            "research_priority_runs",
+            "model_strategy_update_runs",
+            "memory_update_runs",
         ]
 
         tables_status = {}
@@ -613,7 +802,7 @@ def get_database_table_status() -> dict[str, Any]:
             count = 0
             if exists:
                 try:
-                    count = session.execute(f"SELECT COUNT(*) FROM {table}").scalar()
+                    count = session.execute(text(f"SELECT COUNT(*) FROM {table}")).scalar()
                 except Exception:
                     pass
             tables_status[table] = {"exists": exists, "row_count": count}
