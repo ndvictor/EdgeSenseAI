@@ -1,7 +1,7 @@
 "use client";
 
 import { useEffect, useState } from "react";
-import { AlertTriangle, CheckCircle2, KeyRound, Play, Power, ShieldCheck, XCircle } from "lucide-react";
+import { AlertTriangle, Bot, CheckCircle2, Play, Power, ShieldCheck, XCircle } from "lucide-react";
 import { PageHeader } from "@/components/Cards";
 
 const API_BASE_URL = process.env.NEXT_PUBLIC_API_URL || "http://localhost:8900";
@@ -33,6 +33,7 @@ type TradeNowOrderResponse = {
   side: string;
   submitted_payload: Record<string, unknown>;
   broker_response?: Record<string, unknown> | null;
+  request_id?: string | null;
   blockers: string[];
   warnings: string[];
   safety_notes: string[];
@@ -56,6 +57,10 @@ function StatusBadge({ value }: { value: string | boolean }) {
       {text.replace(/_/g, " ")}
     </span>
   );
+}
+
+function EnvLine({ value }: { value: string }) {
+  return <div className="rounded-xl border border-slate-700 bg-slate-900 px-3 py-2 font-mono text-xs text-slate-400">{value}</div>;
 }
 
 export default function TradeNowPage() {
@@ -142,7 +147,7 @@ export default function TradeNowPage() {
           <div className="rounded-2xl border border-slate-800 bg-slate-950 p-4">
             <div className="mb-4 flex items-center gap-3">
               <Power className="h-5 w-5 text-emerald-300" />
-              <h2 className="text-lg font-black text-white">Execution Control</h2>
+              <h2 className="text-lg font-black text-white">Manual Execution Control</h2>
             </div>
             {config ? (
               <div className="space-y-4">
@@ -152,11 +157,11 @@ export default function TradeNowPage() {
                   <StatusBadge value={`keys_${config.alpaca_keys_configured}`} />
                 </div>
                 <label className="flex items-center justify-between rounded-xl border border-slate-800 bg-slate-900 px-4 py-3">
-                  <span className="text-sm font-semibold text-slate-200">TradeNow UI Toggle</span>
+                  <span className="text-sm font-semibold text-slate-200">Manual TradeNow UI Toggle</span>
                   <input type="checkbox" checked={config.user_enabled} onChange={(e) => updateConfig({ user_enabled: e.target.checked })} />
                 </label>
                 <div>
-                  <label className="text-xs font-bold uppercase text-slate-500">Execution Mode</label>
+                  <label className="text-xs font-bold uppercase text-slate-500">Manual Execution Mode</label>
                   <select
                     className="mt-2 w-full rounded-xl border border-slate-700 bg-slate-900 px-3 py-2 text-sm text-white"
                     value={config.execution_mode}
@@ -183,18 +188,31 @@ export default function TradeNowPage() {
 
           <div className="rounded-2xl border border-slate-800 bg-slate-950 p-4">
             <div className="mb-4 flex items-center gap-3">
-              <KeyRound className="h-5 w-5 text-cyan-300" />
-              <h2 className="text-lg font-black text-white">Alpaca API Keys</h2>
+              <Bot className="h-5 w-5 text-cyan-300" />
+              <h2 className="text-lg font-black text-white">Automatic Execution Control</h2>
             </div>
-            <p className="mb-4 text-sm leading-relaxed text-slate-300">
-              Add these to the backend `.env` when ready. Keys are not stored from the browser.
-            </p>
-            <div className="space-y-3">
-              <input readOnly value="ALPACA_API_KEY=your_key_id_here" className="w-full rounded-xl border border-slate-700 bg-slate-900 px-3 py-2 font-mono text-xs text-slate-400" />
-              <input readOnly value="ALPACA_SECRET_KEY=your_secret_key_here" className="w-full rounded-xl border border-slate-700 bg-slate-900 px-3 py-2 font-mono text-xs text-slate-400" />
-              <input readOnly value="BROKER_EXECUTION_ENABLED=false" className="w-full rounded-xl border border-slate-700 bg-slate-900 px-3 py-2 font-mono text-xs text-slate-400" />
-              <input readOnly value="LIVE_TRADING_ENABLED=false" className="w-full rounded-xl border border-slate-700 bg-slate-900 px-3 py-2 font-mono text-xs text-slate-400" />
-            </div>
+            {config ? (
+              <div className="space-y-4">
+                <p className="text-sm leading-relaxed text-slate-300">
+                  Future scanner/orchestrator-to-broker execution is separated from manual order tickets and remains disabled until backend env flags, risk gates, and approval workflows are promoted.
+                </p>
+                <label className="flex items-center justify-between rounded-xl border border-slate-800 bg-slate-900 px-4 py-3 opacity-70">
+                  <span className="text-sm font-semibold text-slate-200">Automatic execution toggle</span>
+                  <input type="checkbox" checked={false} disabled readOnly />
+                </label>
+                <div className="grid grid-cols-1 gap-2 text-sm text-slate-300">
+                  <div className="flex items-center justify-between rounded-lg border border-slate-800 bg-slate-900 px-3 py-2"><span>Scanner/order automation</span><StatusBadge value={false} /></div>
+                  <div className="flex items-center justify-between rounded-lg border border-slate-800 bg-slate-900 px-3 py-2"><span>Broker submission env</span><StatusBadge value={config.broker_execution_enabled_env} /></div>
+                  <div className="flex items-center justify-between rounded-lg border border-slate-800 bg-slate-900 px-3 py-2"><span>Live env</span><StatusBadge value={config.live_trading_enabled_env} /></div>
+                  <div className="flex items-center justify-between rounded-lg border border-slate-800 bg-slate-900 px-3 py-2"><span>Human approval required</span><StatusBadge value={config.require_human_approval} /></div>
+                </div>
+                <div className="rounded-xl border border-cyan-500/20 bg-cyan-500/10 px-3 py-2 text-xs leading-relaxed text-cyan-100">
+                  Automatic execution is intentionally read-only here. Enablement must happen through backend policy, risk, approval, and broker execution promotion, not a browser-only toggle.
+                </div>
+              </div>
+            ) : (
+              <p className="text-sm text-slate-400">Loading config...</p>
+            )}
           </div>
 
           <div className="rounded-2xl border border-amber-500/40 bg-slate-950 p-4">
@@ -209,6 +227,19 @@ export default function TradeNowPage() {
             ) : (
               <p className="rounded-lg border border-emerald-500/30 bg-emerald-500/10 px-3 py-2 text-sm text-emerald-200">No current blockers for selected mode.</p>
             )}
+            <div className="mt-4 border-t border-slate-800 pt-4">
+              <h3 className="mb-2 text-sm font-black uppercase tracking-wide text-white">Backend Alpaca credential notes</h3>
+              <p className="mb-3 text-xs leading-relaxed text-slate-300">
+                Add keys only to backend `.env`. The browser does not store Alpaca keys. The backend currently accepts these variable names.
+              </p>
+              <div className="space-y-2">
+                <EnvLine value="ALPACA_API_KEY=your_key_id_here" />
+                <EnvLine value="ALPACA_SECRET_KEY=your_secret_key_here" />
+                <EnvLine value="ALPACA_PAPER_TRADING_BASE_URL=https://paper-api.alpaca.markets" />
+                <EnvLine value="BROKER_EXECUTION_ENABLED=false" />
+                <EnvLine value="LIVE_TRADING_ENABLED=false" />
+              </div>
+            </div>
           </div>
         </section>
 
@@ -236,6 +267,7 @@ export default function TradeNowPage() {
                 {order.status === "submitted" ? <p className="flex items-center gap-2 text-sm text-emerald-300"><CheckCircle2 className="h-4 w-4" /> Submitted to broker.</p> : null}
                 {order.status === "blocked" || order.status === "failed" ? <p className="flex items-center gap-2 text-sm text-rose-300"><XCircle className="h-4 w-4" /> Request did not submit to broker.</p> : null}
                 {order.status === "dry_run" ? <p className="flex items-center gap-2 text-sm text-cyan-300"><AlertTriangle className="h-4 w-4" /> Dry run only. No broker call was made.</p> : null}
+                {order.request_id ? <p className="rounded-lg border border-cyan-500/30 bg-cyan-500/10 px-3 py-2 text-xs font-mono text-cyan-200">Alpaca X-Request-ID: {order.request_id}</p> : null}
                 {order.blockers?.length ? <ul className="space-y-2 text-sm text-amber-200">{order.blockers.map((b) => <li key={b} className="rounded-lg border border-amber-500/30 bg-amber-500/10 px-3 py-2">{b}</li>)}</ul> : null}
                 <pre className="max-h-96 overflow-auto rounded-xl border border-slate-800 bg-slate-900 p-3 text-xs text-slate-300">{JSON.stringify(order, null, 2)}</pre>
               </div>
