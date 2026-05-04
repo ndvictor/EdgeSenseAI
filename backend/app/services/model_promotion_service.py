@@ -8,6 +8,7 @@ from app.services.backtest_research_service import latest_passed_model_backtest
 from app.services.model_artifact_service import latest_artifact
 from app.services.model_calibration_service import latest_passed_calibration
 from app.services.model_evaluation_service import latest_passed_evaluation
+from app.services.model_gate_policy import ModelGateEvidence, evaluate_model_gate
 from app.services.model_registry_service import get_model
 from app.services.research_persistence_service import (
     create_model_promotion_review,
@@ -53,33 +54,24 @@ def compute_model_gate_status(model_key: str) -> dict[str, Any]:
     risk_gate_required = True if not promotion else bool(promotion.get("risk_gate_required", True))
     human_approval_required = True if not promotion else bool(promotion.get("human_approval_required", True))
 
-    blockers: list[str] = []
-    if not model:
-        blockers.append("Model is not registered in static model registry.")
-    if model_key != "weighted_ranker_v1":
-        if not artifact_exists:
-            blockers.append("artifact_exists")
-        if not evaluation_passed:
-            blockers.append("evaluation_passed")
-        if not calibration_passed:
-            blockers.append("calibration_passed")
-        if not backtest_passed:
-            blockers.append("backtest_passed")
-        if not owner_approved:
-            blockers.append("owner_approved")
-        if not live_scoring_allowed:
-            blockers.append("live_scoring_allowed")
-    if final_trade_decision_allowed:
-        blockers.append("final_trade_decision_allowed_must_be_false")
-    if not risk_gate_required:
-        blockers.append("risk_gate_required")
-    if not human_approval_required:
-        blockers.append("human_approval_required")
-
-    eligible = len(blockers) == 0
-    if model_key == "weighted_ranker_v1":
-        eligible = True and not final_trade_decision_allowed and risk_gate_required and human_approval_required
-        blockers = [] if eligible else blockers
+    evidence = ModelGateEvidence(
+        model_key=model_key,
+        model_registered=bool(model),
+        artifact_exists=artifact_exists,
+        artifact_status=artifact.get("status", "missing"),
+        evaluation_passed=evaluation_passed,
+        evaluation_status=evaluation.get("status", "missing"),
+        calibration_passed=calibration_passed,
+        calibration_status=calibration.get("status", "missing"),
+        backtest_passed=backtest_passed,
+        backtest_status=backtest.get("status", "missing"),
+        owner_approved=owner_approved,
+        live_scoring_allowed=live_scoring_allowed,
+        risk_gate_required=risk_gate_required,
+        human_approval_required=human_approval_required,
+        final_trade_decision_allowed=final_trade_decision_allowed,
+    )
+    decision = evaluate_model_gate(evidence)
 
     return {
         "model_key": model_key,
@@ -96,10 +88,10 @@ def compute_model_gate_status(model_key: str) -> dict[str, Any]:
         "risk_gate_required": risk_gate_required,
         "human_approval_required": human_approval_required,
         "final_trade_decision_allowed": final_trade_decision_allowed,
-        "eligible_for_active_scoring": eligible,
-        "blockers": blockers,
-        "next_action": "Eligible for active research/paper scoring." if eligible else "Resolve all promotion blockers before activation.",
-        "safety_notes": ["No model may make final trade decisions.", "Risk gate and human approval remain required.", "Eligibility is conservative if DB evidence is missing."],
+        "eligible_for_active_scoring": decision.eligible_for_active_scoring,
+        "blockers": decision.blockers,
+        "next_action": decision.next_action,
+        "safety_notes": decision.safety_notes,
     }
 
 
@@ -124,7 +116,6 @@ def list_promotion_reviews(model_key: str | None = None) -> dict[str, Any]:
 
 
 def approve_model_promotion(review_id: str, request: ModelPromotionDecisionRequest) -> dict[str, Any]:
-    # Append a new immutable approved review record instead of mutating evidence in place.
     return create_model_promotion_review({
         "id": f"{review_id}-approved",
         "model_key": review_id.split(":")[0] if ":" in review_id else "unknown",
