@@ -26,6 +26,7 @@ from app.api.routes.historical_similarity import router as historical_similarity
 from app.api.routes.journal_outcomes import router as journal_outcomes_router
 from app.api.routes.llm_budget_gate import router as llm_budget_gate_router
 from app.api.routes.memory_update import router as memory_update_router
+from app.api.routes.model_registry import router as model_registry_router
 from app.api.routes.model_strategy_update import router as model_strategy_update_router
 from app.api.routes.performance_drift import router as performance_drift_router
 from app.api.routes.research_priority import router as research_priority_router
@@ -131,6 +132,7 @@ app.include_router(ai_ops_router, prefix="/api")
 app.include_router(data_quality_router, prefix="/api")
 app.include_router(feature_store_router, prefix="/api")
 app.include_router(model_runs_router, prefix="/api")
+app.include_router(model_registry_router, prefix="/api")
 app.include_router(llm_gateway_router, prefix="/api")
 app.include_router(strategies_router, prefix="/api")
 app.include_router(strategy_workflows_router, prefix="/api")
