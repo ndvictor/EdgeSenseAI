@@ -1,12 +1,16 @@
 from fastapi import APIRouter
 
 from app.services.alpaca_execution_service import (
+    AutonomousTradeExecutionRequest,
+    AutonomousTradeExecutionResponse,
     TradeNowConfig,
     TradeNowConfigUpdate,
     TradeNowOrderRequest,
     TradeNowOrderResponse,
+    get_last_autonomous_trade_order,
     get_last_trade_now_order,
     get_trade_now_config,
+    place_autonomous_trade_order,
     place_trade_now_order,
     update_trade_now_config,
 )
@@ -32,3 +36,13 @@ def place_order(request: TradeNowOrderRequest):
 @router.get("/tradenow/orders/latest")
 def get_latest_order():
     return get_last_trade_now_order()
+
+
+@router.post("/tradenow/autonomous/orders", response_model=AutonomousTradeExecutionResponse)
+def place_autonomous_order(request: AutonomousTradeExecutionRequest):
+    return place_autonomous_trade_order(request)
+
+
+@router.get("/tradenow/autonomous/orders/latest")
+def get_latest_autonomous_order():
+    return get_last_autonomous_trade_order()
