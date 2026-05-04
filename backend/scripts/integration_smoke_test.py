@@ -24,6 +24,10 @@ import sys
 import time
 from pathlib import Path
 
+# This is an executable smoke-test CLI, not a pytest module. The helper
+# functions are intentionally named around the checks they perform.
+__test__ = False
+
 # Test configuration - explicit, safe values
 TEST_SYMBOLS = ["TEST-A", "TEST-B"]  # Explicit test symbols, never real tickers
 TEST_HORIZON = "swing"

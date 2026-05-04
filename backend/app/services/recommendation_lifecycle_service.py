@@ -86,6 +86,11 @@ def _is_db_available() -> bool:
     return status.get("connected", False)
 
 
+def get_persistence_mode() -> str:
+    """Return the current persistence mode for recommendation lifecycle records."""
+    return "postgres" if _is_db_available() else "memory"
+
+
 def _db_row_to_record(row: dict[str, Any]) -> RecommendationLifecycleRecord:
     """Convert a database row dict to RecommendationLifecycleRecord."""
     return RecommendationLifecycleRecord(

@@ -52,12 +52,25 @@ def test_market_data_history_contract():
     assert "data" in payload
 
 
-def test_command_center_contains_actionable_top_action():
+def test_command_center_read_only_contract_without_invented_action():
     response = client.get("/api/command-center")
     assert response.status_code == 200
     payload = response.json()
 
     top_action = payload["top_action"]
+    assert payload["dashboard_mode"] in {
+        "no_symbols_selected",
+        "candidates_ready_not_ranked",
+        "decision_workflow:completed_with_candidates",
+        "decision_workflow:completed_no_actionable_candidates",
+        "decision_workflow:no_symbols_selected",
+    } or payload["dashboard_mode"].startswith("decision_workflow:")
+
+    if top_action is None:
+        assert payload["top_recommendations"] == []
+        assert "No candidates selected" in payload["cost_usage_message"] or "candidate" in payload["cost_usage_message"].lower()
+        return
+
     assert top_action["symbol"]
     assert top_action["action"] in {"buy", "watch", "avoid"}
     assert 0 <= top_action["confidence"] <= 1

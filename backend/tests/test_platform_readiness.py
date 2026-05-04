@@ -7,6 +7,8 @@ Tests cover:
 - No secrets are exposed in responses
 """
 
+from pathlib import Path
+
 import pytest
 from fastapi.testclient import TestClient
 
@@ -218,7 +220,6 @@ class TestMigrationDryRun:
 
     def test_migration_script_exists(self):
         """Migration script should be present and executable."""
-        from pathlib import Path
         script_path = Path(__file__).parent.parent / "scripts" / "apply_platform_migrations.py"
         assert script_path.exists()
 

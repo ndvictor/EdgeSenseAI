@@ -21,6 +21,7 @@ from app.services.journal_outcome_service import (
     JournalEntryCreateRequest,
 )
 from app.services.memory_update_service import (
+    MemoryUpdateRequest,
     get_persistence_mode as memory_persistence_mode,
     store_memory,
 )
@@ -77,8 +78,7 @@ class TestPersistenceFallback:
 
         # Summary should include persistence mode
         summary = get_journal_summary()
-        assert "persistence_mode" in summary
-        assert summary["persistence_mode"] == "memory"
+        assert summary.persistence_mode == "memory"
 
     @patch("app.services.memory_update_service.get_database_table_status")
     def test_memory_update_fallback(self, mock_status):
@@ -91,11 +91,14 @@ class TestPersistenceFallback:
 
         # Store should still work (fallback to memory)
         result = store_memory(
-            source_type="test",
-            title="Test Entry",
-            content="Test content",
+            MemoryUpdateRequest(
+                source_type="workflow_summary",
+                title="Test Entry",
+                content="Test content",
+            )
         )
         assert result is not None
+        assert result.status in {"stored", "unavailable"}
 
     def test_all_services_report_persistence_mode(self):
         """All services should have get_persistence_mode function."""

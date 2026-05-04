@@ -58,6 +58,15 @@ _LATEST_MEMORY_UPDATE: MemoryUpdateResponse | None = None
 _MEMORY_UPDATE_HISTORY: list[MemoryUpdateResponse] = []
 
 
+def _save_memory_update(response: MemoryUpdateResponse) -> MemoryUpdateResponse:
+    global _LATEST_MEMORY_UPDATE
+    _LATEST_MEMORY_UPDATE = response
+    _MEMORY_UPDATE_HISTORY.append(response)
+    if len(_MEMORY_UPDATE_HISTORY) > 100:
+        del _MEMORY_UPDATE_HISTORY[:-100]
+    return response
+
+
 def store_memory(request: MemoryUpdateRequest) -> MemoryUpdateResponse:
     """Store a memory record.
     
@@ -71,7 +80,7 @@ def store_memory(request: MemoryUpdateRequest) -> MemoryUpdateResponse:
     created_at = datetime.now(timezone.utc)
     
     if request.dry_run:
-        return MemoryUpdateResponse(
+        return _save_memory_update(MemoryUpdateResponse(
             run_id=run_id,
             status="skipped",
             memory_id=None,
@@ -79,7 +88,7 @@ def store_memory(request: MemoryUpdateRequest) -> MemoryUpdateResponse:
             warnings=["Dry run - memory not stored"],
             blockers=[],
             created_at=created_at,
-        )
+        ))
     
     # Try to store via vector memory service
     try:
@@ -107,7 +116,7 @@ def store_memory(request: MemoryUpdateRequest) -> MemoryUpdateResponse:
         
         # Check if actually persisted
         if memory_record.data_source == "in_memory_fallback":
-            return MemoryUpdateResponse(
+            return _save_memory_update(MemoryUpdateResponse(
                 run_id=run_id,
                 status="unavailable",
                 memory_id=memory_record.memory_id,
@@ -115,9 +124,9 @@ def store_memory(request: MemoryUpdateRequest) -> MemoryUpdateResponse:
                 warnings=["Memory stored in fallback only - DB/pgvector unavailable"],
                 blockers=[],
                 created_at=created_at,
-            )
+            ))
         
-        return MemoryUpdateResponse(
+        return _save_memory_update(MemoryUpdateResponse(
             run_id=run_id,
             status="stored",
             memory_id=memory_record.memory_id,
@@ -125,10 +134,10 @@ def store_memory(request: MemoryUpdateRequest) -> MemoryUpdateResponse:
             warnings=[],
             blockers=[],
             created_at=created_at,
-        )
+        ))
     
     except Exception as e:
-        return MemoryUpdateResponse(
+        return _save_memory_update(MemoryUpdateResponse(
             run_id=run_id,
             status="unavailable",
             memory_id=None,
@@ -136,7 +145,7 @@ def store_memory(request: MemoryUpdateRequest) -> MemoryUpdateResponse:
             warnings=[str(e)],
             blockers=["Memory storage failed"],
             created_at=created_at,
-        )
+        ))
 
 
 def store_latest_journal_to_memory() -> MemoryUpdateResponse:

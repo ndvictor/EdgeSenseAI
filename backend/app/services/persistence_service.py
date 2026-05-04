@@ -123,9 +123,17 @@ def save_recommendation(recommendation: Any) -> dict[str, Any]:
     return _try_save(RecommendationRecord(external_id=data.get("id") or data.get("workflow_run_id"), symbol=data.get("symbol"), strategy_key=data.get("strategy_key"), asset_class=data.get("asset_class"), horizon=data.get("horizon"), status=data.get("status") or data.get("action"), data_source=data.get("data_source"), recommendation=data, metadata_json=data))
 
 
-def save_journal_entry(entry: Any) -> dict[str, Any]:
-    data = _dump(entry)
-    return _try_save(JournalEntryRecord(external_id=data.get("id"), symbol=data.get("symbol"), strategy_key=data.get("strategy_key"), asset_class=data.get("asset_class"), horizon=data.get("horizon"), status=data.get("status"), data_source=data.get("data_source"), title=data.get("title") or data.get("setup"), content=data.get("content") or data.get("lesson"), metadata_json=data))
+def save_journal_entry(entry: Any, response: Any | None = None) -> dict[str, Any]:
+    """Save a journal entry.
+
+    Older journal code passes both the create request and computed response.
+    Preserve that contract and persist only observed/requested fields without
+    inventing outcomes.
+    """
+    request_data = _dump(entry)
+    response_data = _dump(response)
+    data = {**request_data, **response_data}
+    return _try_save(JournalEntryRecord(external_id=data.get("id"), symbol=data.get("symbol"), strategy_key=data.get("strategy_key"), asset_class=data.get("asset_class"), horizon=data.get("horizon"), status=data.get("outcome_label") or data.get("status"), data_source=data.get("data_source"), title=data.get("title") or data.get("setup") or data.get("source_type"), content=data.get("content") or data.get("lesson") or data.get("notes"), metadata_json=data))
 
 
 def save_paper_trade_outcome(outcome: Any) -> dict[str, Any]:
