@@ -2,8 +2,8 @@
 
 import { useEffect, useState } from "react";
 import { PageHeader, MetricCard } from "@/components/Cards";
-import { api, type RecommendationLifecycleRecord, type PipelineRecommendation, type RecommendationPipelineResponse } from "@/lib/api";
-import { Play, CheckCircle, XCircle, Clock, AlertTriangle, Target, Shield, Wallet, Ban, Activity } from "lucide-react";
+import { api, type RecommendationLifecycleRecord, type RecommendationPipelineResponse } from "@/lib/api";
+import { Play, CheckCircle, XCircle, Clock, AlertTriangle, Target, Shield, Wallet, Ban, Activity, Database, BrainCircuit, Bot, DollarSign } from "lucide-react";
 
 function statusBadge(status: string) {
   switch (status) {
@@ -22,17 +22,55 @@ function statusBadge(status: string) {
   }
 }
 
-function severityBadge(severity: string) {
-  switch (severity) {
-    case "high":
-      return <span className="text-xs font-bold text-red-400">HIGH</span>;
-    case "medium":
-      return <span className="text-xs font-bold text-amber-400">MEDIUM</span>;
-    case "low":
-      return <span className="text-xs font-bold text-emerald-400">LOW</span>;
-    default:
-      return <span className="text-xs font-bold text-slate-400">{severity}</span>;
-  }
+type ProvenanceLike = {
+  data_source?: string;
+  signal_source?: string;
+  model_source?: string;
+  model_used?: string;
+  agent_source?: string;
+  llm_source?: string;
+  llm_used?: string;
+  market_data_source?: string;
+  price_source_detail?: string;
+  real_market_data_used?: boolean;
+  final_trade_decision_allowed?: boolean;
+};
+
+function SourceChip({ icon, label, value, warn = false }: { icon?: React.ReactNode; label: string; value?: string | boolean | null; warn?: boolean }) {
+  return (
+    <div className={`rounded-lg border px-3 py-2 ${warn ? "border-amber-500/40 bg-amber-500/10" : "border-slate-700 bg-slate-800/50"}`}>
+      <div className="flex items-center gap-2 text-[10px] font-bold uppercase tracking-wide text-slate-500">
+        {icon}
+        {label}
+      </div>
+      <div className={`mt-1 text-xs font-bold ${warn ? "text-amber-300" : "text-slate-300"}`}>{String(value ?? "unknown")}</div>
+    </div>
+  );
+}
+
+function SourcePanel({ provenance }: { provenance?: ProvenanceLike | null }) {
+  const p = provenance || {};
+  return (
+    <div className="mt-3 rounded-xl border border-slate-700 bg-slate-950 p-3">
+      <div className="mb-3 flex items-center gap-2 text-xs font-bold uppercase tracking-wide text-emerald-400">
+        <Database className="h-4 w-4" />
+        Source / Model / Agent Truth
+      </div>
+      <div className="grid grid-cols-1 gap-2 md:grid-cols-3 xl:grid-cols-4">
+        <SourceChip icon={<Database className="h-3 w-3" />} label="Data Source" value={p.data_source ?? "pipeline_generated"} />
+        <SourceChip icon={<Activity className="h-3 w-3" />} label="Signal Source" value={p.signal_source ?? "meta_model_ensemble"} />
+        <SourceChip icon={<BrainCircuit className="h-3 w-3" />} label="Model Used" value={p.model_used ?? "ensemble_signal"} />
+        <SourceChip icon={<Bot className="h-3 w-3" />} label="Agent Source" value={p.agent_source ?? "agent/risk/capital services"} />
+        <SourceChip icon={<DollarSign className="h-3 w-3" />} label="LLM Used" value={p.llm_used ?? "none_paid_dry_run_policy"} />
+        <SourceChip label="Market Data" value={p.market_data_source ?? "placeholder_current_price"} warn />
+        <SourceChip label="Real Market Data" value={p.real_market_data_used ?? false} warn />
+        <SourceChip label="Final Decision Allowed" value={p.final_trade_decision_allowed ?? false} warn />
+      </div>
+      <p className="mt-3 rounded-lg border border-amber-500/30 bg-amber-500/10 px-3 py-2 text-xs leading-relaxed text-amber-200">
+        {p.price_source_detail ?? "Capital allocation may be using placeholder pricing unless backend source_provenance says otherwise."}
+      </p>
+    </div>
+  );
 }
 
 export default function RecommendationsPage() {
@@ -119,6 +157,8 @@ export default function RecommendationsPage() {
   const pendingRecommendations = recommendations.filter(r => r.status === "pending_review");
   const approvedRecommendations = recommendations.filter(r => r.status === "approved" || r.status === "paper_trade_created");
   const rejectedRecommendations = recommendations.filter(r => r.status === "rejected" || r.status === "expired");
+  const pipelineProvenance = pipelineRun?.source_provenance as ProvenanceLike | undefined;
+  const recommendationProvenance = pipelineRun?.recommendation as (typeof pipelineRun.recommendation & ProvenanceLike) | null | undefined;
 
   return (
     <div className="mx-auto max-w-6xl p-6">
@@ -142,7 +182,6 @@ export default function RecommendationsPage() {
         </div>
       )}
 
-      {/* Pipeline Run Section */}
       <div className="mb-6 flex gap-3">
         <button
           onClick={handleRunPipeline}
@@ -167,7 +206,6 @@ export default function RecommendationsPage() {
         </button>
       </div>
 
-      {/* Pipeline Stages */}
       {pipelineRun && (
         <div className="mb-6 rounded-xl border border-slate-700 bg-slate-900/50 p-4">
           <h3 className="mb-3 flex items-center gap-2 text-sm font-bold uppercase text-sky-400">
@@ -201,6 +239,8 @@ export default function RecommendationsPage() {
             </div>
           </div>
 
+          <SourcePanel provenance={pipelineProvenance} />
+
           {pipelineRun.recommendation && (
             <div className="mt-3 rounded-lg border border-emerald-500/30 bg-emerald-500/10 p-3">
               <div className="flex items-center justify-between">
@@ -220,12 +260,12 @@ export default function RecommendationsPage() {
                 Target: ${pipelineRun.recommendation.target_price.toFixed(2)} |
                 Size: {pipelineRun.recommendation.position_size_units.toFixed(2)} units
               </div>
+              <SourcePanel provenance={recommendationProvenance ?? pipelineProvenance} />
             </div>
           )}
         </div>
       )}
 
-      {/* Summary Cards */}
       <div className="mb-6 grid grid-cols-2 gap-4 md:grid-cols-4">
         <MetricCard label="Pending" value={pendingRecommendations.length.toString()} accent />
         <MetricCard label="Approved" value={approvedRecommendations.length.toString()} />
@@ -233,7 +273,6 @@ export default function RecommendationsPage() {
         <MetricCard label="Total" value={recommendations.length.toString()} />
       </div>
 
-      {/* Pending Recommendations */}
       {pendingRecommendations.length > 0 && (
         <div className="mb-6">
           <h3 className="mb-3 flex items-center gap-2 text-sm font-bold uppercase text-amber-400">
@@ -272,6 +311,7 @@ export default function RecommendationsPage() {
                   <div>Horizon: {rec.horizon}</div>
                   <div>Created: {new Date(rec.created_at).toLocaleDateString()}</div>
                 </div>
+                <SourcePanel provenance={pipelineProvenance} />
                 {rec.risk_factors.length > 0 && (
                   <div className="mt-2 flex flex-wrap gap-1">
                     {rec.risk_factors.map((factor, i) => (
@@ -285,7 +325,6 @@ export default function RecommendationsPage() {
         </div>
       )}
 
-      {/* Approved Recommendations */}
       {approvedRecommendations.length > 0 && (
         <div className="mb-6">
           <h3 className="mb-3 flex items-center gap-2 text-sm font-bold uppercase text-emerald-400">
@@ -308,13 +347,13 @@ export default function RecommendationsPage() {
                   <div>Horizon: {rec.horizon}</div>
                   <div>Updated: {new Date(rec.updated_at).toLocaleDateString()}</div>
                 </div>
+                <SourcePanel provenance={pipelineProvenance} />
               </div>
             ))}
           </div>
         </div>
       )}
 
-      {/* Empty State */}
       {recommendations.length === 0 && !isRunning && (
         <div className="rounded-xl border border-dashed border-slate-700 bg-slate-900/30 p-8 text-center">
           <Target className="mx-auto mb-3 h-12 w-12 text-slate-600" />
