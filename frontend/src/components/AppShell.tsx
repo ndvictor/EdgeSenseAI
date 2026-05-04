@@ -1,7 +1,12 @@
 "use client";
 
+import dynamic from "next/dynamic";
 import { usePathname } from "next/navigation";
-import { Sidebar } from "@/components/Sidebar";
+
+const Sidebar = dynamic(() => import("@/components/Sidebar").then((mod) => mod.Sidebar), {
+  ssr: false,
+  loading: () => <aside className="min-h-screen w-68 shrink-0 border-r border-emerald-400/10 bg-[#05080d]" />,
+});
 
 const publicRoutes = new Set(["/", "/login"]);
 
