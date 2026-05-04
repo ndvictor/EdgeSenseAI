@@ -2,7 +2,7 @@ from typing import Any, Literal
 
 from pydantic import BaseModel, ConfigDict, Field
 
-from app.services.feature_store_service import FeatureStoreRow, get_feature_row_by_id, get_feature_rows_for_symbol
+from app.services.feature_store_service import FeatureStoreRow, FeatureStoreRunRequest, get_feature_row_by_id, get_feature_rows_for_symbol, run_feature_store_pipeline
 from app.services.model_registry_service import get_model_selection_summary, is_model_eligible_for_active_scoring, skipped_model_record
 from app.services.model_runner_service import run_selected_models
 from app.strategies.registry import StrategyConfig, get_strategy
@@ -198,11 +198,22 @@ def _rows_for_request(request: ModelRunRequest) -> list[FeatureStoreRow]:
     if request.feature_row_id:
         row = get_feature_row_by_id(request.feature_row_id)
         return [row] if row else []
+
     rows: list[FeatureStoreRow] = []
     for symbol in request.symbols:
         symbol_rows = get_feature_rows_for_symbol(symbol)
         if symbol_rows:
             rows.append(symbol_rows[0])
+            continue
+        pipeline_result = run_feature_store_pipeline(
+            FeatureStoreRunRequest(
+                symbol=symbol,
+                asset_class=request.asset_class,
+                horizon=request.horizon,
+                source=request.source,
+            )
+        )
+        rows.append(pipeline_result.row)
     return rows
 
 
@@ -211,6 +222,16 @@ def _default_selected_models(plan: ModelRunPlanResponse, usable_rows: list[Featu
     if usable_rows and "weighted_ranker_v1" not in eligible and is_model_eligible_for_active_scoring("weighted_ranker_v1"):
         eligible.insert(0, "weighted_ranker_v1")
     return eligible
+
+
+def _add_visible_xgboost_record(runner_outputs: dict[str, list[dict[str, Any]]]) -> None:
+    has_xgboost = any(
+        output.get("model") == "xgboost_ranker"
+        for key in ["model_outputs", "not_trained_models", "blocked_models", "skipped_models"]
+        for output in runner_outputs.get(key, [])
+    )
+    if not has_xgboost:
+        runner_outputs["not_trained_models"].append(skipped_model_record("xgboost_ranker", status="not_trained"))
 
 
 def run_model_orchestrator(request: ModelRunRequest) -> ModelRunResponse:
@@ -253,7 +274,8 @@ def run_model_orchestrator(request: ModelRunRequest) -> ModelRunResponse:
             else:
                 runner_outputs["skipped_models"].append(record)
 
-    model_outputs = runner_outputs["model_outputs"] + runner_outputs["placeholder_models"] + runner_outputs["skipped_models"]
+    _add_visible_xgboost_record(runner_outputs)
+    model_outputs = runner_outputs["model_outputs"] + runner_outputs["not_trained_models"] + runner_outputs["placeholder_models"] + runner_outputs["skipped_models"]
     completed = runner_outputs["completed_models"]
     not_trained = runner_outputs["not_trained_models"]
     next_action = "Review weighted_ranker_v1 with risk filter before recommendation." if completed else "Resolve blocked model inputs before treating outputs as actionable."
