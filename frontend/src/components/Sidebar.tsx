@@ -18,6 +18,7 @@ import {
   LineChart,
   Radar,
   RefreshCw,
+  Rocket,
   Settings,
   ShieldCheck,
   Target,
@@ -29,6 +30,7 @@ import {
 const items = [
   { label: "Account Risk Center", href: "/account-risk", icon: WalletCards },
   { label: "Command Center", href: "/command-center", icon: Gauge },
+  { label: "Strategies", href: "/strategies", icon: Rocket },
   { label: "Universe", href: "/universe", icon: Globe },
   { label: "Strategy Lab", href: "/strategy-lab", icon: Brain },
   { label: "Signals", href: "/signals", icon: Radar },
