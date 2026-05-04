@@ -61,8 +61,11 @@ def run_selected_models(
 
         if model_key == "weighted_ranker_v1":
             output = run_weighted_ranker_v1(feature_row, strategy_config).model_dump()
-            output["model"] = "weighted_ranker_v1"
-            output["model_name"] = output.get("model_name", "Weighted Ranker V1")
+            # Keep external API compatibility: existing contracts expect model="weighted_ranker".
+            # The governed registry still stores the canonical key as model_key="weighted_ranker_v1".
+            output["model"] = output.get("model", "weighted_ranker")
+            output["model_key"] = "weighted_ranker_v1"
+            output["model_name"] = output.get("model_name", "weighted_ranker_v1")
             save_model_run_output(output, feature_row=feature_row, strategy_key=strategy_config.strategy_key)
             if output["status"] == "completed":
                 completed.append(output)
