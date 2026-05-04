@@ -14,6 +14,7 @@ import {
   FlaskConical,
   Gauge,
   LineChart,
+  Rocket,
   Settings,
   TrendingUp,
   WalletCards,
@@ -22,6 +23,7 @@ import {
 const items = [
   { label: "Account Risk Center", href: "/account-risk", icon: WalletCards },
   { label: "Command Center", href: "/command-center", icon: Gauge },
+  { label: "Strategies", href: "/strategies", icon: Rocket },
   { label: "Agent Ops Center", href: "/ai-ops", icon: BrainCircuit },
   { label: "LLM Gateway", href: "/llm-gateway", icon: Gauge },
   { label: "Live Watchlist", href: "/live-watchlist", icon: BellRing },
