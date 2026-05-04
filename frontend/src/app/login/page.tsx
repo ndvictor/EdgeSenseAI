@@ -1,5 +1,6 @@
 "use client";
 
+import { Suspense } from "react";
 import Link from "next/link";
 import { signIn } from "next-auth/react";
 import { useSearchParams } from "next/navigation";
@@ -10,7 +11,7 @@ function getSafeNext(next: string | null) {
   return "/owner";
 }
 
-export default function LoginPage() {
+function LoginContent() {
   const searchParams = useSearchParams();
   const next = getSafeNext(searchParams.get("next"));
   const destinationLabel = next === "/command-center" ? "Command Center" : "Owner Command Center";
@@ -100,5 +101,13 @@ export default function LoginPage() {
         </main>
       </div>
     </div>
+  );
+}
+
+export default function LoginPage() {
+  return (
+    <Suspense fallback={<div className="min-h-screen bg-[#03070b]" />}>
+      <LoginContent />
+    </Suspense>
   );
 }
