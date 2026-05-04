@@ -108,7 +108,7 @@ function PlaybookPanel({ strategyKey, onClose }: { strategyKey: string; onClose:
       </div>
 
       <div className="space-y-3">
-        {pb.claim_source && (
+        {!!pb.claim_source && (
           <div>
             <span className="text-xs text-slate-500">Source</span>
             <p className="text-xs text-slate-300">{pb.claim_source as string}</p>

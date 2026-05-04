@@ -10,6 +10,7 @@ from app.schemas import AccountRiskProfile, ModelVote, PricePlan, Recommendation
 from app.services.feature_store_service import FeatureStoreRunRequest, FeatureStoreRunResponse, run_feature_store_pipeline
 from app.services.model_orchestrator_service import ModelRunRequest, ModelRunResponse, run_model_orchestrator
 from app.services.persistence_service import (
+    get_database_table_status,
     get_latest_decision_workflow_run as get_latest_decision_workflow_run_db,
     list_decision_workflow_runs as list_decision_workflow_runs_db,
     save_decision_workflow_run,
@@ -458,3 +459,9 @@ def build_default_decision_workflow(account_profile: AccountRiskProfile | None =
         ),
         account_profile=account_profile,
     )
+
+
+def get_persistence_mode() -> str:
+    """Return the current persistence mode for decision workflow runs."""
+    status = get_database_table_status()
+    return "postgres" if status.get("connected", False) else "memory"

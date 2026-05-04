@@ -18,6 +18,7 @@ from app.services.journal_outcome_service import (
     _JOURNAL_ENTRIES,
     get_latest_journal_entry,
 )
+from app.services.persistence_service import get_database_table_status
 from app.services.research_priority_service import get_latest_research_priority
 from app.services.vector_memory_service import create_memory_record
 
@@ -235,3 +236,9 @@ def get_latest_memory_update() -> MemoryUpdateResponse | None:
 def list_memory_update_history(limit: int = 20) -> list[MemoryUpdateResponse]:
     """List recent memory updates."""
     return _MEMORY_UPDATE_HISTORY[-limit:]
+
+
+def get_persistence_mode() -> str:
+    """Return the current persistence mode for memory updates."""
+    status = get_database_table_status()
+    return "postgres" if status.get("connected", False) else "memory"

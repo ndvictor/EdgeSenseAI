@@ -12,7 +12,7 @@ from uuid import uuid4
 
 from pydantic import BaseModel, ConfigDict, Field
 
-from app.services.persistence_service import save_journal_entry
+from app.services.persistence_service import get_database_table_status, save_journal_entry
 
 
 class JournalEntryCreateRequest(BaseModel):
@@ -80,6 +80,7 @@ class JournalOutcomeSummary(BaseModel):
     by_symbol: dict[str, int] = Field(default_factory=dict)
     by_strategy: dict[str, int] = Field(default_factory=dict)
     recent_entries: list[JournalEntryResponse] = Field(default_factory=list)
+    persistence_mode: str = "memory"
 
 
 # In-memory storage
@@ -387,6 +388,7 @@ def get_journal_summary() -> JournalOutcomeSummary:
         by_symbol=by_symbol,
         by_strategy=by_strategy,
         recent_entries=entries[:10],
+        persistence_mode=get_persistence_mode(),
     )
 
 
@@ -423,6 +425,12 @@ def get_latest_journal_entry() -> JournalEntryResponse | None:
     entries = list(_JOURNAL_ENTRIES.values())
     if not entries:
         return None
-    
+
     entries.sort(key=lambda e: e.created_at, reverse=True)
     return entries[0]
+
+
+def get_persistence_mode() -> str:
+    """Return the current persistence mode for journal entries."""
+    status = get_database_table_status()
+    return "postgres" if status.get("connected", False) else "memory"
