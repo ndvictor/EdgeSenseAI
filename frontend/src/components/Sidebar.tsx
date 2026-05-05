@@ -42,7 +42,6 @@ const items = [
   { label: "Candidates", href: "/candidates", icon: Users },
   { label: "Agent Ops Center", href: "/ai-ops", icon: BrainCircuit },
   { label: "LLM Gateway", href: "/llm-gateway", icon: Gauge },
-  { label: "Live Watchlist", href: "/live-watchlist", icon: BellRing },
   { label: "Edge Signals", href: "/edge-signals", icon: Activity },
   { label: "Model Lab", href: "/model-lab", icon: FlaskConical },
   { label: "Model Registry", href: "/model-registry", icon: ShieldCheck },

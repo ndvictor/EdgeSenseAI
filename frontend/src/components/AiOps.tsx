@@ -52,7 +52,11 @@ function PageShell({ children }: { children: React.ReactNode }) {
 }
 
 function LoadingState({ label }: { label: string }) {
-  return <div className="rounded-xl border border-slate-700 bg-slate-950 px-4 py-8 text-center text-sm text-slate-300">Loading {label}...</div>;
+  return (
+    <div className="rounded-xl border border-emerald-400/15 bg-black/35 px-4 py-8 text-center text-sm text-slate-300 shadow-[0_0_28px_rgba(0,0,0,0.2)] backdrop-blur">
+      Loading {label}...
+    </div>
+  );
 }
 
 function ErrorState({ error }: { error: string }) {
@@ -60,13 +64,17 @@ function ErrorState({ error }: { error: string }) {
 }
 
 function EmptyState({ label }: { label: string }) {
-  return <div className="rounded-xl border border-slate-700 bg-slate-950 px-4 py-8 text-center text-sm text-slate-300">No {label} available yet.</div>;
+  return (
+    <div className="rounded-xl border border-emerald-400/15 bg-black/35 px-4 py-8 text-center text-sm text-slate-300 shadow-[0_0_28px_rgba(0,0,0,0.2)] backdrop-blur">
+      No {label} available yet.
+    </div>
+  );
 }
 
 function Panel({ title, children }: { title: string; children: React.ReactNode }) {
   return (
-    <section className="rounded-xl border border-slate-700 bg-slate-950 p-4 shadow-sm">
-      <h2 className="mb-3 text-lg font-semibold text-emerald-500">{title}</h2>
+    <section className="rounded-2xl border border-emerald-400/15 bg-black/35 p-4 shadow-[0_0_40px_rgba(0,0,0,0.25)] backdrop-blur">
+      <h2 className="mb-3 text-lg font-semibold text-emerald-300">{title}</h2>
       {children}
     </section>
   );
@@ -196,7 +204,7 @@ function OrchestrationStatus({ summary }: { summary: AiOpsSummaryResponse }) {
   return (
     <div className="grid grid-cols-1 gap-4 lg:grid-cols-4">
       {entries.map((entry) => (
-        <div key={entry.key} className="rounded-xl border border-slate-800 bg-slate-900 p-4">
+        <div key={entry.key} className="rounded-xl border border-emerald-400/15 bg-black/35 p-4 shadow-[0_0_28px_rgba(0,0,0,0.2)] backdrop-blur">
           <p className="text-xs uppercase tracking-wide text-slate-500">{entry.key}</p>
           <div className="mt-2"><StatusBadge status={entry.status} /></div>
           <p className="mt-3 text-sm text-slate-300">Availability: {entry.available}</p>
@@ -253,57 +261,7 @@ function CoreAgentRegistryTable({ agents }: { agents: CoreAgentRegistryItem[] })
   );
 }
 
-function strategyStatusBadge(strategy: StrategyConfig) {
-  const isCandidate = strategy.status === "candidate" || strategy.promotion_status === "candidate";
-  const isDisabled = strategy.disabled_reason || strategy.status === "rejected";
-
-  if (isDisabled) return <span className="rounded-full border border-red-500 bg-red-500/10 px-2 py-0.5 text-xs font-bold uppercase text-red-400">Disabled</span>;
-  if (isCandidate) return <span className="rounded-full border border-amber-500 bg-amber-500/10 px-2 py-0.5 text-xs font-bold uppercase text-amber-400">Research</span>;
-  return <span className="rounded-full border border-emerald-500 bg-emerald-500/10 px-2 py-0.5 text-xs font-bold uppercase text-emerald-400">Active</span>;
-}
-
-function StrategyRegistryTable({ strategies }: { strategies: StrategyConfig[] }) {
-  if (!strategies.length) return <EmptyState label="strategy registry entries" />;
-
-  const activeCount = strategies.filter(s => s.status !== "candidate" && s.status !== "rejected" && !s.disabled_reason).length;
-  const candidateCount = strategies.filter(s => s.status === "candidate" || s.promotion_status === "candidate").length;
-  const disabledCount = strategies.filter(s => s.disabled_reason || s.status === "rejected").length;
-
-  return (
-    <div className="space-y-4">
-      {/* Strategy Counts */}
-      <div className="grid grid-cols-3 gap-3">
-        <MetricCard label="Active / Approved" value={activeCount} accent />
-        <MetricCard label="Candidate / Research" value={candidateCount} />
-        <MetricCard label="Disabled / Blocked" value={disabledCount} />
-      </div>
-
-      {/* Strategy Table */}
-      <div className="overflow-x-auto rounded-xl border border-slate-800 bg-slate-900">
-        <table className="w-full min-w-[1280px] text-left text-sm">
-          <thead className="text-xs uppercase tracking-wide text-emerald-600">
-            <tr><th className="px-4 py-3">Strategy</th><th className="px-4 py-3">Status</th><th className="px-4 py-3">Asset</th><th className="px-4 py-3">Timeframe</th><th className="px-4 py-3">Required Agents</th><th className="px-4 py-3">Required Models</th><th className="px-4 py-3">Paper</th><th className="px-4 py-3">Approval</th><th className="px-4 py-3">Live</th></tr>
-          </thead>
-          <tbody className="divide-y divide-slate-800">
-            {strategies.map((strategy) => (
-              <tr key={strategy.strategy_key} className="hover:bg-emerald-950/20">
-                <td className="px-4 py-3"><p className="font-bold text-white">{strategy.display_name}</p><p className="mt-1 max-w-md text-xs text-slate-400">{strategy.description}</p></td>
-                <td className="px-4 py-3">{strategyStatusBadge(strategy)}</td>
-                <td className="px-4 py-3 text-slate-300">{strategy.asset_class}</td>
-                <td className="px-4 py-3 text-slate-300">{strategy.timeframe}</td>
-                <td className="max-w-md px-4 py-3 text-slate-300">{strategy.required_agents.join(", ")}</td>
-                <td className="px-4 py-3 text-slate-300">{strategy.required_models.join(", ")}</td>
-                <td className="px-4 py-3"><StatusBadge status={strategy.paper_trading_supported ? "supported" : "disabled"} /></td>
-                <td className="px-4 py-3"><StatusBadge status={strategy.requires_human_approval ? "required" : "not_required"} /></td>
-                <td className="px-4 py-3"><StatusBadge status={strategy.live_trading_supported ? "enabled" : "disabled"} /></td>
-              </tr>
-            ))}
-          </tbody>
-        </table>
-      </div>
-    </div>
-  );
-}
+// Strategy registry summary UI moved into `src/components/StrategyRegistrySummary.tsx`.
 
 function recommendationAction(run: StrategyWorkflowRunResult) {
   const action = run.recommendation?.action;
@@ -509,24 +467,33 @@ export function AiOpsOverviewPage() {
   const [llm, setLlm] = useState<AiOpsLlmUsageResponse | null>(null);
   const [scheduler, setScheduler] = useState<AiOpsSchedulerJobsResponse | null>(null);
   const [coreRegistry, setCoreRegistry] = useState<CoreAgentRegistryItem[]>([]);
-  const [strategies, setStrategies] = useState<StrategyConfig[]>([]);
   const [strategyWorkflowRuns, setStrategyWorkflowRuns] = useState<StrategyWorkflowRunResult[]>([]);
   const [autoRun, setAutoRun] = useState<AutoRunControlState | null>(null);
   const [error, setError] = useState<string | null>(null);
   const [autoRunError, setAutoRunError] = useState<string | null>(null);
   const [autoRunLoading, setAutoRunLoading] = useState(false);
+  const [subtab, setSubtab] = useState<
+    | "orchestration"
+    | "recent_workflows"
+    | "agent_health"
+    | "core_agent_registry"
+    | "strategy_workflow_runs"
+    | "persistence_memory"
+    | "auto_run"
+    | "safety_guardrails"
+    | "edge_radar"
+  >("orchestration");
   const loading = !summary && !error;
 
   useEffect(() => {
-    Promise.all([api.getAiOpsSummary(), api.getAiOpsWorkflows(), api.getAiOpsAgentStatus(), api.getAiOpsLlmUsage(), api.getAiOpsSchedulerJobs(), api.getAgentRegistry(), api.getStrategies(), api.getAutoRunStatus(), api.getStrategyWorkflowRuns()])
-      .then(([summaryData, workflowData, agentData, llmData, schedulerData, registryData, strategyData, autoRunData, strategyWorkflowData]) => {
+    Promise.all([api.getAiOpsSummary(), api.getAiOpsWorkflows(), api.getAiOpsAgentStatus(), api.getAiOpsLlmUsage(), api.getAiOpsSchedulerJobs(), api.getAgentRegistry(), api.getAutoRunStatus(), api.getStrategyWorkflowRuns()])
+      .then(([summaryData, workflowData, agentData, llmData, schedulerData, registryData, autoRunData, strategyWorkflowData]) => {
         setSummary(summaryData);
         setWorkflows(workflowData);
         setAgents(agentData);
         setLlm(llmData);
         setScheduler(schedulerData);
         setCoreRegistry(registryData);
-        setStrategies(strategyData);
         setStrategyWorkflowRuns(strategyWorkflowData);
         setAutoRun(autoRunData);
       })
@@ -564,28 +531,92 @@ export function AiOpsOverviewPage() {
             <MetricCard label="Avg Latency" value="N/A" />
             <MetricCard label="Failed Runs" value={scheduler?.failed_jobs_today ?? 0} />
           </div>
-          <Panel title="Orchestration Status"><OrchestrationStatus summary={summary} /></Panel>
-          <Panel title="Recent Workflow Runs"><WorkflowsTable workflows={workflowRows(workflows)} /></Panel>
-          <Panel title="Agent Health"><AgentHealthTable agents={agentList} /></Panel>
-          <Panel title="Core Agent Registry"><CoreAgentRegistryTable agents={coreRegistry} /></Panel>
-          <Panel title="Strategy Registry Summary"><StrategyRegistryTable strategies={strategies} /></Panel>
-          <Panel title="Strategy Workflow Runs">
-            {strategyWorkflowRuns[0] && (
-              <div className="mb-4 grid grid-cols-2 gap-4 lg:grid-cols-6">
-                <MetricCard label="Latest Run" value={strategyWorkflowRuns[0].workflow_run_id.slice(0, 12)} accent />
-                <MetricCard label="Strategy" value={strategyWorkflowRuns[0].strategy_key} />
-                <MetricCard label="Symbol" value={strategyWorkflowRuns[0].symbol} />
-                <MetricCard label="Status" value={strategyWorkflowRuns[0].status} />
-                <MetricCard label="Approval" value={strategyWorkflowRuns[0].approval_required ? "Required" : "None"} />
-                <MetricCard label="Live Allowed" value={strategyWorkflowRuns[0].live_trading_allowed ? "Yes" : "No"} />
-              </div>
-            )}
-            <StrategyWorkflowRunsTable runs={strategyWorkflowRuns} />
-          </Panel>
-          <Panel title="Persistence & Memory"><PersistenceMemoryPanel summary={summary} /></Panel>
-          <Panel title="Auto-run Status"><AutoRunPanel state={autoRun} onToggle={toggleAutoRun} loading={autoRunLoading} error={autoRunError} /></Panel>
-          <Panel title="Safety Guardrails"><GuardrailGrid summary={summary} llm={llm} /></Panel>
-          <EdgeRadarPanel />
+          <div className="flex flex-nowrap gap-2 overflow-x-auto whitespace-nowrap pr-2 [-ms-overflow-style:none] [scrollbar-width:none] [&::-webkit-scrollbar]:hidden">
+            {[
+              ["orchestration", "Orchestration"],
+              ["recent_workflows", "Recent Workflows"],
+              ["agent_health", "Agent Health"],
+              ["core_agent_registry", "Core Agent Registry"],
+              ["strategy_workflow_runs", "Strategy Workflow Runs"],
+              ["persistence_memory", "Persistence & Memory"],
+              ["auto_run", "Auto-run Status"],
+              ["safety_guardrails", "Safety Guardrails"],
+              ["edge_radar", "Edge Radar Test Panel"],
+            ].map(([key, label]) => (
+              <button
+                key={key}
+                type="button"
+                onClick={() => setSubtab(key as typeof subtab)}
+                className={`shrink-0 rounded-xl px-4 py-2 text-sm font-semibold transition ${
+                  subtab === key
+                    ? "border border-emerald-400/40 bg-emerald-500/15 text-emerald-200 shadow-[0_0_20px_rgba(16,185,129,0.12)]"
+                    : "border border-transparent text-slate-400 hover:border-white/10 hover:bg-white/[0.04] hover:text-slate-200"
+                }`}
+              >
+                {label}
+              </button>
+            ))}
+          </div>
+
+          {subtab === "orchestration" && (
+            <Panel title="Orchestration Status">
+              <OrchestrationStatus summary={summary} />
+            </Panel>
+          )}
+
+          {subtab === "recent_workflows" && (
+            <Panel title="Recent Workflow Runs">
+              <WorkflowsTable workflows={workflowRows(workflows)} />
+            </Panel>
+          )}
+
+          {subtab === "agent_health" && (
+            <Panel title="Agent Health">
+              <AgentHealthTable agents={agentList} />
+            </Panel>
+          )}
+
+          {subtab === "core_agent_registry" && (
+            <Panel title="Core Agent Registry">
+              <CoreAgentRegistryTable agents={coreRegistry} />
+            </Panel>
+          )}
+
+          {subtab === "strategy_workflow_runs" && (
+            <Panel title="Strategy Workflow Runs">
+              {strategyWorkflowRuns[0] && (
+                <div className="mb-4 grid grid-cols-2 gap-4 lg:grid-cols-6">
+                  <MetricCard label="Latest Run" value={strategyWorkflowRuns[0].workflow_run_id.slice(0, 12)} accent />
+                  <MetricCard label="Strategy" value={strategyWorkflowRuns[0].strategy_key} />
+                  <MetricCard label="Symbol" value={strategyWorkflowRuns[0].symbol} />
+                  <MetricCard label="Status" value={strategyWorkflowRuns[0].status} />
+                  <MetricCard label="Approval" value={strategyWorkflowRuns[0].approval_required ? "Required" : "None"} />
+                  <MetricCard label="Live Allowed" value={strategyWorkflowRuns[0].live_trading_allowed ? "Yes" : "No"} />
+                </div>
+              )}
+              <StrategyWorkflowRunsTable runs={strategyWorkflowRuns} />
+            </Panel>
+          )}
+
+          {subtab === "persistence_memory" && (
+            <Panel title="Persistence & Memory">
+              <PersistenceMemoryPanel summary={summary} />
+            </Panel>
+          )}
+
+          {subtab === "auto_run" && (
+            <Panel title="Auto-run Status">
+              <AutoRunPanel state={autoRun} onToggle={toggleAutoRun} loading={autoRunLoading} error={autoRunError} />
+            </Panel>
+          )}
+
+          {subtab === "safety_guardrails" && (
+            <Panel title="Safety Guardrails">
+              <GuardrailGrid summary={summary} llm={llm} />
+            </Panel>
+          )}
+
+          {subtab === "edge_radar" && <EdgeRadarPanel />}
         </div>
       ) : <EmptyState label="Agent Ops summary" />}
     </PageShell>

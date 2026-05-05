@@ -4,6 +4,7 @@ import { useEffect, useState } from "react";
 import Link from "next/link";
 import { api, type CommandCenterResponse } from "@/lib/api";
 import { EdgeSignalGrid, MetricCard, RecommendationTable } from "@/components/Cards";
+import { LiveWatchlistPanel } from "@/components/LiveWatchlistPanel";
 import { Gauge, Users, TrendingUp, AlertTriangle, Play, Clock } from "lucide-react";
 
 const cardShell = "rounded-2xl border border-emerald-400/15 bg-black/35 p-5 shadow-[0_0_40px_rgba(0,0,0,0.35)] backdrop-blur";
@@ -20,6 +21,7 @@ export default function CommandCenterPage() {
   const [data, setData] = useState<CommandCenterResponse | null>(null);
   const [error, setError] = useState<string | null>(null);
   const [isRunning, setIsRunning] = useState(false);
+  const [tab, setTab] = useState<"candidates" | "live_watch" | "agents">("candidates");
 
   const loadData = async () => {
     try {
@@ -58,6 +60,27 @@ export default function CommandCenterPage() {
           <p className="mt-2 max-w-6xl text-sm leading-relaxed text-slate-400">
             Source-backed dashboard. No hardcoded trade numbers are shown as recommendations. If real source data is unavailable, the platform shows no-action status instead of fake buy/target/stop data.
           </p>
+
+          <div className="mt-5 flex flex-nowrap gap-2 overflow-x-auto whitespace-nowrap pr-2 [-ms-overflow-style:none] [scrollbar-width:none] [&::-webkit-scrollbar]:hidden">
+            {[
+              ["candidates", "Candidates"],
+              ["live_watch", "Live Watch"],
+              ["agents", "Agents"],
+            ].map(([key, label]) => (
+              <button
+                key={key}
+                type="button"
+                onClick={() => setTab(key as typeof tab)}
+                className={`shrink-0 rounded-xl px-4 py-2 text-sm font-semibold transition ${
+                  tab === key
+                    ? "border border-emerald-400/40 bg-emerald-500/15 text-emerald-200 shadow-[0_0_20px_rgba(16,185,129,0.12)]"
+                    : "border border-transparent text-slate-400 hover:border-white/10 hover:bg-white/[0.04] hover:text-slate-200"
+                }`}
+              >
+                {label}
+              </button>
+            ))}
+          </div>
         </header>
 
         {error && (
@@ -66,8 +89,12 @@ export default function CommandCenterPage() {
           </div>
         )}
 
-        {!data ? (
-          <div className="py-8 text-center text-sm text-slate-400">Loading dashboard...</div>
+        {tab === "live_watch" ? (
+          <LiveWatchlistPanel showHeader={false} mode="watchlist" />
+        ) : tab === "agents" ? (
+          <LiveWatchlistPanel showHeader={false} mode="agents" />
+        ) : !data ? (
+          <div className="py-8 text-center text-sm text-slate-400">Loading candidates...</div>
         ) : (
           <div className="space-y-4">
             {data.dashboard_mode === "no_symbols_selected" ? (
