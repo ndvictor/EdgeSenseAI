@@ -1,6 +1,7 @@
 "use client";
 
 import { useEffect, useState } from "react";
+import Link from "next/link";
 import { 
   api, 
   type SettingsResponse, 
@@ -13,6 +14,12 @@ import {
   type AlpacaPaperSnapshot
 } from "@/lib/api";
 import { PageHeader } from "@/components/Cards";
+import { 
+  WalletCards, Zap, BookOpen, Globe, Brain, Radar, Target, Users, 
+  BrainCircuit, Gauge, BellRing, Activity, FlaskConical, ShieldCheck, 
+  DatabaseZap, TrendingUp, LineChart, Bitcoin, BarChart3, ClipboardList,
+  Settings as SettingsIcon, Activity as ActivityIcon
+} from "lucide-react";
 
 export default function SettingsPage() {
   const [settings, setSettings] = useState<SettingsResponse | null>(null);
@@ -296,6 +303,115 @@ export default function SettingsPage() {
           <div className="mb-4 rounded-xl border border-red-500/30 bg-red-500/10 px-4 py-3 text-sm text-red-200">
             {error}
             <button onClick={() => setError(null)} className="ml-2 text-red-300 hover:text-red-100">Dismiss</button>
+          </div>
+        )}
+
+        {/* Tab-specific Settings Cards */}
+        {settings && (
+          <div className="mb-6 grid grid-cols-1 gap-4 md:grid-cols-2 lg:grid-cols-3 xl:grid-cols-4">
+            {/* Account Risk Center Card */}
+            <SettingsCard 
+              title="Account Risk Center" 
+              href="/account-risk" 
+              icon={WalletCards}
+              settings={[
+                { label: "Paper Trading", enabled: settings.trading.paper_trading_enabled },
+                { label: "Live Trading", enabled: settings.trading.live_trading_enabled },
+                { label: "Broker Execution", enabled: settings.trading.broker_execution_enabled },
+                { label: "Human Approval", enabled: settings.trading.require_human_approval },
+              ]}
+            />
+
+            {/* TradeNow Card */}
+            <SettingsCard 
+              title="TradeNow" 
+              href="/tradenow" 
+              icon={Zap}
+              settings={[
+                { label: "Paper Trading", enabled: settings.trading.paper_trading_enabled },
+                { label: "Live Trading", enabled: settings.trading.live_trading_enabled },
+                { label: "Broker Execution", enabled: settings.trading.broker_execution_enabled },
+                { label: "Execution Agent", enabled: settings.trading.execution_agent_enabled },
+              ]}
+            />
+
+            {/* Trading & Market Data Card */}
+            <SettingsCard 
+              title="Trading & Market Data" 
+              href="/paper-trading" 
+              icon={TrendingUp}
+              settings={[
+                { label: "Paper Trading", enabled: settings.trading.paper_trading_enabled },
+                { label: "Broker Execution", enabled: settings.trading.broker_execution_enabled },
+                { label: "Alpaca Paper", enabled: settings.trading.alpaca_paper_trade },
+                { label: "Market Data", enabled: settings.market_data.alpaca_market_data_enabled },
+              ]}
+            />
+
+            {/* Strategies & Universe Card */}
+            <SettingsCard 
+              title="Strategies & Universe" 
+              href="/strategies" 
+              icon={Brain}
+              settings={[
+                { label: "Strategy Lab", enabled: settings.trading.execution_agent_enabled },
+                { label: "Model Registry", enabled: settings.platform.vector_memory_enabled },
+                { label: "LLM Gateway", enabled: settings.llm_gateway.llm_gateway_enabled },
+                { label: "LangSmith Tracing", enabled: settings.platform.langsmith_tracing },
+              ]}
+            />
+
+            {/* Signals & Recommendations Card */}
+            <SettingsCard 
+              title="Signals & Recommendations" 
+              href="/signals" 
+              icon={Radar}
+              settings={[
+                { label: "Signals", enabled: settings.trading.execution_agent_enabled },
+                { label: "Recommendations", enabled: settings.trading.execution_agent_enabled },
+                { label: "Live Watchlist", enabled: settings.market_data.alpaca_market_data_enabled },
+                { label: "Edge Signals", enabled: settings.trading.execution_agent_enabled },
+              ]}
+            />
+
+            {/* AI & Models Card */}
+            <SettingsCard 
+              title="AI & Models" 
+              href="/ai-ops" 
+              icon={BrainCircuit}
+              settings={[
+                { label: "LLM Gateway", enabled: settings.llm_gateway.llm_gateway_enabled },
+                { label: "Vector Memory", enabled: settings.platform.vector_memory_enabled },
+                { label: "LangSmith Tracing", enabled: settings.platform.langsmith_tracing },
+                { label: "Execution Agent", enabled: settings.trading.execution_agent_enabled },
+              ]}
+            />
+
+            {/* Data & Integrations Card */}
+            <SettingsCard 
+              title="Data & Integrations" 
+              href="/data-sources" 
+              icon={DatabaseZap}
+              settings={[
+                { label: "Alpaca Market Data", enabled: settings.market_data.alpaca_market_data_enabled },
+                { label: "News Provider", enabled: settings.news.news_provider_enabled },
+                { label: "LLM Gateway", enabled: settings.llm_gateway.llm_gateway_enabled },
+                { label: "Vector Memory", enabled: settings.platform.vector_memory_enabled },
+              ]}
+            />
+
+            {/* Journal & Learning Card */}
+            <SettingsCard 
+              title="Journal & Learning" 
+              href="/journal" 
+              icon={BookOpen}
+              settings={[
+                { label: "Paper Trading", enabled: settings.trading.paper_trading_enabled },
+                { label: "Execution Agent", enabled: settings.trading.execution_agent_enabled },
+                { label: "Human Approval", enabled: settings.trading.require_human_approval },
+                { label: "LangSmith Tracing", enabled: settings.platform.langsmith_tracing },
+              ]}
+            />
           </div>
         )}
 
@@ -656,5 +772,50 @@ export default function SettingsPage() {
         )}
       </div>
     </div>
+  );
+}
+
+// Settings Card Component for Tab-specific Settings Display
+function SettingsCard({ 
+  title, 
+  href, 
+  icon: Icon, 
+  settings 
+}: { 
+  title: string; 
+  href: string; 
+  icon: typeof WalletCards; 
+  settings: { label: string; enabled: boolean }[];
+}) {
+  return (
+    <Link 
+      href={href}
+      className="group rounded-xl border border-slate-700 bg-slate-900/50 p-4 transition hover:border-emerald-500/30 hover:bg-slate-800/50"
+    >
+      <div className="mb-3 flex items-center gap-2">
+        <Icon className="h-5 w-5 text-emerald-400" />
+        <h3 className="font-semibold text-emerald-300">{title}</h3>
+      </div>
+      <div className="space-y-2">
+        {settings.map((setting) => (
+          <div key={setting.label} className="flex items-center justify-between text-sm">
+            <span className="text-slate-400">{setting.label}</span>
+            <span className={`flex items-center gap-1 ${setting.enabled ? "text-emerald-400" : "text-rose-400"}`}>
+              {setting.enabled ? (
+                <>
+                  <span className="h-2 w-2 rounded-full bg-emerald-500"></span>
+                  On
+                </>
+              ) : (
+                <>
+                  <span className="h-2 w-2 rounded-full bg-rose-500"></span>
+                  Off
+                </>
+              )}
+            </span>
+          </div>
+        ))}
+      </div>
+    </Link>
   );
 }

@@ -2,18 +2,22 @@
 
 import { useEffect, useState } from "react";
 import Link from "next/link";
-import { Settings, AlertCircle } from "lucide-react";
-import { api, type AlpacaPaperSnapshot } from "@/lib/api";
+import { Settings, AlertCircle, CheckCircle2, XCircle, Activity } from "lucide-react";
+import { api, type AlpacaPaperSnapshot, type SettingsResponse } from "@/lib/api";
 import { MetricCard, PageHeader } from "@/components/Cards";
 
 export default function AccountRiskPage() {
   const [alpaca, setAlpaca] = useState<AlpacaPaperSnapshot | null>(null);
+  const [settings, setSettings] = useState<SettingsResponse | null>(null);
   const [error, setError] = useState<string | null>(null);
 
   useEffect(() => {
     api.getAlpacaPaperSnapshot()
       .then(setAlpaca)
       .catch((err) => setError(err.message));
+    api.getSettings()
+      .then(setSettings)
+      .catch(() => {});
   }, []);
 
   if (error) {
@@ -53,6 +57,50 @@ export default function AccountRiskPage() {
             Configure in Settings
           </Link>
         </div>
+
+        {/* Settings Status Panel */}
+        {settings && (
+          <div className="mt-4 rounded-xl border border-slate-700 bg-slate-900/50 p-4">
+            <div className="mb-3 flex items-center justify-between">
+              <h3 className="flex items-center gap-2 text-sm font-semibold text-emerald-400">
+                <Activity className="h-4 w-4" />
+                Account Risk Settings Status
+              </h3>
+              <Link 
+                href="/settings" 
+                className="text-xs text-slate-400 hover:text-emerald-400"
+              >
+                Configure in Settings →
+              </Link>
+            </div>
+            <div className="grid grid-cols-2 gap-3 md:grid-cols-4">
+              <SettingStatus 
+                label="Paper Trading" 
+                enabled={settings.trading.paper_trading_enabled} 
+              />
+              <SettingStatus 
+                label="Live Trading" 
+                enabled={settings.trading.live_trading_enabled} 
+              />
+              <SettingStatus 
+                label="Broker Execution" 
+                enabled={settings.trading.broker_execution_enabled} 
+              />
+              <SettingStatus 
+                label="Human Approval" 
+                enabled={settings.trading.require_human_approval} 
+              />
+              <SettingStatus 
+                label="Execution Agent" 
+                enabled={settings.trading.execution_agent_enabled} 
+              />
+              <SettingStatus 
+                label="Alpaca Paper" 
+                enabled={settings.trading.alpaca_paper_trade} 
+              />
+            </div>
+          </div>
+        )}
 
         <div className="mt-4 rounded-xl border border-emerald-800 bg-slate-900 p-4">
           <div className="mb-4 flex items-center gap-2 text-sm text-emerald-400">
@@ -138,6 +186,23 @@ function DisplayField({ label, value, warning = false }: { label: string; value:
     <div className="rounded-lg border border-slate-800 bg-slate-950 px-3 py-2">
       <span className="text-slate-500">{label}:</span>
       <span className={`ml-2 font-mono ${warning ? "text-amber-400" : "text-slate-300"}`}>{value}</span>
+    </div>
+  );
+}
+
+function SettingStatus({ label, enabled }: { label: string; enabled: boolean }) {
+  return (
+    <div className={`flex items-center gap-2 rounded-lg border px-3 py-2 ${
+      enabled ? "border-emerald-800 bg-emerald-950/30" : "border-rose-800 bg-rose-950/30"
+    }`}>
+      {enabled ? (
+        <CheckCircle2 className="h-4 w-4 text-emerald-500" />
+      ) : (
+        <XCircle className="h-4 w-4 text-rose-500" />
+      )}
+      <span className={`text-sm font-medium ${enabled ? "text-emerald-400" : "text-rose-400"}`}>
+        {label}
+      </span>
     </div>
   );
 }
