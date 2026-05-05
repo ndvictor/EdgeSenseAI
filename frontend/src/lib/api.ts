@@ -154,6 +154,36 @@ export type SignalsStatusResponse = {
   signal_families?: SignalFamilyStatus[];
 };
 
+export type CandidateSourceStatus = {
+  candidate_source: string;
+  status: "ready" | "warning" | "error" | "disabled" | string;
+  description?: string | null;
+  input_stage?: string | null;
+  candidate_types?: string[];
+  downstream_consumers?: string[];
+  active_count?: number;
+  ranked_count?: number;
+  blocked_count?: number;
+  last_candidate_at?: string | null;
+  warnings?: string[];
+  errors?: string[];
+  next_action?: string | null;
+};
+
+export type CandidatesStatusResponse = {
+  status: string;
+  data_mode?: "summary" | string;
+  updated_at?: string;
+  summary?: {
+    status?: string;
+    candidate_sources?: number;
+    active_candidates?: number;
+    ranked_candidates?: number;
+    blocked_candidates?: number;
+  };
+  candidate_sources?: CandidateSourceStatus[];
+};
+
 export type MarketDataSource = "auto" | "yfinance" | "alpaca" | "mock";
 
 export type AccountRiskProfile = {
