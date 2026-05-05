@@ -35,6 +35,7 @@ const items = [
   { label: "Strategies", href: "/strategies", icon: Rocket },
   { label: "Universe", href: "/universe", icon: Globe },
   { label: "Strategy Lab", href: "/strategy-lab", icon: Brain },
+  { label: "Signal Engine", href: "/signal-engine", icon: Radar },
   { label: "Signals", href: "/signals", icon: Radar },
   { label: "Recommendations", href: "/recommendations", icon: Target },
   { label: "Candidates", href: "/candidates", icon: Users },

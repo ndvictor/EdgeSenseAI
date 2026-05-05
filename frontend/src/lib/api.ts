@@ -126,6 +126,34 @@ export type DataQualityStatusResponse = {
   checks?: DataQualityCheckStatus[];
 };
 
+export type SignalFamilyStatus = {
+  signal_family: string;
+  status: "ready" | "warning" | "error" | "disabled" | string;
+  description?: string | null;
+  input_stage?: string | null;
+  required_features?: string[];
+  downstream_consumers?: string[];
+  active_count?: number;
+  last_signal_at?: string | null;
+  warnings?: string[];
+  errors?: string[];
+  next_action?: string | null;
+};
+
+export type SignalsStatusResponse = {
+  status: string;
+  data_mode?: "summary" | string;
+  updated_at?: string;
+  summary?: {
+    status?: string;
+    signal_families?: number;
+    active_signals?: number;
+    warnings?: number;
+    errors?: number;
+  };
+  signal_families?: SignalFamilyStatus[];
+};
+
 export type MarketDataSource = "auto" | "yfinance" | "alpaca" | "mock";
 
 export type AccountRiskProfile = {
@@ -2350,6 +2378,7 @@ export const api = {
   getDataIngestionStatus: () => request<DataIngestionStatusResponse>("/api/data-ingestion/status"),
   getNormalizationStatus: () => request<NormalizationStatusResponse>("/api/normalization/status"),
   getDataQualityStatus: () => request<DataQualityStatusResponse>("/api/data-quality/status"),
+  getSignalsStatus: () => request<SignalsStatusResponse>("/api/signals/status"),
   getMarketDataSnapshot: (symbol: string, source: MarketDataSource = "auto") => request<MarketDataSnapshot>(`/api/market-data/snapshot/${symbol}?source=${source}`),
   getMarketDataHistory: (symbol: string, period = "6mo", interval = "1d", source: MarketDataSource = "auto") => request<PriceHistory>(`/api/market-data/history/${symbol}?period=${period}&interval=${interval}&source=${source}`),
   getMarketSnapshots: () => request<MarketSnapshot[]>("/api/market/snapshots"),
