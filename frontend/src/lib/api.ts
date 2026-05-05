@@ -31,6 +31,44 @@ export type DataSourcesStatusResponse = {
   sources: DataSourceStatus[];
 };
 
+export type DataIngestionSourceStatus = {
+  key: string;
+  name: string;
+  provider_type: string;
+  status: "ready" | "warning" | "error" | "disabled";
+  ingestion_mode: "pull" | "stream" | "webhook" | "manual";
+  data_types: string[];
+  symbols_tracked: number;
+  records_ingested_today: number;
+  last_ingested_at: string | null;
+  freshness_seconds: number | null;
+  latency_ms: number | null;
+  errors: string[];
+  next_action: string;
+};
+
+export type DataIngestionStatusResponse = {
+  status: "ok";
+  data_mode: "summary";
+  updated_at: string;
+  summary: {
+    total_sources: number;
+    active_sources: number;
+    warning_sources: number;
+    error_sources: number;
+    records_ingested_today: number;
+    last_ingested_at: string | null;
+    next_action: string;
+  };
+  sources: DataIngestionSourceStatus[];
+  pipeline_position: {
+    previous_stage: string;
+    current_stage: string;
+    next_stage: string;
+    downstream_stage: string;
+  };
+};
+
 export type MarketDataSource = "auto" | "yfinance" | "alpaca" | "mock";
 
 export type AccountRiskProfile = {
@@ -2252,6 +2290,7 @@ export const api = {
   getEdgeSignals: () => request<{ last_updated: string; alerts_enabled: boolean; account_range: string; signals: EdgeSignal[] }>("/api/edge-signals/latest"),
   getModelStatus: () => request<ModelStatusResponse>("/api/models/status"),
   getDataSourcesStatus: () => request<DataSourcesStatusResponse>("/api/data-sources/status"),
+  getDataIngestionStatus: () => request<DataIngestionStatusResponse>("/api/data-ingestion/status"),
   getMarketDataSnapshot: (symbol: string, source: MarketDataSource = "auto") => request<MarketDataSnapshot>(`/api/market-data/snapshot/${symbol}?source=${source}`),
   getMarketDataHistory: (symbol: string, period = "6mo", interval = "1d", source: MarketDataSource = "auto") => request<PriceHistory>(`/api/market-data/history/${symbol}?period=${period}&interval=${interval}&source=${source}`),
   getMarketSnapshots: () => request<MarketSnapshot[]>("/api/market/snapshots"),
