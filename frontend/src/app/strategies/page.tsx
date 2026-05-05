@@ -1,12 +1,26 @@
+"use client";
+
 import Link from "next/link";
+import { useMemo, useState } from "react";
 import { Activity, AlertTriangle, BarChart3, BrainCircuit, CalendarDays, CheckCircle2, Clock3, GitBranch, LineChart, RefreshCcw, ShieldCheck, Sparkles, XCircle } from "lucide-react";
 import { MetricCard, PageHeader } from "@/components/Cards";
 
 type StrategyReadiness = "ready" | "not_ready";
 
+type StrategyStage =
+  | "idea"
+  | "research"
+  | "backtest_ready"
+  | "backtested"
+  | "paper_ready"
+  | "paper_trading"
+  | "promoted_to_prod"
+  | "disabled";
+
 type StrategyCard = {
   name: string;
   readiness: StrategyReadiness;
+  stage: StrategyStage;
   assetClass: string;
   timeframe: string;
   requiredModels: string[];
@@ -23,6 +37,7 @@ const readyStrategies: StrategyCard[] = [
   {
     name: "15 Min Liquid Momentum",
     readiness: "ready",
+    stage: "promoted_to_prod",
     assetClass: "Equities",
     timeframe: "15 Min",
     requiredModels: ["weighted_ranker_v1", "regime_classifier_v1", "liquidity_filter_v1", "risk_veto_v1"],
@@ -35,6 +50,7 @@ const readyStrategies: StrategyCard[] = [
   {
     name: "Tech Quintet Momentum",
     readiness: "ready",
+    stage: "paper_trading",
     assetClass: "Equities",
     timeframe: "30 Min",
     requiredModels: ["weighted_ranker_v1", "sector_strength_v1", "historical_similarity_v1", "risk_veto_v1"],
@@ -47,6 +63,7 @@ const readyStrategies: StrategyCard[] = [
   {
     name: "VWAP Reclaim",
     readiness: "ready",
+    stage: "paper_ready",
     assetClass: "Equities",
     timeframe: "5 Min",
     requiredModels: ["weighted_ranker_v1", "vwap_trigger_v1", "volume_confirmation_v1", "capital_allocator_v1"],
@@ -62,6 +79,7 @@ const notReadyStrategies: StrategyCard[] = [
   {
     name: "Opening Range Breakout",
     readiness: "not_ready",
+    stage: "backtest_ready",
     assetClass: "Equities",
     timeframe: "15 Min",
     requiredModels: ["opening_range_detector_v1", "weighted_ranker_v1", "spread_guard_v1", "news_catalyst_v1"],
@@ -73,6 +91,7 @@ const notReadyStrategies: StrategyCard[] = [
   {
     name: "Double Agent Inverse ETF",
     readiness: "not_ready",
+    stage: "research",
     assetClass: "ETFs",
     timeframe: "30 Min",
     requiredModels: ["regime_classifier_v1", "trend_flip_v1", "hedge_router_v1", "drawdown_guard_v1"],
@@ -84,6 +103,7 @@ const notReadyStrategies: StrategyCard[] = [
   {
     name: "Options Flow Momentum",
     readiness: "not_ready",
+    stage: "research",
     assetClass: "Options",
     timeframe: "15 Min",
     requiredModels: ["options_flow_parser_v1", "iv_oi_validator_v1", "underlying_confirmation_v1", "contract_quality_filter_v1"],
@@ -95,6 +115,7 @@ const notReadyStrategies: StrategyCard[] = [
   {
     name: "XGBoost Meta Ranker Strategy",
     readiness: "not_ready",
+    stage: "disabled",
     assetClass: "Equities",
     timeframe: "Daily",
     requiredModels: ["xgboost_ranker", "calibration_service_v1", "outcome_labeler_v1", "walk_forward_evaluator_v1"],
@@ -134,12 +155,12 @@ function Pill({ children }: { children: string }) {
 }
 
 function SmallTag({ children }: { children: string }) {
-  return <span className="rounded-md border border-slate-700 bg-slate-800 px-2 py-1 text-xs font-semibold text-slate-300">{children}</span>;
+  return <span className="rounded-md border border-emerald-400/15 bg-black/35 px-2 py-1 text-xs font-semibold text-slate-300">{children}</span>;
 }
 
 function ReadyStrategyCard({ strategy }: { strategy: StrategyCard }) {
   return (
-    <article className="overflow-hidden rounded-2xl border border-slate-700 bg-slate-950/95 shadow-sm shadow-emerald-950/20">
+    <article className="overflow-hidden rounded-2xl border border-emerald-400/15 bg-black/35 shadow-[0_0_40px_rgba(0,0,0,0.25)] backdrop-blur">
       <div className="p-4">
         <div className="flex items-start gap-4">
           <div className="flex h-14 w-14 shrink-0 items-center justify-center rounded-2xl border border-emerald-500/50 bg-emerald-500/10">
@@ -165,7 +186,7 @@ function ReadyStrategyCard({ strategy }: { strategy: StrategyCard }) {
         </div>
       </div>
 
-      <div className="grid grid-cols-1 divide-y divide-slate-800 border-t border-slate-800 md:grid-cols-3 md:divide-x md:divide-y-0">
+      <div className="grid grid-cols-1 divide-y divide-emerald-400/10 border-t border-emerald-400/10 md:grid-cols-3 md:divide-x md:divide-y-0">
         <div className="p-4">
           <p className="text-xs font-bold uppercase tracking-wide text-slate-500">Last test report</p>
           <p className="mt-2 text-sm leading-relaxed text-slate-200">{strategy.lastTestReport}</p>
@@ -185,7 +206,7 @@ function ReadyStrategyCard({ strategy }: { strategy: StrategyCard }) {
 
 function NotReadyStrategyCard({ strategy }: { strategy: StrategyCard }) {
   return (
-    <article className="overflow-hidden rounded-2xl border border-slate-700 bg-slate-950/95 shadow-sm shadow-amber-950/20">
+    <article className="overflow-hidden rounded-2xl border border-emerald-400/15 bg-black/35 shadow-[0_0_40px_rgba(0,0,0,0.25)] backdrop-blur">
       <div className="p-4">
         <div className="flex items-start gap-4">
           <div className="flex h-14 w-14 shrink-0 items-center justify-center rounded-2xl border border-amber-500/60 bg-amber-500/10">
@@ -218,7 +239,7 @@ function NotReadyStrategyCard({ strategy }: { strategy: StrategyCard }) {
         </div>
       </div>
 
-      <div className="grid grid-cols-1 divide-y divide-slate-800 border-t border-slate-800 md:grid-cols-2 md:divide-x md:divide-y-0">
+      <div className="grid grid-cols-1 divide-y divide-emerald-400/10 border-t border-emerald-400/10 md:grid-cols-2 md:divide-x md:divide-y-0">
         <div className="p-4">
           <p className="text-xs font-bold uppercase tracking-wide text-slate-500">Why this strategy</p>
           <p className="mt-2 text-sm leading-relaxed text-slate-200">{strategy.why}</p>
@@ -237,6 +258,29 @@ function NotReadyStrategyCard({ strategy }: { strategy: StrategyCard }) {
 }
 
 export default function StrategiesPage() {
+  const tabs = [
+    ["idea", "Idea"],
+    ["research", "Research"],
+    ["backtest_ready", "Backtest ready"],
+    ["backtested", "Backtested"],
+    ["paper_ready", "Paper ready"],
+    ["paper_trading", "Paper trading"],
+    ["promoted_to_prod", "Promoted to prod"],
+    ["disabled", "Disabled"],
+  ] as const satisfies ReadonlyArray<readonly [StrategyStage, string]>;
+
+  const [activeTab, setActiveTab] = useState<StrategyStage>("research");
+
+  const allStrategies = useMemo(
+    () => [...readyStrategies, ...notReadyStrategies],
+    []
+  );
+
+  const visible = useMemo(
+    () => allStrategies.filter((s) => s.stage === activeTab),
+    [allStrategies, activeTab]
+  );
+
   const needsAttention = notReadyStrategies.filter((strategy) => strategy.status === "Blocked" || strategy.status === "Testing").length;
   const lifecycle = [
     { href: "/strategies/idea", label: "Idea", hint: "Capture thesis + constraints" },
@@ -265,6 +309,50 @@ export default function StrategiesPage() {
           <MetricCard label="Needs Attention" value={needsAttention} />
         </div>
 
+        <section className="rounded-2xl border border-emerald-400/15 bg-black/35 p-4 shadow-[0_0_40px_rgba(0,0,0,0.25)] backdrop-blur">
+          <div className="mb-3 flex items-center justify-between">
+            <h2 className="text-lg font-black tracking-tight text-white">Strategy stages</h2>
+            <div className="text-xs text-slate-400">
+              Showing <span className="font-semibold text-slate-200">{visible.length}</span> strategies in this lane
+            </div>
+          </div>
+
+          <div className="border-b border-emerald-400/15 pb-2">
+            <div className="flex flex-nowrap gap-2 overflow-x-auto whitespace-nowrap pr-2 [-ms-overflow-style:none] [scrollbar-width:none] [&::-webkit-scrollbar]:hidden">
+              {tabs.map(([id, label]) => (
+                <button
+                  key={id}
+                  type="button"
+                  onClick={() => setActiveTab(id)}
+                  className={`shrink-0 rounded-xl px-4 py-2 text-sm font-semibold transition ${
+                    activeTab === id
+                      ? "border border-emerald-400/40 bg-emerald-500/15 text-emerald-200 shadow-[0_0_20px_rgba(16,185,129,0.12)]"
+                      : "border border-transparent text-slate-400 hover:border-white/10 hover:bg-white/[0.04] hover:text-slate-200"
+                  }`}
+                >
+                  {label}
+                </button>
+              ))}
+            </div>
+          </div>
+
+          <div className="mt-4 space-y-4">
+            {visible.length > 0 ? (
+              visible.map((strategy) =>
+                strategy.readiness === "ready" ? (
+                  <ReadyStrategyCard key={strategy.name} strategy={strategy} />
+                ) : (
+                  <NotReadyStrategyCard key={strategy.name} strategy={strategy} />
+                )
+              )
+            ) : (
+              <div className="rounded-xl border border-amber-500/30 bg-amber-500/10 p-4 text-sm text-amber-200">
+                No strategies assigned to this stage yet.
+              </div>
+            )}
+          </div>
+        </section>
+
         <section className="rounded-2xl border border-slate-800 bg-slate-950 p-4">
           <div className="mb-3 flex items-center justify-between">
             <h2 className="text-lg font-black tracking-tight text-white">Lifecycle lanes</h2>
@@ -281,28 +369,6 @@ export default function StrategiesPage() {
                 <div className="mt-1 text-[11px] leading-snug text-slate-500 group-hover:text-slate-300">{lane.hint}</div>
               </Link>
             ))}
-          </div>
-        </section>
-
-        <section className="rounded-2xl border border-slate-800 bg-slate-950 p-4">
-          <div className="grid gap-4 xl:grid-cols-2">
-            <div className="space-y-4">
-              <div className="flex items-center gap-3">
-                <span className="h-8 w-1 rounded-full bg-cyan-400" />
-                <h2 className="text-2xl font-black tracking-tight text-white">Ready for Prod</h2>
-                <span className="rounded-full border border-emerald-500/40 bg-emerald-500/10 px-3 py-1 text-xs font-bold text-emerald-300">validated</span>
-              </div>
-              {readyStrategies.map((strategy) => <ReadyStrategyCard key={strategy.name} strategy={strategy} />)}
-            </div>
-
-            <div className="space-y-4">
-              <div className="flex items-center gap-3">
-                <span className="h-8 w-1 rounded-full bg-amber-400" />
-                <h2 className="text-2xl font-black tracking-tight text-white">Not Ready for Prod</h2>
-                <span className="rounded-full border border-amber-500/40 bg-amber-500/10 px-3 py-1 text-xs font-bold text-amber-300">candidate/testing</span>
-              </div>
-              {notReadyStrategies.map((strategy) => <NotReadyStrategyCard key={strategy.name} strategy={strategy} />)}
-            </div>
           </div>
         </section>
 

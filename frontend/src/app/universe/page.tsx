@@ -2,7 +2,7 @@
 
 import { useEffect, useState } from "react";
 import { PageHeader, MetricCard } from "@/components/Cards";
-import { api, type UpperWorkflowResponse, type UniverseSelectionCandidate, type CadencePlan, type TriggerRule } from "@/lib/api";
+import { api, type UpperWorkflowResponse, type UniverseDiscoverResponse, type UniverseDiscoveryCandidate, type UniverseSelectionCandidate, type CadencePlan, type TriggerRule } from "@/lib/api";
 import { Play, Globe, Target, ListFilter, TrendingUp, AlertTriangle, CheckCircle, XCircle, Clock, ArrowRight, Radar, Activity, Zap } from "lucide-react";
 import Link from "next/link";
 
@@ -66,8 +66,24 @@ export default function UniversePage() {
   const [isRunning, setIsRunning] = useState(false);
   const [isPromoting, setIsPromoting] = useState(false);
   const [latestRun, setLatestRun] = useState<UpperWorkflowResponse | null>(null);
+  const [latestDiscovery, setLatestDiscovery] = useState<UniverseDiscoverResponse | null>(null);
+  const [isDiscovering, setIsDiscovering] = useState(false);
   const [error, setError] = useState<string | null>(null);
   const [successMessage, setSuccessMessage] = useState<string | null>(null);
+
+  // Discovery Mode
+  const [discoveryGroups, setDiscoveryGroups] = useState<Record<string, boolean>>({
+    premarket_gap_momentum: false,
+    opening_range_breakout_group: true,
+    high_rvol_momentum_group: true,
+    vwap_reclaim_group: true,
+    breakout_retest_group: false,
+    relative_strength_rotation_group: true,
+    mean_reversion_range_group: false,
+    etf_stock_lag_group: false,
+    earnings_news_drift_group: false,
+    low_float_breakout_group: false,
+  });
 
   const loadLatestRun = async () => {
     try {
@@ -140,6 +156,50 @@ export default function UniversePage() {
       setError(err instanceof Error ? err.message : "Failed to run workflow");
     } finally {
       setIsRunning(false);
+    }
+  };
+
+  const handleRunDiscovery = async () => {
+    setIsDiscovering(true);
+    setError(null);
+    setSuccessMessage(null);
+
+    try {
+      const symbols = symbolsInput
+        .split(/[\n,]+/)
+        .map((s) => s.trim().toUpperCase())
+        .filter((s) => s.length > 0);
+
+      if (symbols.length === 0) {
+        setError("Please enter at least one symbol");
+        setIsDiscovering(false);
+        return;
+      }
+
+      const groups = Object.entries(discoveryGroups)
+        .filter(([, enabled]) => enabled)
+        .map(([key]) => key);
+
+      const response = await api.runUniverseDiscovery({
+        symbols,
+        asset_class: assetClass,
+        horizon,
+        market_phase: "auto",
+        scanner_groups: groups,
+        source,
+        allow_mock: includeMock,
+        small_account_mode: true,
+        promote_to_candidate_universe: false,
+      });
+
+      setLatestDiscovery(response);
+      setSuccessMessage(
+        `Discovery ${response.status}: ${response.selected_watchlist.length} selected, ${response.rejected_candidates.length} rejected, ${response.research_only_candidates.length} research-only`
+      );
+    } catch (err) {
+      setError(err instanceof Error ? err.message : "Failed to run universe discovery");
+    } finally {
+      setIsDiscovering(false);
     }
   };
 
@@ -368,6 +428,112 @@ export default function UniversePage() {
             View Candidates
           </Link>
         </div>
+      </div>
+
+      {/* Discovery Mode */}
+      <div className="mb-6 rounded-xl border border-slate-700 bg-slate-900/50 p-4">
+        <h3 className="mb-2 text-sm font-bold uppercase text-slate-300">Discovery Mode (new)</h3>
+        <p className="mb-4 text-sm text-slate-400">
+          Generates strategy-mapped watchlist candidates with TTL and trigger rules. Discovery is always watchlist-only (execution is blocked by design).
+        </p>
+
+        <div className="grid grid-cols-1 gap-2 md:grid-cols-2">
+          {[
+            ["premarket_gap_momentum", "Pre-market Gap Momentum"],
+            ["opening_range_breakout_group", "Opening Range Breakout"],
+            ["high_rvol_momentum_group", "High RVOL Momentum"],
+            ["vwap_reclaim_group", "VWAP Reclaim"],
+            ["breakout_retest_group", "Breakout Retest"],
+            ["relative_strength_rotation_group", "Relative Strength Rotation"],
+            ["mean_reversion_range_group", "Mean Reversion Range"],
+            ["etf_stock_lag_group", "ETF/Stock Lag"],
+            ["earnings_news_drift_group", "Earnings/News Drift"],
+            ["low_float_breakout_group", "Low Float Breakout (research-only)"],
+          ].map(([key, label]) => (
+            <label key={key} className="flex items-center gap-3 rounded-lg border border-slate-800 bg-slate-950 px-3 py-2 text-sm text-slate-200">
+              <input
+                type="checkbox"
+                checked={Boolean(discoveryGroups[key])}
+                onChange={(e) => setDiscoveryGroups((prev) => ({ ...prev, [key]: e.target.checked }))}
+              />
+              <span>{label}</span>
+            </label>
+          ))}
+        </div>
+
+        <div className="mt-4 flex flex-wrap items-center gap-3">
+          <button
+            onClick={handleRunDiscovery}
+            disabled={isDiscovering}
+            className={`flex items-center gap-2 rounded-xl px-4 py-2 text-sm font-bold uppercase transition-all ${
+              isDiscovering
+                ? "cursor-not-allowed border border-slate-600 bg-slate-800 text-slate-500"
+                : "border border-sky-400/40 bg-sky-500/10 text-sky-300 hover:bg-sky-500 hover:text-slate-950"
+            }`}
+          >
+            {isDiscovering ? (
+              <>
+                <div className="h-4 w-4 animate-spin rounded-full border-2 border-sky-400 border-t-transparent" />
+                Discovering...
+              </>
+            ) : (
+              <>
+                <Radar className="h-4 w-4" />
+                Run Universe Discovery
+              </>
+            )}
+          </button>
+          <span className="text-xs text-slate-500">API: /api/universe/discover</span>
+        </div>
+
+        {latestDiscovery && (
+          <div className="mt-4 rounded-xl border border-slate-800 bg-slate-950 p-4">
+            <div className="mb-2 flex flex-wrap items-center justify-between gap-3">
+              <div className="flex items-center gap-3">
+                <span className="text-xs font-bold uppercase text-slate-500">Discovery</span>
+                {phaseBadge(latestDiscovery.market_phase)}
+                <span className="text-xs text-slate-400">{latestDiscovery.status}</span>
+              </div>
+              <span className="text-xs text-slate-500">Created {formatDate(latestDiscovery.created_at)}</span>
+            </div>
+
+            <div className="grid grid-cols-3 gap-3">
+              <MetricCard label="Selected" value={latestDiscovery.selected_watchlist.length} accent />
+              <MetricCard label="Rejected" value={latestDiscovery.rejected_candidates.length} />
+              <MetricCard label="Research-only" value={latestDiscovery.research_only_candidates.length} />
+            </div>
+
+            {latestDiscovery.selected_watchlist.length > 0 && (
+              <div className="mt-4 overflow-x-auto">
+                <table className="w-full text-left text-sm">
+                  <thead className="text-xs uppercase text-slate-500">
+                    <tr>
+                      <th className="py-2 pr-3">Symbol</th>
+                      <th className="py-2 pr-3">Group</th>
+                      <th className="py-2 pr-3">Strategy</th>
+                      <th className="py-2 pr-3">Score</th>
+                      <th className="py-2 pr-3">TTL</th>
+                      <th className="py-2 pr-3">Execution</th>
+                    </tr>
+                  </thead>
+                  <tbody className="text-slate-200">
+                    {latestDiscovery.selected_watchlist.slice(0, 12).map((c: UniverseDiscoveryCandidate) => (
+                      <tr key={`${c.symbol}-${c.scanner_group}`} className="border-t border-slate-800">
+                        <td className="py-2 pr-3 font-semibold">{c.symbol}</td>
+                        <td className="py-2 pr-3 text-slate-400">{c.scanner_group.replace(/_/g, " ")}</td>
+                        <td className="py-2 pr-3 text-slate-300">{c.strategy_key}</td>
+                        <td className="py-2 pr-3">{scoreBadge(c.universe_score)}</td>
+                        <td className="py-2 pr-3 text-slate-400">{c.watchlist_ttl_minutes}m</td>
+                        <td className="py-2 pr-3 text-rose-300">blocked</td>
+                      </tr>
+                    ))}
+                  </tbody>
+                </table>
+                <p className="mt-2 text-xs text-slate-500">Showing top 12 selected. Triggers and invalidations are included in the API payload for each candidate.</p>
+              </div>
+            )}
+          </div>
+        )}
       </div>
 
       {/* Latest Run Results */}

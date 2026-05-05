@@ -1520,6 +1520,44 @@ export type UniverseSelectionResponse = {
   duration_ms: number;
 };
 
+export type UniverseDiscoveryCandidate = {
+  symbol: string;
+  strategy_key: string;
+  scanner_group: string;
+  universe_score: number;
+  market_phase: string;
+  expected_direction: "long" | "short" | "neutral";
+  watchlist_ttl_minutes: number;
+  trigger_condition: string;
+  invalidation_condition: string;
+  reasons: string[];
+  blockers: string[];
+  warnings: string[];
+  data_quality: string;
+  execution_allowed: false;
+  research_only: boolean;
+  signal_strength: number;
+  volume_score: number;
+  liquidity_score: number;
+  timing_fit: number;
+  risk_fit: number;
+  data_quality_score: number;
+  spread_percent?: number | null;
+};
+
+export type UniverseDiscoverResponse = {
+  run_id: string;
+  status: "completed" | "partial" | "blocked";
+  market_phase: string;
+  scanner_groups_run: string[];
+  selected_watchlist: UniverseDiscoveryCandidate[];
+  rejected_candidates: UniverseDiscoveryCandidate[];
+  research_only_candidates: UniverseDiscoveryCandidate[];
+  blockers: string[];
+  warnings: string[];
+  created_at: string;
+};
+
 export type DataFreshnessSymbolResult = {
   symbol: string;
   provider: string;
@@ -2321,6 +2359,10 @@ export const api = {
   getUniverseSelectionRuns: (limit = 20) => request<{ runs: UniverseSelectionResponse[]; count: number; total_available: number }>(`/api/universe-selection/runs?limit=${limit}`),
   promoteLatestUniverseSelectionToCandidates: () =>
     request<{ success: boolean; message: string; promoted_count: number; promoted_symbols: string[]; source_run_id?: string }>("/api/universe-selection/promote-latest-to-candidates", { method: "POST" }),
+
+  // Universe Discovery APIs
+  runUniverseDiscovery: (payload: { symbols: string[]; asset_class?: string; horizon?: string; market_phase?: string; scanner_groups?: string[]; source?: string; allow_mock?: boolean; small_account_mode?: boolean; promote_to_candidate_universe?: boolean }) =>
+    request<UniverseDiscoverResponse>("/api/universe/discover", { method: "POST", body: JSON.stringify(payload) }),
 
   // Runtime/Timing APIs
   getRuntimePhase: () => request<{ market_phase: string; current_time_et: string; is_trading_day: boolean; live_trading_allowed: boolean; human_approval_required: boolean; timestamp: string }>("/api/runtime/phase"),

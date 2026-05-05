@@ -1,6 +1,6 @@
 "use client";
 
-import { useEffect, useState } from "react";
+import { Suspense, useEffect, useState } from "react";
 import Link from "next/link";
 import { useSearchParams } from "next/navigation";
 import { 
@@ -23,7 +23,9 @@ import {
   Settings as SettingsIcon, Activity as ActivityIcon
 } from "lucide-react";
 
-export default function SettingsPage() {
+export const dynamic = "force-dynamic";
+
+function SettingsPageInner() {
   const searchParams = useSearchParams();
   const [settings, setSettings] = useState<SettingsResponse | null>(null);
   const [alpaca, setAlpaca] = useState<AlpacaPaperSnapshot | null>(null);
@@ -874,6 +876,14 @@ export default function SettingsPage() {
         )}
       </div>
     </div>
+  );
+}
+
+export default function SettingsPage() {
+  return (
+    <Suspense fallback={<div className="w-full min-h-full p-4 lg:p-8 text-sm text-slate-300">Loading settings...</div>}>
+      <SettingsPageInner />
+    </Suspense>
   );
 }
 

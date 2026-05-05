@@ -54,6 +54,7 @@ from app.api.routes.strategy_workflows import router as strategy_workflows_route
 from app.api.routes.trade_quality import router as trade_quality_router
 from app.api.routes.tradenow import router as tradenow_router
 from app.api.routes.trigger_rules import router as trigger_rules_router
+from app.api.routes.universe_discovery import router as universe_discovery_router
 from app.api.routes.universe_selection import router as universe_selection_router
 from app.api.routes.upper_workflow import router as upper_workflow_router
 from app.api.routes.watchlists import router as watchlists_router
@@ -145,6 +146,7 @@ app.include_router(memory_router, prefix="/api")
 app.include_router(decision_workflows_router, prefix="/api")
 app.include_router(candidate_universe_router, prefix="/api")
 app.include_router(runtime_router, prefix="/api")
+app.include_router(universe_discovery_router, prefix="/api")
 app.include_router(universe_selection_router, prefix="/api")
 app.include_router(data_freshness_router, prefix="/api")
 app.include_router(market_regime_model_router, prefix="/api")
