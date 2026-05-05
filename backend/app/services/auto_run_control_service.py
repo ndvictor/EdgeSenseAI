@@ -1,5 +1,7 @@
 from pydantic import BaseModel
 
+from app.core.effective_runtime import effective_bool, effective_float, effective_int
+from app.core.runtime_settings_store import load_runtime_settings, save_runtime_settings
 from app.core.settings import settings
 
 
@@ -23,35 +25,45 @@ class AutoRunControlUpdate(BaseModel):
     max_daily_llm_cost: float | None = None
 
 
-_STATE = AutoRunControlState(
-    auto_run_enabled=False,
-    live_trading_enabled=settings.live_trading_enabled,
-    paper_trading_enabled=settings.paper_trading_enabled,
-    require_human_approval=settings.require_human_approval,
-    max_daily_agent_runs=settings.max_daily_agent_runs,
-    max_daily_llm_cost=float(settings.max_daily_llm_cost),
-)
+# In-memory: only auto_run flag (not persisted in runtime_settings.json historically)
+_STATE_AUTO_RUN = False
 
 
 def get_auto_run_state() -> AutoRunControlState:
-    return _STATE
+    return AutoRunControlState(
+        auto_run_enabled=_STATE_AUTO_RUN,
+        live_trading_enabled=effective_bool("LIVE_TRADING_ENABLED"),
+        paper_trading_enabled=effective_bool("PAPER_TRADING_ENABLED"),
+        require_human_approval=effective_bool("REQUIRE_HUMAN_APPROVAL"),
+        max_daily_agent_runs=effective_int("MAX_DAILY_AGENT_RUNS"),
+        max_daily_llm_cost=effective_float("MAX_DAILY_LLM_COST"),
+    )
 
 
 def update_auto_run_state(update: AutoRunControlUpdate) -> AutoRunControlState:
-    global _STATE
-    current = _STATE.model_copy()
+    global _STATE_AUTO_RUN
+    current = load_runtime_settings()
     if update.auto_run_enabled is not None:
-        current.auto_run_enabled = update.auto_run_enabled
+        _STATE_AUTO_RUN = update.auto_run_enabled
     if update.live_trading_enabled is not None:
-        current.live_trading_enabled = bool(update.live_trading_enabled and settings.live_trading_enabled)
+        current["LIVE_TRADING_ENABLED"] = bool(update.live_trading_enabled and settings.live_trading_enabled)
     if update.paper_trading_enabled is not None:
-        current.paper_trading_enabled = update.paper_trading_enabled
+        current["PAPER_TRADING_ENABLED"] = update.paper_trading_enabled
     if update.require_human_approval is not None:
-        current.require_human_approval = update.require_human_approval or settings.require_human_approval
+        current["REQUIRE_HUMAN_APPROVAL"] = update.require_human_approval or settings.require_human_approval
     if update.max_daily_agent_runs is not None:
-        current.max_daily_agent_runs = max(1, update.max_daily_agent_runs)
+        current["MAX_DAILY_AGENT_RUNS"] = max(1, update.max_daily_agent_runs)
     if update.max_daily_llm_cost is not None:
-        current.max_daily_llm_cost = max(0.0, update.max_daily_llm_cost)
-    current.status = "configured"
-    _STATE = current
-    return _STATE
+        current["MAX_DAILY_LLM_COST"] = max(0.0, update.max_daily_llm_cost)
+    if any(
+        v is not None
+        for v in (
+            update.live_trading_enabled,
+            update.paper_trading_enabled,
+            update.require_human_approval,
+            update.max_daily_agent_runs,
+            update.max_daily_llm_cost,
+        )
+    ):
+        save_runtime_settings(current)
+    return get_auto_run_state()

@@ -5,6 +5,7 @@ from uuid import uuid4
 
 from pydantic import BaseModel, Field
 
+from app.core.effective_runtime import effective_bool
 from app.core.settings import settings
 from app.db.init_db import init_db
 from app.db.models import VectorMemoryRecord
@@ -49,7 +50,7 @@ def _cosine(a: list[float], b: list[float]) -> float:
 
 
 def _persist_memory(memory: MemoryRecord) -> str:
-    if not settings.vector_memory_enabled:
+    if not effective_bool("VECTOR_MEMORY_ENABLED"):
         return "in_memory_fallback"
     init_db()
     session = open_session()
@@ -177,7 +178,7 @@ def create_recommendation_memory(**kwargs: Any) -> MemoryRecord:
 def get_vector_memory_status() -> dict[str, Any]:
     health = check_database_health()
     return {
-        "vector_memory_status": "configured" if settings.vector_memory_enabled else "disabled",
+        "vector_memory_status": "configured" if effective_bool("VECTOR_MEMORY_ENABLED") else "disabled",
         "pgvector_status": health.get("pgvector_status", "unknown"),
         "recent_memory_count": len(_MEMORIES),
         "embedding": get_embedding_status(),

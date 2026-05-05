@@ -6,6 +6,7 @@ from typing import Any, Literal
 import requests
 from pydantic import BaseModel, Field
 
+from app.core.effective_runtime import broker_or_agent_execution_enabled, effective_bool
 from app.core.settings import settings
 
 
@@ -74,15 +75,6 @@ class AlpacaPaperSnapshot(BaseModel):
     last_checked: datetime = Field(default_factory=lambda: datetime.now(timezone.utc))
 
 
-def _env_bool(name: str, default: bool = False) -> bool:
-    import os
-
-    value = os.getenv(name)
-    if value is None:
-        return default
-    return value.strip().lower() in {"1", "true", "yes", "on"}
-
-
 def _alpaca_key_id() -> str:
     import os
 
@@ -113,10 +105,6 @@ def _paper_base_url() -> str:
         or os.getenv("APCA_API_BASE_URL")
         or "https://paper-api.alpaca.markets"
     ).rstrip("/")
-
-
-def _broker_execution_enabled() -> bool:
-    return _env_bool("BROKER_EXECUTION_ENABLED", settings.execution_agent_enabled)
 
 
 def _headers() -> dict[str, str]:
@@ -194,9 +182,9 @@ def _order(payload: dict[str, Any]) -> AlpacaPaperOrder:
 def get_alpaca_paper_snapshot() -> AlpacaPaperSnapshot:
     endpoint = _paper_base_url()
     keys_configured = bool(_alpaca_key_id() and _alpaca_secret_key())
-    paper_enabled = _env_bool("PAPER_TRADING_ENABLED", settings.paper_trading_enabled)
-    live_enabled = _env_bool("LIVE_TRADING_ENABLED", settings.live_trading_enabled)
-    broker_enabled = _broker_execution_enabled()
+    paper_enabled = effective_bool("PAPER_TRADING_ENABLED")
+    live_enabled = effective_bool("LIVE_TRADING_ENABLED")
+    broker_enabled = broker_or_agent_execution_enabled()
     warnings = [
         "This endpoint reads Alpaca paper account state only.",
         "Live trading remains disabled unless LIVE_TRADING_ENABLED is explicitly true.",

@@ -4,6 +4,7 @@ from uuid import uuid4
 
 from pydantic import BaseModel, ConfigDict, Field
 
+from app.core.effective_runtime import effective_bool, effective_float, effective_str
 from app.core.settings import settings
 from app.services.persistence_service import save_llm_usage_record
 
@@ -181,19 +182,19 @@ _SETTING_BY_ENV = {
 
 
 def _daily_budget() -> float:
-    return float(settings.llm_gateway_daily_budget)
+    return effective_float("LLM_GATEWAY_DAILY_BUDGET")
 
 
 def _cheap_model() -> str:
-    return settings.llm_gateway_default_cheap_model or "gpt-4o-mini"
+    return effective_str("LLM_GATEWAY_DEFAULT_CHEAP_MODEL") or "gpt-4o-mini"
 
 
 def _reasoning_model() -> str:
-    return settings.llm_gateway_default_reasoning_model or "gpt-4o"
+    return effective_str("LLM_GATEWAY_DEFAULT_REASONING_MODEL") or "gpt-4o"
 
 
 def _fallback_model() -> str:
-    return settings.llm_gateway_default_fallback_model or "local-placeholder"
+    return effective_str("LLM_GATEWAY_DEFAULT_FALLBACK_MODEL") or "local-placeholder"
 
 
 def _litellm_available() -> bool:
@@ -397,7 +398,7 @@ def test_gateway_call(request: LlmGatewayTestCallRequest) -> LlmGatewayTestCallR
             completion_tokens=40,
         )
     )
-    paid_tests_enabled = settings.llm_gateway_enable_paid_tests
+    paid_tests_enabled = effective_bool("LLM_GATEWAY_ENABLE_PAID_TESTS")
     dry_run = not (request.allow_paid_call and paid_tests_enabled)
     warnings: list[str] = []
     if request.allow_paid_call and not paid_tests_enabled:
@@ -504,10 +505,10 @@ def run_llm_gateway_call(
     elif estimate.estimated_cost > rule.max_cost_per_call:
         blocked_reason = "max_cost_per_call_would_be_exceeded"
         status = "blocked_cost_limit"
-    elif allow_paid_call and not settings.llm_gateway_enable_paid_tests:
+    elif allow_paid_call and not effective_bool("LLM_GATEWAY_ENABLE_PAID_TESTS"):
         blocked_reason = "paid_calls_disabled_by_gateway_policy"
         status = "blocked_by_gateway_policy"
-    elif allow_paid_call and settings.llm_gateway_enable_paid_tests:
+    elif allow_paid_call and effective_bool("LLM_GATEWAY_ENABLE_PAID_TESTS"):
         dry_run = False
         status = "paid_call_completed"
 

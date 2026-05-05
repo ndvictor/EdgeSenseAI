@@ -1,5 +1,6 @@
 from datetime import datetime
 
+from app.core.effective_runtime import effective_bool
 from app.core.settings import settings
 from app.services.embedding_service import get_embedding_status
 from app.services.persistence_service import get_persistence_status
@@ -22,10 +23,10 @@ def get_health_snapshot() -> dict:
         "redis_configured": bool(settings.redis_url),
         "market_data_provider": settings.market_data_provider,
         "market_data_provider_priority": settings.market_data_provider_priority,
-        "live_trading_enabled": settings.live_trading_enabled,
-        "paper_trading_enabled": settings.paper_trading_enabled,
-        "execution_agent_enabled": settings.execution_agent_enabled,
-        "require_human_approval": settings.require_human_approval,
+        "live_trading_enabled": effective_bool("LIVE_TRADING_ENABLED"),
+        "paper_trading_enabled": effective_bool("PAPER_TRADING_ENABLED"),
+        "execution_agent_enabled": effective_bool("EXECUTION_AGENT_ENABLED"),
+        "require_human_approval": effective_bool("REQUIRE_HUMAN_APPROVAL"),
         "backend_port": 8900,
         "frontend_port": 3900,
         "timestamp": datetime.utcnow().isoformat(),

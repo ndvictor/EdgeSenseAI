@@ -20,4 +20,17 @@ if [[ -z "${ALPACA_API_KEY}" || -z "${ALPACA_SECRET_KEY}" ]]; then
   exit 1
 fi
 
+# Check if stdin is a terminal or closed (nohup/background)
+if [[ ! -t 0 ]]; then
+  # Stdin is closed (nohup/background) - provide dummy input
+  exec 0< <(tail -f /dev/null)
+fi
+
+# Show warning if running interactively
+if [[ -t 0 ]]; then
+  echo "⚠️  WARNING: MCP server is running. DO NOT TYPE in this terminal!"
+  echo "   Use Ctrl+C to stop. Open a new terminal for commands."
+  echo ""
+fi
+
 exec uvx alpaca-mcp-server

@@ -5,6 +5,7 @@ from typing import List, Optional
 from fastapi import APIRouter
 from pydantic import BaseModel
 
+from app.core.effective_runtime import effective_bool
 from app.core.settings import settings
 from app.services.persistence_service import get_database_table_status, get_persistence_status
 
@@ -195,9 +196,9 @@ def get_data_sources_status():
         "alpha_vantage": _env_status(settings.alpha_vantage_key, "ALPHA_VANTAGE_KEY is set.", "Alpha Vantage is not configured."),
         "iex": _env_status(settings.iex_cloud_key, "IEX_CLOUD_KEY is set.", "IEX Cloud is not configured."),
         "fred": _env_status(settings.fred_api_key, "FRED_API_KEY is set.", "FRED is not configured."),
-        "newsapi": _env_status(settings.news_api_key if settings.news_provider_enabled else "", "NEWS_API_KEY is set.", "NewsAPI is not configured or disabled."),
-        "finnhub": _env_status(settings.finnhub_api_key if settings.news_provider_enabled else "", "FINNHUB_API_KEY is set.", "Finnhub is not configured or disabled."),
-        "benzinga": _env_status(settings.benzinga_api_key if settings.news_provider_enabled else "", "BENZINGA_API_KEY is set.", "Benzinga is not configured or disabled."),
+        "newsapi": _env_status(settings.news_api_key if effective_bool("NEWS_PROVIDER_ENABLED") else "", "NEWS_API_KEY is set.", "NewsAPI is not configured or disabled."),
+        "finnhub": _env_status(settings.finnhub_api_key if effective_bool("NEWS_PROVIDER_ENABLED") else "", "FINNHUB_API_KEY is set.", "Finnhub is not configured or disabled."),
+        "benzinga": _env_status(settings.benzinga_api_key if effective_bool("NEWS_PROVIDER_ENABLED") else "", "BENZINGA_API_KEY is set.", "Benzinga is not configured or disabled."),
         "openai": _env_status(settings.openai_api_key, "OPENAI_API_KEY is set.", "OpenAI is not configured."),
         "postgresql": {
             "status": persistence["postgres_persistence_status"],
@@ -269,15 +270,15 @@ def get_data_sources_status():
             name="Paper Trading Engine",
             key="paper_trading",
             type="internal",
-            status="configured" if settings.paper_trading_enabled else "not_configured",
-            configured=settings.paper_trading_enabled,
-            connected=settings.paper_trading_enabled,
+            status="configured" if effective_bool("PAPER_TRADING_ENABLED") else "not_configured",
+            configured=effective_bool("PAPER_TRADING_ENABLED"),
+            connected=effective_bool("PAPER_TRADING_ENABLED"),
             configured_label="Feature flag",
-            connection_label="Enabled" if settings.paper_trading_enabled else "Disabled",
+            connection_label="Enabled" if effective_bool("PAPER_TRADING_ENABLED") else "Disabled",
             used_for=["paper_trading", "outcome_labels"],
             required_for=["paper_trading_feedback_loop"],
             last_checked=now,
-            message="Paper trading is enabled." if settings.paper_trading_enabled else "Paper trading is disabled.",
+            message="Paper trading is enabled." if effective_bool("PAPER_TRADING_ENABLED") else "Paper trading is disabled.",
         )
     )
 

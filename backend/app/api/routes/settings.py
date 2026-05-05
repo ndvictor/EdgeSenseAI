@@ -3,82 +3,15 @@
 Allows reading and updating runtime settings via the UI without restarting.
 """
 
-import json
-import os
-from pathlib import Path
 from typing import Any
 
 from fastapi import APIRouter, HTTPException
 from pydantic import BaseModel
 
+from app.core.runtime_settings_store import load_runtime_settings, save_runtime_settings
 from app.core.settings import settings
 
 router = APIRouter()
-
-# Settings that can be toggled at runtime
-RUNTIME_SETTINGS_FILE = Path(__file__).parent.parent.parent.parent / "runtime_settings.json"
-
-DEFAULT_RUNTIME_SETTINGS = {
-    # Trading Settings
-    "PAPER_TRADING_ENABLED": True,
-    "LIVE_TRADING_ENABLED": False,
-    "BROKER_EXECUTION_ENABLED": False,
-    "REQUIRE_HUMAN_APPROVAL": True,
-    "EXECUTION_MODE": "dry_run",
-    "EXECUTION_AGENT_ENABLED": False,
-    "PAPER_STARTING_CASH": 100000.0,
-    "BROKER_PROVIDER": "alpaca",
-    "ALPACA_PAPER_TRADE": True,
-    
-    # Platform Features
-    "LANGSMITH_TRACING": True,
-    "VECTOR_MEMORY_ENABLED": True,
-    
-    # LLM Gateway Settings
-    "LLM_GATEWAY_ENABLE_PAID_TESTS": False,
-    "LLM_GATEWAY_DAILY_BUDGET": 10.0,
-    "LLM_GATEWAY_DEFAULT_CHEAP_MODEL": "gpt-4o-mini",
-    "LLM_GATEWAY_DEFAULT_REASONING_MODEL": "gpt-4o",
-    "LLM_GATEWAY_DEFAULT_FALLBACK_MODEL": "local-placeholder",
-    "EMBEDDINGS_ENABLE_PAID_CALLS": False,
-    
-    # Market Data Settings
-    "MARKET_DATA_PROVIDER": "mock",
-    "MARKET_DATA_PROVIDER_PRIORITY": "alpaca,yfinance,mock",
-    "MARKET_DATA_PROVIDER_TIMEOUT_SECONDS": 10,
-    "ALPACA_MARKET_DATA_ENABLED": False,
-    
-    # News Settings
-    "NEWS_PROVIDER_ENABLED": False,
-    "NEWS_PROVIDER_PRIMARY": "none",
-    "NEWS_PROVIDER_TIMEOUT_SECONDS": 10,
-    
-    # Rate Limits
-    "MAX_DAILY_LLM_COST": 10,
-    "MAX_DAILY_AGENT_RUNS": 500,
-}
-
-
-def load_runtime_settings() -> dict[str, Any]:
-    """Load runtime settings from file, falling back to env defaults."""
-    if RUNTIME_SETTINGS_FILE.exists():
-        try:
-            with open(RUNTIME_SETTINGS_FILE, "r") as f:
-                stored = json.load(f)
-                # Merge with defaults for any missing keys
-                return {**DEFAULT_RUNTIME_SETTINGS, **stored}
-        except (json.JSONDecodeError, IOError):
-            pass
-    return DEFAULT_RUNTIME_SETTINGS.copy()
-
-
-def save_runtime_settings(settings_dict: dict[str, Any]) -> None:
-    """Save runtime settings to file."""
-    try:
-        with open(RUNTIME_SETTINGS_FILE, "w") as f:
-            json.dump(settings_dict, f, indent=2)
-    except IOError as e:
-        raise HTTPException(status_code=500, detail=f"Failed to save settings: {e}")
 
 
 class TradingSettings(BaseModel):

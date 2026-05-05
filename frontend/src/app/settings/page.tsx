@@ -296,7 +296,7 @@ export default function SettingsPage() {
         <PageHeader
           eyebrow="Platform Configuration"
           title="Settings"
-          description="Manage all platform settings centrally. Changes are saved to runtime_settings.json and take effect immediately. All settings require manual approval via code."
+          description="Manage platform runtime settings. Values are saved to runtime_settings.json on the backend and drive trading gates, LLM policy, market data selection, and integrations. Live trading stays locked unless human approval is required."
         />
 
         {error && (
@@ -354,10 +354,10 @@ export default function SettingsPage() {
               href="/strategies" 
               icon={Brain}
               settings={[
-                { label: "Strategy Lab", enabled: settings.trading.execution_agent_enabled },
-                { label: "Model Registry", enabled: settings.platform.vector_memory_enabled },
-                { label: "LLM Gateway", enabled: settings.llm_gateway.llm_gateway_enabled },
-                { label: "LangSmith Tracing", enabled: settings.platform.langsmith_tracing },
+                { label: "Execution agent", enabled: settings.trading.execution_agent_enabled },
+                { label: "Vector memory", enabled: settings.platform.vector_memory_enabled },
+                { label: "LLM paid tests", enabled: settings.llm_gateway.llm_gateway_enable_paid_tests },
+                { label: "LangSmith tracing", enabled: settings.platform.langsmith_tracing },
               ]}
             />
 
@@ -367,10 +367,10 @@ export default function SettingsPage() {
               href="/signals" 
               icon={Radar}
               settings={[
-                { label: "Signals", enabled: settings.trading.execution_agent_enabled },
-                { label: "Recommendations", enabled: settings.trading.execution_agent_enabled },
-                { label: "Live Watchlist", enabled: settings.market_data.alpaca_market_data_enabled },
-                { label: "Edge Signals", enabled: settings.trading.execution_agent_enabled },
+                { label: "Alpaca market data", enabled: settings.market_data.alpaca_market_data_enabled },
+                { label: "Execution agent", enabled: settings.trading.execution_agent_enabled },
+                { label: "LLM paid tests", enabled: settings.llm_gateway.llm_gateway_enable_paid_tests },
+                { label: "News provider", enabled: settings.news.news_provider_enabled },
               ]}
             />
 
@@ -380,10 +380,10 @@ export default function SettingsPage() {
               href="/ai-ops" 
               icon={BrainCircuit}
               settings={[
-                { label: "LLM Gateway", enabled: settings.llm_gateway.llm_gateway_enabled },
-                { label: "Vector Memory", enabled: settings.platform.vector_memory_enabled },
-                { label: "LangSmith Tracing", enabled: settings.platform.langsmith_tracing },
-                { label: "Execution Agent", enabled: settings.trading.execution_agent_enabled },
+                { label: "LLM paid tests", enabled: settings.llm_gateway.llm_gateway_enable_paid_tests },
+                { label: "Embedding paid calls", enabled: settings.llm_gateway.embeddings_enable_paid_calls },
+                { label: "Vector memory", enabled: settings.platform.vector_memory_enabled },
+                { label: "LangSmith tracing", enabled: settings.platform.langsmith_tracing },
               ]}
             />
 
@@ -393,10 +393,10 @@ export default function SettingsPage() {
               href="/data-sources" 
               icon={DatabaseZap}
               settings={[
-                { label: "Alpaca Market Data", enabled: settings.market_data.alpaca_market_data_enabled },
-                { label: "News Provider", enabled: settings.news.news_provider_enabled },
-                { label: "LLM Gateway", enabled: settings.llm_gateway.llm_gateway_enabled },
-                { label: "Vector Memory", enabled: settings.platform.vector_memory_enabled },
+                { label: "Alpaca market data", enabled: settings.market_data.alpaca_market_data_enabled },
+                { label: "News provider", enabled: settings.news.news_provider_enabled },
+                { label: "LLM paid tests", enabled: settings.llm_gateway.llm_gateway_enable_paid_tests },
+                { label: "Vector memory", enabled: settings.platform.vector_memory_enabled },
               ]}
             />
 

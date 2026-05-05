@@ -7,6 +7,8 @@ import os
 from datetime import datetime, timezone
 from typing import Any
 
+from app.core.effective_runtime import effective_bool
+
 # Lazy import - no hard dependency on langsmith
 _LANGSMITH_AVAILABLE = None
 
@@ -23,8 +25,7 @@ def _is_langsmith_available() -> bool:
 
 def is_tracing_enabled() -> bool:
     """Check if LangSmith tracing is enabled."""
-    tracing_env = os.environ.get("LANGSMITH_TRACING", "").lower()
-    if tracing_env not in ("true", "1", "yes"):
+    if not effective_bool("LANGSMITH_TRACING"):
         return False
     if not os.environ.get("LANGSMITH_API_KEY"):
         return False
@@ -35,7 +36,7 @@ def is_tracing_enabled() -> bool:
 
 def get_tracing_status() -> dict[str, Any]:
     """Get detailed tracing status without exposing secrets."""
-    tracing = os.environ.get("LANGSMITH_TRACING", "").lower() in ("true", "1", "yes")
+    tracing = effective_bool("LANGSMITH_TRACING")
     api_key_set = bool(os.environ.get("LANGSMITH_API_KEY"))
     project_set = bool(os.environ.get("LANGSMITH_PROJECT"))
     langsmith_installed = _is_langsmith_available()

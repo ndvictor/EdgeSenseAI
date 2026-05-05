@@ -8,6 +8,7 @@ from uuid import uuid4
 import requests
 from pydantic import BaseModel, Field
 
+from app.core.effective_runtime import broker_or_agent_execution_enabled, effective_bool
 from app.core.settings import settings
 
 
@@ -170,9 +171,9 @@ def _refresh_config() -> TradeNowConfig:
     secret = _alpaca_secret_key()
     blockers: list[str] = []
     autonomous_blockers: list[str] = []
-    execution_enabled = _env_bool("BROKER_EXECUTION_ENABLED", settings.execution_agent_enabled)
-    live_enabled = _env_bool("LIVE_TRADING_ENABLED", settings.live_trading_enabled)
-    paper_enabled = _env_bool("PAPER_TRADING_ENABLED", settings.paper_trading_enabled)
+    execution_enabled = broker_or_agent_execution_enabled()
+    live_enabled = effective_bool("LIVE_TRADING_ENABLED")
+    paper_enabled = effective_bool("PAPER_TRADING_ENABLED")
     autonomous_enabled = _env_bool("AUTONOMOUS_EXECUTION_ENABLED", False) or _env_bool("AUTO_TRADE_ENABLED", False)
 
     if not _CONFIG.user_enabled:
@@ -242,7 +243,7 @@ def get_trade_now_config() -> TradeNowConfig:
 def update_trade_now_config(update: TradeNowConfigUpdate) -> TradeNowConfig:
     _CONFIG.user_enabled = update.user_enabled
     _CONFIG.automatic_execution_user_enabled = update.automatic_execution_user_enabled
-    if update.execution_mode == "live" and not _env_bool("LIVE_TRADING_ENABLED", settings.live_trading_enabled):
+    if update.execution_mode == "live" and not effective_bool("LIVE_TRADING_ENABLED"):
         _CONFIG.execution_mode = "disabled"
     else:
         _CONFIG.execution_mode = update.execution_mode
