@@ -75,6 +75,22 @@ class AlpacaPaperSnapshot(BaseModel):
     last_checked: datetime = Field(default_factory=lambda: datetime.now(timezone.utc))
 
 
+class AlpacaPaperPortfolioHistory(BaseModel):
+    provider: str = "alpaca"
+    mode: str = "paper"
+    status: AlpacaConnectionStatus
+    endpoint: str
+    keys_configured: bool
+    period: str
+    timeframe: str
+    timestamps: list[int] = Field(default_factory=list)
+    equity: list[float] = Field(default_factory=list)
+    base_value: float | None = None
+    message: str
+    warnings: list[str] = Field(default_factory=list)
+    last_checked: datetime = Field(default_factory=lambda: datetime.now(timezone.utc))
+
+
 def _alpaca_key_id() -> str:
     import os
 
@@ -275,6 +291,110 @@ def get_alpaca_paper_snapshot() -> AlpacaPaperSnapshot:
             paper_trading_enabled=paper_enabled,
             live_trading_enabled=live_enabled,
             broker_execution_enabled=broker_enabled,
+            message=f"Alpaca returned an invalid response: {exc}",
+            warnings=warnings,
+        )
+
+
+def get_alpaca_paper_portfolio_history(period: str = "3M", timeframe: str = "1D") -> AlpacaPaperPortfolioHistory:
+    """
+    Fetch Alpaca paper account equity curve.
+
+    Alpaca endpoint:
+    GET /v2/account/portfolio/history?period=...&timeframe=...
+    """
+    endpoint = _paper_base_url()
+    keys_configured = bool(_alpaca_key_id() and _alpaca_secret_key())
+    warnings = [
+        "Portfolio history is sourced from Alpaca paper account equity curve.",
+        "Period/timeframe availability depends on Alpaca API support.",
+    ]
+
+    if not keys_configured:
+        return AlpacaPaperPortfolioHistory(
+            status="not_configured",
+            endpoint=endpoint,
+            keys_configured=False,
+            period=period,
+            timeframe=timeframe,
+            message="Alpaca API key and secret are not configured in the backend environment.",
+            warnings=warnings,
+        )
+
+    try:
+        response = requests.get(
+            f"{endpoint}/v2/account/portfolio/history",
+            params={"period": period, "timeframe": timeframe},
+            headers=_headers(),
+            timeout=10,
+        )
+        request_id = response.headers.get("X-Request-ID")
+        if response.status_code >= 400:
+            detail = response.text[:240]
+            if request_id:
+                detail = f"{detail} (request {request_id})"
+            return AlpacaPaperPortfolioHistory(
+                status="unavailable",
+                endpoint=endpoint,
+                keys_configured=True,
+                period=period,
+                timeframe=timeframe,
+                message=f"Alpaca portfolio history request failed with HTTP {response.status_code}: {detail}",
+                warnings=warnings,
+            )
+
+        payload = response.json()
+        timestamps_raw = payload.get("timestamp") or payload.get("timestamps") or []
+        equity_raw = payload.get("equity") or []
+        base_value = _float(payload.get("base_value"))
+
+        timestamps: list[int] = []
+        for t in timestamps_raw:
+            try:
+                timestamps.append(int(t))
+            except (TypeError, ValueError):
+                continue
+
+        equity: list[float] = []
+        for v in equity_raw:
+            fv = _float(v)
+            if fv is not None:
+                equity.append(fv)
+
+        min_len = min(len(timestamps), len(equity))
+        if min_len and (len(timestamps) != min_len or len(equity) != min_len):
+            timestamps = timestamps[:min_len]
+            equity = equity[:min_len]
+
+        return AlpacaPaperPortfolioHistory(
+            status="connected" if min_len else "unavailable",
+            endpoint=endpoint,
+            keys_configured=True,
+            period=period,
+            timeframe=timeframe,
+            timestamps=timestamps,
+            equity=equity,
+            base_value=base_value,
+            message="OK" if min_len else "No equity series returned by Alpaca.",
+            warnings=warnings,
+        )
+    except requests.RequestException as exc:
+        return AlpacaPaperPortfolioHistory(
+            status="unavailable",
+            endpoint=endpoint,
+            keys_configured=True,
+            period=period,
+            timeframe=timeframe,
+            message=f"Alpaca portfolio history is unavailable: {exc}",
+            warnings=warnings,
+        )
+    except ValueError as exc:
+        return AlpacaPaperPortfolioHistory(
+            status="unavailable",
+            endpoint=endpoint,
+            keys_configured=True,
+            period=period,
+            timeframe=timeframe,
             message=f"Alpaca returned an invalid response: {exc}",
             warnings=warnings,
         )

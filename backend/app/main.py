@@ -78,6 +78,8 @@ from app.services.decision_workflow_service import DecisionWorkflowRunRequest, g
 from app.services.edge_signal_service import build_edge_signals
 from app.services.feature_engineering_service import EngineeredFeatures, build_features
 from app.services.health_service import get_health_snapshot
+from app.core.runtime_settings_store import load_runtime_settings
+from app.services.alpaca_paper_account_service import get_alpaca_paper_snapshot
 from app.services.journal_service import JournalSummary, build_journal_summary
 from app.services.live_watchlist_service import build_live_candidates
 from app.services.market_regime_service import MarketRegimeResponse, build_market_regime
@@ -174,6 +176,52 @@ app.include_router(tradenow_router, prefix="/api")
 _ACCOUNT_PROFILE = AccountRiskProfile()
 
 
+def _effective_account_profile() -> AccountRiskProfile:
+    """
+    Build an account profile from:
+    - Alpaca paper snapshot (equity/buying power/cash) when available
+    - runtime_settings.json risk thresholds (min RR, max risk, etc.)
+    Fallbacks to the legacy in-memory `_ACCOUNT_PROFILE` defaults.
+    """
+    runtime = load_runtime_settings()
+
+    # Thresholds from runtime settings (with fallback to current profile defaults)
+    max_risk_per_trade_percent = float(runtime.get("MAX_RISK_PER_TRADE_PERCENT", _ACCOUNT_PROFILE.max_risk_per_trade_percent))
+    max_daily_loss_percent = float(runtime.get("MAX_DAILY_LOSS_PERCENT", _ACCOUNT_PROFILE.max_daily_loss_percent))
+    max_position_size_percent = float(runtime.get("MAX_POSITION_SIZE_PERCENT", _ACCOUNT_PROFILE.max_position_size_percent))
+    min_reward_risk_ratio = float(runtime.get("MIN_REWARD_RISK_RATIO", _ACCOUNT_PROFILE.min_reward_risk_ratio))
+
+    # Account balances from Alpaca when available
+    equity = _ACCOUNT_PROFILE.account_equity
+    buying_power = _ACCOUNT_PROFILE.buying_power
+    cash = _ACCOUNT_PROFILE.cash
+    source = "risk_settings_only"
+    try:
+        snap = get_alpaca_paper_snapshot()
+        if snap.account and snap.status == "connected":
+            equity = snap.account.equity or equity
+            buying_power = snap.account.buying_power or buying_power
+            cash = snap.account.cash or cash
+            source = "alpaca_paper+runtime_settings"
+    except Exception:
+        pass
+
+    return AccountRiskProfile(
+        account_mode=_ACCOUNT_PROFILE.account_mode,
+        account_equity=float(equity or 0),
+        buying_power=float(buying_power or 0),
+        cash=float(cash or 0),
+        max_risk_per_trade_percent=max_risk_per_trade_percent,
+        max_daily_loss_percent=max_daily_loss_percent,
+        max_position_size_percent=max_position_size_percent,
+        min_reward_risk_ratio=min_reward_risk_ratio,
+        preferred_risk_style=_ACCOUNT_PROFILE.preferred_risk_style,
+        paper_only=True,
+        source=source,
+        last_updated=_ACCOUNT_PROFILE.last_updated,
+    )
+
+
 def agents() -> list[AgentStatus]:
     return [
         AgentStatus(name="Data Quality Agent", role="data_quality", status="source_backed", status_label="Checking source quality"),
@@ -192,11 +240,12 @@ def _build_decision_command_center() -> CommandCenterResponse:
     """
     # Pull active candidates from candidate universe
     symbols = get_candidate_symbols()
+    effective_profile = _effective_account_profile()
 
     if not symbols:
         # No candidates selected - return no_action state
         return CommandCenterResponse(
-            account_profile=_ACCOUNT_PROFILE,
+            account_profile=effective_profile,
             top_action=None,
             top_recommendations=[],
             urgent_edge_alerts=[],
@@ -212,7 +261,7 @@ def _build_decision_command_center() -> CommandCenterResponse:
     if latest_workflow is None:
         # Candidates exist but workflow has not been run
         return CommandCenterResponse(
-            account_profile=_ACCOUNT_PROFILE,
+            account_profile=effective_profile,
             top_action=None,
             top_recommendations=[],
             urgent_edge_alerts=[],
@@ -242,7 +291,7 @@ def _build_decision_command_center() -> CommandCenterResponse:
     stale_message = " (Data may be stale - consider re-running workflow)" if is_stale else ""
 
     return CommandCenterResponse(
-        account_profile=_ACCOUNT_PROFILE,
+        account_profile=effective_profile,
         top_action=latest_workflow.top_action,
         top_recommendations=latest_workflow.recommendations,
         urgent_edge_alerts=[],
@@ -256,10 +305,11 @@ def _build_decision_command_center() -> CommandCenterResponse:
 def _run_command_center_workflow() -> CommandCenterResponse:
     """Explicitly run decision workflow on candidate universe and return Command Center response."""
     symbols = get_candidate_symbols()
+    effective_profile = _effective_account_profile()
 
     if not symbols:
         return CommandCenterResponse(
-            account_profile=_ACCOUNT_PROFILE,
+            account_profile=effective_profile,
             top_action=None,
             top_recommendations=[],
             urgent_edge_alerts=[],
@@ -279,7 +329,7 @@ def _run_command_center_workflow() -> CommandCenterResponse:
             max_candidates=5,
             allow_mock=False,
         ),
-        account_profile=_ACCOUNT_PROFILE,
+        account_profile=effective_profile,
     )
 
     source_status = [
@@ -294,7 +344,7 @@ def _run_command_center_workflow() -> CommandCenterResponse:
     ]
 
     return CommandCenterResponse(
-        account_profile=_ACCOUNT_PROFILE,
+        account_profile=effective_profile,
         top_action=workflow.top_action,
         top_recommendations=workflow.recommendations,
         urgent_edge_alerts=[],

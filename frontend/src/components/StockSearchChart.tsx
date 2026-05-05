@@ -30,6 +30,12 @@ export type StockChartSelection = {
 
 type StockSearchChartProps = {
   onSelectionChange?: (selection: StockChartSelection) => void;
+  /** Single page title block (avoids duplicating a separate PageHeader above the chart). */
+  pageEyebrow: string;
+  pageTitle: string;
+  pageDescription: string;
+  /** Smaller embedded variant (e.g., inside TradeNow ticket). */
+  variant?: "full" | "embedded";
 };
 
 function toCandleData(response: PriceHistory): CandlePoint[] {
@@ -63,7 +69,7 @@ function formatPercent(value?: number | null) {
   return `${value.toFixed(2)}%`;
 }
 
-export function StockSearchChart({ onSelectionChange }: StockSearchChartProps) {
+export function StockSearchChart({ onSelectionChange, pageEyebrow, pageTitle, pageDescription, variant = "full" }: StockSearchChartProps) {
   const containerRef = useRef<HTMLDivElement | null>(null);
   const chartRef = useRef<IChartApi | null>(null);
   const candleSeriesRef = useRef<ISeriesApi<"Candlestick"> | null>(null);
@@ -112,21 +118,26 @@ export function StockSearchChart({ onSelectionChange }: StockSearchChartProps) {
     if (!containerRef.current || chartRef.current) return;
 
     const chart = createChart(containerRef.current, {
-      height: 420,
+      height: variant === "embedded" ? 340 : 420,
       layout: {
-        background: { type: ColorType.Solid, color: "#020617" },
+        // Let the container's emerald-tinted surface show through.
+        background: { type: ColorType.Solid, color: "rgba(0,0,0,0)" },
         textColor: "#cbd5e1",
       },
       grid: {
-        vertLines: { color: "#1e293b" },
-        horzLines: { color: "#1e293b" },
+        vertLines: { color: "rgba(16,185,129,0.10)" },
+        horzLines: { color: "rgba(16,185,129,0.10)" },
       },
       rightPriceScale: {
-        borderColor: "#334155",
+        borderColor: "rgba(16,185,129,0.15)",
       },
       timeScale: {
-        borderColor: "#334155",
+        borderColor: "rgba(16,185,129,0.15)",
         timeVisible: true,
+      },
+      crosshair: {
+        vertLine: { color: "rgba(16,185,129,0.18)" },
+        horzLine: { color: "rgba(16,185,129,0.18)" },
       },
     });
 
@@ -140,9 +151,14 @@ export function StockSearchChart({ onSelectionChange }: StockSearchChartProps) {
       visible: false,
     });
     const lineSeries = chart.addSeries(LineSeries, {
-      color: "#22c55e",
-      lineWidth: 2,
+      // Match the “AUTO env” amber/yellow accent color.
+      color: "rgba(251,191,36,0.75)",
+      lineWidth: 1,
       visible: true,
+      // Lightweight-charts supports curved line type in newer versions. Keep this safe even if types lag.
+      ...(variant === "embedded" ? ({ priceLineVisible: false, crosshairMarkerVisible: false } as any) : {}),
+      ...(variant !== "embedded" ? ({ crosshairMarkerVisible: true } as any) : {}),
+      ...(variant ? ({ lineType: 2 } as any) : {}), // try "curved" if supported by runtime
     });
 
     chartRef.current = chart;
@@ -181,18 +197,25 @@ export function StockSearchChart({ onSelectionChange }: StockSearchChartProps) {
   }, [dataSource, period, interval]);
 
   return (
-    <section className="rounded-xl border border-emerald-800 bg-slate-950 p-4 shadow-sm">
-      <div className="flex flex-col gap-4 xl:flex-row xl:items-end xl:justify-between">
-        <div>
-          <p className="text-xs font-semibold uppercase tracking-[0.22em] text-emerald-500">Live market chart</p>
-          <h2 className="mt-1 text-2xl font-black text-white">Search ticker and visualize price action</h2>
-          <p className="mt-2 max-w-4xl text-sm leading-relaxed text-slate-400">
-            Uses the migrated TradeSense-style market data route: /api/market-data/history. Choose Line or Candlestick view.
-          </p>
-        </div>
+    <section className="rounded-2xl border border-emerald-400/15 bg-black/35 p-4 shadow-[0_0_40px_rgba(0,0,0,0.25)] backdrop-blur">
+      <div className="flex flex-col gap-4 lg:flex-row lg:items-end lg:justify-between">
+        {variant === "embedded" ? null : (
+          <div>
+            <p className="text-xs font-semibold uppercase tracking-[0.22em] text-emerald-400">{pageEyebrow}</p>
+            <h1 className="mt-1 text-2xl font-bold leading-tight text-white">{pageTitle}</h1>
+            <p className="mt-2 max-w-4xl text-sm leading-relaxed text-slate-400">{pageDescription}</p>
+            <p className="mt-2 text-xs text-slate-500">Chart data: /api/market-data/history · line or candlesticks below.</p>
+          </div>
+        )}
 
-        <div className="grid grid-cols-1 gap-3 md:grid-cols-6 xl:min-w-[900px]">
-          <label className="md:col-span-2">
+        <div
+          className={
+            variant === "embedded"
+              ? "flex flex-wrap items-end gap-3"
+              : "grid grid-cols-1 gap-3 md:grid-cols-6 lg:min-w-[900px]"
+          }
+        >
+          <label className={variant === "embedded" ? "min-w-[210px] flex-1" : "md:col-span-2"}>
             <span className="text-xs font-semibold uppercase tracking-wide text-slate-400">Ticker</span>
             <input
               value={symbol}
@@ -200,13 +223,17 @@ export function StockSearchChart({ onSelectionChange }: StockSearchChartProps) {
               onKeyDown={(event) => {
                 if (event.key === "Enter") load(symbol);
               }}
-              className="mt-2 w-full rounded-lg border border-emerald-900 bg-slate-900 px-4 py-3 text-sm font-bold text-white"
+              className="mt-2 w-full rounded-lg border border-emerald-400/20 bg-black/40 px-4 py-3 text-sm font-bold text-white"
               placeholder="Search ticker, e.g. AAPL"
             />
           </label>
           <label>
             <span className="text-xs font-semibold uppercase tracking-wide text-slate-400">Data Source</span>
-            <select value={dataSource} onChange={(event) => setDataSource(event.target.value as MarketDataSource)} className="mt-2 w-full rounded-lg border border-emerald-900 bg-slate-900 px-3 py-3 text-sm text-white">
+            <select
+              value={dataSource}
+              onChange={(event) => setDataSource(event.target.value as MarketDataSource)}
+              className="mt-2 w-full rounded-lg border border-emerald-400/20 bg-black/40 px-3 py-3 text-sm text-white"
+            >
               <option value="auto">Auto</option>
               <option value="yfinance">YFinance</option>
               <option value="alpaca">Alpaca</option>
@@ -215,14 +242,22 @@ export function StockSearchChart({ onSelectionChange }: StockSearchChartProps) {
           </label>
           <label>
             <span className="text-xs font-semibold uppercase tracking-wide text-slate-400">Chart</span>
-            <select value={chartMode} onChange={(event) => setChartMode(event.target.value as ChartMode)} className="mt-2 w-full rounded-lg border border-emerald-900 bg-slate-900 px-3 py-3 text-sm text-white">
+            <select
+              value={chartMode}
+              onChange={(event) => setChartMode(event.target.value as ChartMode)}
+              className="mt-2 w-full rounded-lg border border-emerald-400/20 bg-black/40 px-3 py-3 text-sm text-white"
+            >
               <option value="line">Line</option>
               <option value="candles">Candlestick</option>
             </select>
           </label>
           <label>
             <span className="text-xs font-semibold uppercase tracking-wide text-slate-400">Period</span>
-            <select value={period} onChange={(event) => setPeriod(event.target.value)} className="mt-2 w-full rounded-lg border border-emerald-900 bg-slate-900 px-3 py-3 text-sm text-white">
+            <select
+              value={period}
+              onChange={(event) => setPeriod(event.target.value)}
+              className="mt-2 w-full rounded-lg border border-emerald-400/20 bg-black/40 px-3 py-3 text-sm text-white"
+            >
               <option value="5d">5D</option>
               <option value="1mo">1M</option>
               <option value="3mo">3M</option>
@@ -232,7 +267,11 @@ export function StockSearchChart({ onSelectionChange }: StockSearchChartProps) {
           </label>
           <label>
             <span className="text-xs font-semibold uppercase tracking-wide text-slate-400">Interval</span>
-            <select value={interval} onChange={(event) => setIntervalValue(event.target.value)} className="mt-2 w-full rounded-lg border border-emerald-900 bg-slate-900 px-3 py-3 text-sm text-white">
+            <select
+              value={interval}
+              onChange={(event) => setIntervalValue(event.target.value)}
+              className="mt-2 w-full rounded-lg border border-emerald-400/20 bg-black/40 px-3 py-3 text-sm text-white"
+            >
               <option value="1d">1D</option>
               <option value="1h">1H</option>
               <option value="15m">15M</option>
@@ -244,11 +283,19 @@ export function StockSearchChart({ onSelectionChange }: StockSearchChartProps) {
 
       <div className="mt-4 flex flex-wrap gap-2">
         {QUICK_SYMBOLS.map((item) => (
-          <button key={item} onClick={() => load(item)} className="rounded-full border border-slate-700 bg-slate-900 px-3 py-1 text-xs font-bold text-slate-300 hover:border-emerald-500 hover:text-emerald-300">
+          <button
+            key={item}
+            onClick={() => load(item)}
+            className="rounded-full border border-emerald-400/15 bg-black/40 px-3 py-1 text-xs font-bold text-slate-300 hover:border-emerald-400/40 hover:text-emerald-300"
+          >
             {item}
           </button>
         ))}
-        <button onClick={() => load(symbol)} disabled={loading} className="rounded-full bg-emerald-600 px-4 py-1 text-xs font-black text-slate-950 disabled:cursor-not-allowed disabled:opacity-60">
+        <button
+          onClick={() => load(symbol)}
+          disabled={loading}
+          className="rounded-full border border-emerald-400/40 bg-emerald-500/20 px-4 py-1 text-xs font-black text-emerald-200 hover:bg-emerald-500/30 disabled:cursor-not-allowed disabled:opacity-60"
+        >
           {loading ? "Loading..." : "Search"}
         </button>
       </div>
@@ -266,8 +313,8 @@ export function StockSearchChart({ onSelectionChange }: StockSearchChartProps) {
         </div>
       )}
 
-      <div className="mt-4 rounded-xl border border-slate-800 bg-slate-950 p-2">
-        <div ref={containerRef} className="h-[420px] w-full" />
+      <div className="mt-4 rounded-xl border border-emerald-400/15 bg-black/35 p-2">
+        <div ref={containerRef} className={variant === "embedded" ? "h-[340px] w-full" : "h-[420px] w-full"} />
         {history && history.data.length === 0 && (
           <div className="px-4 pb-4 text-sm text-slate-400">No chart data returned for the selected source. Choose Mock only for explicit offline testing, or configure Alpaca/Polygon for reliable live data.</div>
         )}
@@ -278,9 +325,9 @@ export function StockSearchChart({ onSelectionChange }: StockSearchChartProps) {
 
 function Metric({ label, value }: { label: string; value: string }) {
   return (
-    <div className="rounded-lg border border-slate-800 bg-slate-900 p-3">
-      <p className="text-[10px] font-semibold uppercase tracking-wide text-slate-500">{label}</p>
-      <p className="mt-1 truncate text-sm font-black text-white">{value}</p>
+    <div className="rounded-lg border border-emerald-400/15 bg-black/35 p-3">
+      <p className="text-[10px] font-semibold uppercase tracking-wide text-emerald-400/80">{label}</p>
+      <p className="mt-1 truncate text-sm font-black text-slate-100">{value}</p>
     </div>
   );
 }

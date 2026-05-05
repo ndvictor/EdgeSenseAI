@@ -7,7 +7,12 @@ from app.services.persistence_service import (
     create_paper_trade_outcome_from_recommendation,
     list_paper_trade_outcomes,
 )
-from app.services.alpaca_paper_account_service import AlpacaPaperSnapshot, get_alpaca_paper_snapshot
+from app.services.alpaca_paper_account_service import (
+    AlpacaPaperSnapshot,
+    AlpacaPaperPortfolioHistory,
+    get_alpaca_paper_snapshot,
+    get_alpaca_paper_portfolio_history,
+)
 from app.services.alpaca_execution_service import (
     TradeNowOrderRequest,
     place_trade_now_order,
@@ -61,6 +66,11 @@ def get_paper_trades():
 @router.get("/paper-trading/alpaca", response_model=AlpacaPaperSnapshot)
 def get_paper_trading_alpaca():
     return get_alpaca_paper_snapshot()
+
+
+@router.get("/paper-trading/alpaca/portfolio-history", response_model=AlpacaPaperPortfolioHistory)
+def get_paper_trading_alpaca_portfolio_history(period: str = "3M", timeframe: str = "1D"):
+    return get_alpaca_paper_portfolio_history(period=period, timeframe=timeframe)
 
 
 @router.post("/paper-trades", response_model=PaperTrade)

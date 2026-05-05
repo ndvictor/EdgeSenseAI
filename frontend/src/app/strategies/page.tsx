@@ -1,3 +1,4 @@
+import Link from "next/link";
 import { Activity, AlertTriangle, BarChart3, BrainCircuit, CalendarDays, CheckCircle2, Clock3, GitBranch, LineChart, RefreshCcw, ShieldCheck, Sparkles, XCircle } from "lucide-react";
 import { MetricCard, PageHeader } from "@/components/Cards";
 
@@ -237,6 +238,16 @@ function NotReadyStrategyCard({ strategy }: { strategy: StrategyCard }) {
 
 export default function StrategiesPage() {
   const needsAttention = notReadyStrategies.filter((strategy) => strategy.status === "Blocked" || strategy.status === "Testing").length;
+  const lifecycle = [
+    { href: "/strategies/idea", label: "Idea", hint: "Capture thesis + constraints" },
+    { href: "/strategies/research", label: "Research", hint: "Evidence + acceptance criteria" },
+    { href: "/strategies/backtest_ready", label: "Backtest ready", hint: "Rules locked; ready to run" },
+    { href: "/strategies/backtested", label: "Backtested", hint: "Results documented; evaluate risk fit" },
+    { href: "/strategies/paper_ready", label: "Paper ready", hint: "Gated; ready to paper-run" },
+    { href: "/strategies/paper_trading", label: "Paper trading", hint: "Running; track ops + PnL quality" },
+    { href: "/strategies/promoted_to_prod", label: "Promoted to prod", hint: "Live lane (when enabled)" },
+    { href: "/strategies/disabled", label: "Disabled", hint: "Paused/retired; keep evidence trail" },
+  ] as const;
 
   return (
     <div className="w-full min-h-full p-4 lg:p-8">
@@ -253,6 +264,25 @@ export default function StrategiesPage() {
           <MetricCard label="Avg Retest Cycle" value="7 days" />
           <MetricCard label="Needs Attention" value={needsAttention} />
         </div>
+
+        <section className="rounded-2xl border border-slate-800 bg-slate-950 p-4">
+          <div className="mb-3 flex items-center justify-between">
+            <h2 className="text-lg font-black tracking-tight text-white">Lifecycle lanes</h2>
+            <p className="text-xs text-slate-400">Use these subpages to organize strategies by stage.</p>
+          </div>
+          <div className="grid grid-cols-2 gap-3 md:grid-cols-4">
+            {lifecycle.map((lane) => (
+              <Link
+                key={lane.href}
+                href={lane.href}
+                className="group rounded-xl border border-white/10 bg-white/[0.03] px-4 py-3 transition hover:border-emerald-400/30 hover:bg-emerald-400/[0.06]"
+              >
+                <div className="text-sm font-bold text-slate-200 group-hover:text-emerald-200">{lane.label}</div>
+                <div className="mt-1 text-[11px] leading-snug text-slate-500 group-hover:text-slate-300">{lane.hint}</div>
+              </Link>
+            ))}
+          </div>
+        </section>
 
         <section className="rounded-2xl border border-slate-800 bg-slate-950 p-4">
           <div className="grid gap-4 xl:grid-cols-2">

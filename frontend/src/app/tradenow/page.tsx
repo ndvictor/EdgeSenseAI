@@ -5,13 +5,15 @@ import { AlertTriangle, Bot, CheckCircle2, Play, Power, ShieldCheck, XCircle, Se
 import Link from "next/link";
 import { MetricCard, PageHeader } from "@/components/Cards";
 import { TradeNowWorkspacePanel } from "@/components/workspace/TradeNowWorkspacePanel";
-import { api, type AccountRiskProfile, type AlpacaPaperPosition, type AlpacaPaperSnapshot, type SettingsResponse } from "@/lib/api";
+import { StockSearchChart, type StockChartSelection } from "@/components/StockSearchChart";
+import { PortfolioHistoryChart } from "@/components/PortfolioHistoryChart";
+import { api, type AccountRiskProfile, type AlpacaPaperPosition, type AlpacaPaperSnapshot, type AlpacaPaperPortfolioHistory, type SettingsResponse } from "@/lib/api";
 
 const API_BASE_URL = process.env.NEXT_PUBLIC_API_URL || "http://localhost:8900";
 
-type TradeTab = "stocks" | "options" | "etf" | "crypto";
+type TradeTab = "stocks" | "options" | "etf" | "crypto" | "execution" | "portfolio";
 
-const TAB_TO_ASSET: Record<TradeTab, "stock" | "option" | "etf" | "crypto"> = {
+const TAB_TO_ASSET: Record<Exclude<TradeTab, "execution" | "portfolio">, "stock" | "option" | "etf" | "crypto"> = {
   stocks: "stock",
   options: "option",
   etf: "etf",
@@ -22,7 +24,7 @@ const ETF_SYMBOLS = new Set([
   "SPY", "QQQ", "IWM", "DIA", "VOO", "VTI", "EFA", "EEM", "GLD", "SLV", "TLT", "HYG", "XLF", "XLE", "SMH", "ARKK", "SCHD", "VGT", "IVV", "IJH",
 ]);
 
-function defaultSymbolForTab(tab: TradeTab): string {
+function defaultSymbolForTab(tab: Exclude<TradeTab, "execution" | "portfolio">): string {
   switch (tab) {
     case "crypto":
       return "BTC/USD";
@@ -127,6 +129,25 @@ async function apiFetch<T>(path: string, options?: RequestInit): Promise<T> {
   return response.json();
 }
 
+type PortfolioRange = "1D" | "5D" | "1M" | "3M" | "1Y";
+
+function portfolioHistoryQuery(range: PortfolioRange): { period: string; timeframe: string } {
+  switch (range) {
+    case "1D":
+      return { period: "1D", timeframe: "5Min" };
+    case "5D":
+      return { period: "5D", timeframe: "15Min" };
+    case "1M":
+      return { period: "1M", timeframe: "1H" };
+    case "1Y":
+      // Alpaca uses "1A" for 1 year in many endpoints.
+      return { period: "1A", timeframe: "1D" };
+    case "3M":
+    default:
+      return { period: "3M", timeframe: "1D" };
+  }
+}
+
 function StatusBadge({ value }: { value: string | boolean }) {
   const text = String(value);
   const positive = text === "true" || text.includes("ready") || text === "dry_run";
@@ -161,10 +182,55 @@ function SettingStatus({ label, enabled }: { label: string; enabled: boolean }) 
 
 const cardShell = "rounded-2xl border border-emerald-400/15 bg-black/35 p-4 shadow-[0_0_40px_rgba(0,0,0,0.25)] backdrop-blur";
 
+function percent(value?: number | null) {
+  if (value === undefined || value === null || Number.isNaN(value)) return "—";
+  return `${value.toFixed(2)}%`;
+}
+
+function number(value?: number | null, suffix = "") {
+  if (value === undefined || value === null || Number.isNaN(value)) return "—";
+  return `${value.toLocaleString(undefined, { maximumFractionDigits: 2 })}${suffix}`;
+}
+
+function calcStockReport(selection: StockChartSelection | null) {
+  const snapshot = selection?.snapshot;
+  const history = selection?.history;
+  const closes = history?.data.map((row) => row.close).filter((value): value is number => value !== null) ?? [];
+  const volumes = history?.data.map((row) => row.volume).filter((value): value is number => value !== null) ?? [];
+  const lastClose = closes.at(-1) ?? snapshot?.price ?? null;
+  const firstClose = closes.at(0) ?? null;
+  const momentum = firstClose && lastClose ? ((lastClose - firstClose) / firstClose) * 100 : null;
+  const avgVolume = volumes.length ? volumes.reduce((sum, value) => sum + value, 0) / volumes.length : snapshot?.average_volume ?? null;
+  const latestVolume = volumes.at(-1) ?? snapshot?.volume ?? null;
+  const spread = snapshot?.bid_ask_spread ?? null;
+  const sourceQuality = snapshot?.data_quality ?? history?.data_quality ?? "not_loaded";
+  const provider = snapshot?.provider ?? history?.provider ?? "—";
+  const isMock = Boolean(snapshot?.is_mock || history?.is_mock);
+  const hasUsableSourceData = Boolean(snapshot?.price && !isMock && sourceQuality === "real");
+
+  let featureStatus = "waiting_for_source_data";
+  if (isMock) featureStatus = "mock_selected_for_testing";
+  else if (hasUsableSourceData) featureStatus = "source_data_ready";
+  else if (selection) featureStatus = "source_unavailable";
+
+  return {
+    momentum,
+    latestVolume,
+    avgVolume,
+    spread,
+    featureStatus,
+    provider,
+    source: selection?.source ?? "auto",
+    quality: sourceQuality,
+  };
+}
+
 export default function TradeNowPage() {
   const [config, setConfig] = useState<TradeNowConfig | null>(null);
   const [settings, setSettings] = useState<SettingsResponse | null>(null);
   const [alpaca, setAlpaca] = useState<AlpacaPaperSnapshot | null>(null);
+  const [portfolioHistory, setPortfolioHistory] = useState<AlpacaPaperPortfolioHistory | null>(null);
+  const [portfolioRange, setPortfolioRange] = useState<PortfolioRange>("3M");
   const [riskProfile, setRiskProfile] = useState<AccountRiskProfile | null>(null);
   const [order, setOrder] = useState<TradeNowOrderResponse | null>(null);
   const [error, setError] = useState<string | null>(null);
@@ -190,6 +256,17 @@ export default function TradeNowPage() {
     right: "C" as "C" | "P",
     strike: "200",
   });
+  const [ticketStockSelection, setTicketStockSelection] = useState<StockChartSelection | null>(null);
+
+  const onTicketChartSelection = useCallback(
+    (sel: StockChartSelection) => {
+      setTicketStockSelection(sel);
+      if (activeTab === "stocks" || activeTab === "etf") {
+        setForm((f) => ({ ...f, symbol: sel.symbol.toUpperCase() }));
+      }
+    },
+    [activeTab],
+  );
 
   const loadConfig = async () => {
     const next = await apiFetch<TradeNowConfig>("/api/tradenow/config");
@@ -200,6 +277,16 @@ export default function TradeNowPage() {
     const settingsData = await api.getSettings();
     setSettings(settingsData);
   };
+
+  const loadPortfolioHistory = useCallback(async () => {
+    try {
+      const { period, timeframe } = portfolioHistoryQuery(portfolioRange);
+      const history = await api.getAlpacaPaperPortfolioHistory(period, timeframe);
+      setPortfolioHistory(history);
+    } catch {
+      setPortfolioHistory(null);
+    }
+  }, [portfolioRange]);
 
   const loadAlpaca = useCallback(async () => {
     try {
@@ -224,10 +311,13 @@ export default function TradeNowPage() {
     loadSettings().catch((err) => setError(err.message));
     loadAlpaca();
     loadRisk();
-  }, [loadAlpaca, loadRisk]);
+    loadPortfolioHistory();
+  }, [loadAlpaca, loadRisk, loadPortfolioHistory]);
 
   const setTab = (tab: TradeTab) => {
     setActiveTab(tab);
+    if (tab === "execution" || tab === "portfolio") return;
+
     const ac = TAB_TO_ASSET[tab];
     const nextSymbol = defaultSymbolForTab(tab);
     setForm((f) => ({
@@ -309,7 +399,8 @@ export default function TradeNowPage() {
   };
 
   const positions = alpaca?.positions ?? [];
-  const tabPositions = useMemo(() => positions.filter((p) => positionTab(p.symbol) === activeTab), [positions, activeTab]);
+  const isTradeTab = activeTab === "stocks" || activeTab === "options" || activeTab === "etf" || activeTab === "crypto";
+  const tabPositions = useMemo(() => (isTradeTab ? positions.filter((p) => positionTab(p.symbol) === activeTab) : []), [positions, activeTab, isTradeTab]);
 
   const tabHint = useMemo(() => {
     switch (activeTab) {
@@ -319,6 +410,10 @@ export default function TradeNowPage() {
         return "Options use OCC symbols. Alpaca paper supports market/limit; stops may be limited — check blockers after submit.";
       case "etf":
         return "ETFs trade like equities on Alpaca; use standard stock-style day/GTC and share qty.";
+      case "execution":
+        return "Execution configuration + settings routing gates. No orders are placed from this tab.";
+      case "portfolio":
+        return "Portfolio snapshot + equity curve from Alpaca paper. Period is tuned for portfolio-level trend, not intraday.";
       default:
         return "Equities: standard symbols, day session defaults, and share qty.";
     }
@@ -335,190 +430,24 @@ export default function TradeNowPage() {
 
         {error && <div className="rounded-xl border border-rose-500/30 bg-rose-500/10 px-4 py-3 text-sm text-rose-200">{error}</div>}
 
-        {settings && (
-          <section className={cardShell}>
-            <div className="mb-4 flex items-center justify-between">
-              <div className="flex items-center gap-3">
-                <Settings className="h-5 w-5 text-emerald-300" />
-                <h2 className="text-lg font-black text-white">Settings routing to TradeNow</h2>
-              </div>
-              <Link href="/settings" className="text-sm text-emerald-400 underline hover:text-emerald-300">
-                Edit in Settings →
-              </Link>
-            </div>
-            <div className="grid grid-cols-2 gap-3 md:grid-cols-4 lg:grid-cols-6">
-              <SettingStatus label="Paper Trading" enabled={settings.trading.paper_trading_enabled} />
-              <SettingStatus label="Live Trading" enabled={settings.trading.live_trading_enabled} />
-              <SettingStatus label="Broker Execution" enabled={settings.trading.broker_execution_enabled} />
-              <SettingStatus label="Human Approval" enabled={settings.trading.require_human_approval} />
-              <SettingStatus label="Execution Agent" enabled={settings.trading.execution_agent_enabled} />
-              <SettingStatus label="Alpaca Paper" enabled={settings.trading.alpaca_paper_trade} />
-            </div>
-            <div className="mt-3 flex flex-wrap gap-2 text-xs">
-              <span className="rounded border border-emerald-400/20 bg-black/30 px-2 py-1 text-slate-400">
-                Mode: <span className="text-emerald-400">{settings.trading.execution_mode}</span>
-              </span>
-              <span className="rounded border border-emerald-400/20 bg-black/30 px-2 py-1 text-slate-400">
-                Broker: <span className="text-emerald-400">{settings.trading.broker_provider}</span>
-              </span>
-            </div>
-          </section>
-        )}
-
-        {/* Portfolio snapshot (Alpaca + risk profile, similar to Account Risk Center) */}
-        <section className={cardShell}>
-          <div className="mb-3 flex items-center gap-2">
-            <Wallet className="h-5 w-5 text-emerald-300" />
-            <h2 className="text-lg font-black text-white">Current portfolio</h2>
-            <Link href="/account-risk" className="ml-auto text-xs text-emerald-400/90 underline hover:text-emerald-300">
-              Open Account Risk Center →
-            </Link>
-          </div>
-          {alpaca?.account ? (
-            <div className="grid grid-cols-2 gap-3 md:grid-cols-4">
-              <MetricCard
-                label="Buying power"
-                value={`$${alpaca.account.buying_power?.toLocaleString(undefined, { maximumFractionDigits: 2 }) ?? "N/A"}`}
-                accent
-              />
-              <MetricCard
-                label="Account equity"
-                value={`$${alpaca.account.equity?.toLocaleString(undefined, { maximumFractionDigits: 2 }) ?? "N/A"}`}
-              />
-              <MetricCard
-                label="Max risk / trade"
-                value={riskProfile != null ? `${riskProfile.max_risk_per_trade_percent}%` : "—"}
-              />
-              <MetricCard
-                label="Day trades / PDT"
-                value={`${alpaca.account.daytrade_count ?? 0} / ${alpaca.account.pattern_day_trader ? "flagged" : "clear"}`}
-              />
-            </div>
-          ) : (
-            <p className="text-sm text-slate-400">
-              {alpaca?.message ?? "Connect Alpaca paper keys in backend `.env` to load buying power and risk context."}
-            </p>
-          )}
-        </section>
-
-        {/* Compact execution configuration */}
-        <section className={`${cardShell} p-3`}>
-          <h3 className="mb-2 text-xs font-bold uppercase tracking-[0.2em] text-slate-500">Execution configuration</h3>
-          <div className="grid grid-cols-1 gap-3 lg:grid-cols-3">
-            <div className="rounded-xl border border-emerald-400/10 bg-black/25 p-3">
-              <div className="mb-2 flex items-center gap-2">
-                <Power className="h-4 w-4 text-emerald-300" />
-                <span className="text-xs font-bold text-white">Manual</span>
-              </div>
-              {config ? (
-                <div className="space-y-2 text-[11px] text-slate-300">
-                  <div className="flex flex-wrap gap-1">
-                    <StatusBadge value={config.status} />
-                    <StatusBadge value={config.execution_mode} />
-                  </div>
-                  <label className="flex items-center justify-between gap-2 rounded-lg border border-white/10 bg-white/[0.03] px-2 py-1.5">
-                    <span>UI enabled</span>
-                    <input type="checkbox" checked={config.user_enabled} onChange={(e) => updateConfig({ user_enabled: e.target.checked })} />
-                  </label>
-                  <select
-                    className="w-full rounded-lg border border-emerald-400/20 bg-black/40 px-2 py-1 text-[11px] text-white"
-                    value={config.execution_mode}
-                    onChange={(e) => updateConfig({ execution_mode: e.target.value as TradeNowConfig["execution_mode"] })}
-                    disabled={saving}
-                  >
-                    <option value="dry_run">Dry run</option>
-                    <option value="paper">Paper</option>
-                    <option value="live">Live (gated)</option>
-                    <option value="disabled">Disabled</option>
-                  </select>
-                  <div className="space-y-1 border-t border-white/10 pt-2">
-                    <div className="flex justify-between"><span className="text-slate-500">Broker env</span><StatusBadge value={config.broker_execution_enabled_env} /></div>
-                    <div className="flex justify-between"><span className="text-slate-500">Paper env</span><StatusBadge value={config.paper_trading_enabled_env} /></div>
-                    <div className="flex justify-between"><span className="text-slate-500">Human approval</span><StatusBadge value={config.require_human_approval} /></div>
-                  </div>
-                </div>
-              ) : (
-                <p className="text-[11px] text-slate-500">Loading…</p>
-              )}
-            </div>
-
-            <div className="rounded-xl border border-emerald-400/10 bg-black/25 p-3">
-              <div className="mb-2 flex items-center gap-2">
-                <Bot className="h-4 w-4 text-cyan-300" />
-                <span className="text-xs font-bold text-white">Automatic</span>
-              </div>
-              {config ? (
-                <div className="space-y-2 text-[11px] text-slate-300">
-                  <div className="flex flex-wrap gap-1">
-                    <StatusBadge value={config.autonomous_status} />
-                    <StatusBadge value={`auto_env_${config.autonomous_execution_enabled_env}`} />
-                  </div>
-                  <label className="flex items-center justify-between gap-2 rounded-lg border border-white/10 bg-white/[0.03] px-2 py-1.5">
-                    <span>Auto paper (future)</span>
-                    <input
-                      type="checkbox"
-                      checked={config.automatic_execution_user_enabled}
-                      onChange={(e) => updateConfig({ automatic_execution_user_enabled: e.target.checked })}
-                    />
-                  </label>
-                  <p className="leading-snug text-slate-500">Requires autonomous env + gates. See Safety for blockers.</p>
-                  {config.autonomous_blockers?.length ? (
-                    <ul className="max-h-24 space-y-1 overflow-y-auto text-amber-200/90">
-                      {config.autonomous_blockers.slice(0, 4).map((b) => (
-                        <li key={b} className="rounded border border-amber-500/20 bg-amber-500/5 px-2 py-1">
-                          {b}
-                        </li>
-                      ))}
-                    </ul>
-                  ) : null}
-                </div>
-              ) : (
-                <p className="text-[11px] text-slate-500">Loading…</p>
-              )}
-            </div>
-
-            <div className="rounded-xl border border-amber-500/25 bg-black/25 p-3">
-              <div className="mb-2 flex items-center gap-2">
-                <ShieldCheck className="h-4 w-4 text-amber-300" />
-                <span className="text-xs font-bold text-white">Safety</span>
-              </div>
-              {config?.blockers?.length ? (
-                <ul className="mb-2 max-h-28 space-y-1 overflow-y-auto text-[11px] text-amber-200">
-                  {config.blockers.map((blocker) => (
-                    <li key={blocker} className="rounded border border-amber-500/25 bg-amber-500/5 px-2 py-1">
-                      {blocker}
-                    </li>
-                  ))}
-                </ul>
-              ) : (
-                <p className="mb-2 text-[11px] text-emerald-200/90">No blockers for current mode.</p>
-              )}
-              <div className="border-t border-white/10 pt-2">
-                <p className="mb-1 text-[10px] font-semibold uppercase tracking-wide text-slate-500">Env reference</p>
-                <div className="space-y-1">
-                  <EnvLine value="ALPACA_API_KEY / ALPACA_SECRET_KEY" />
-                  <EnvLine value="BROKER_EXECUTION_ENABLED / LIVE_TRADING_ENABLED" />
-                </div>
-              </div>
-            </div>
-          </div>
-        </section>
-
-        {/* Asset-class tabs */}
-        <div className="flex flex-wrap gap-2 border-b border-emerald-400/15 pb-2">
+        {/* Asset-class tabs (plus execution/portfolio tabs) */}
+        <div className="border-b border-emerald-400/15 pb-2">
+          <div className="flex flex-nowrap gap-2 overflow-x-auto whitespace-nowrap pr-2 [-ms-overflow-style:none] [scrollbar-width:none] [&::-webkit-scrollbar]:hidden">
           {(
             [
               ["stocks", "Stocks"],
               ["options", "Options"],
               ["etf", "ETF"],
               ["crypto", "Crypto"],
+              ["execution", "Execution configuration"],
+              ["portfolio", "Portfolio"],
             ] as const
           ).map(([id, label]) => (
             <button
               key={id}
               type="button"
               onClick={() => setTab(id)}
-              className={`rounded-xl px-4 py-2 text-sm font-semibold transition ${
+              className={`shrink-0 rounded-xl px-4 py-2 text-sm font-semibold transition ${
                 activeTab === id
                   ? "border border-emerald-400/40 bg-emerald-500/15 text-emerald-200 shadow-[0_0_20px_rgba(16,185,129,0.12)]"
                   : "border border-transparent text-slate-400 hover:border-white/10 hover:bg-white/[0.04] hover:text-slate-200"
@@ -527,13 +456,231 @@ export default function TradeNowPage() {
               {label}
             </button>
           ))}
+          </div>
         </div>
 
         <p className="text-xs leading-relaxed text-slate-400">{tabHint}</p>
 
+        {activeTab === "execution" && (
+          <>
+            {settings ? (
+              <section className={cardShell}>
+                <div className="mb-4 flex items-center justify-between">
+                  <div className="flex items-center gap-3">
+                    <Settings className="h-5 w-5 text-emerald-300" />
+                    <h2 className="text-lg font-black text-white">Settings routing to TradeNow</h2>
+                  </div>
+                  <Link href="/settings" className="text-sm text-emerald-400 underline hover:text-emerald-300">
+                    Edit in Settings →
+                  </Link>
+                </div>
+                <div className="grid grid-cols-2 gap-3 md:grid-cols-4 lg:grid-cols-6">
+                  <SettingStatus label="Paper Trading" enabled={settings.trading.paper_trading_enabled} />
+                  <SettingStatus label="Live Trading" enabled={settings.trading.live_trading_enabled} />
+                  <SettingStatus label="Broker Execution" enabled={settings.trading.broker_execution_enabled} />
+                  <SettingStatus label="Human Approval" enabled={settings.trading.require_human_approval} />
+                  <SettingStatus label="Execution Agent" enabled={settings.trading.execution_agent_enabled} />
+                  <SettingStatus label="Alpaca Paper" enabled={settings.trading.alpaca_paper_trade} />
+                </div>
+                <div className="mt-3 flex flex-wrap gap-2 text-xs">
+                  <span className="rounded border border-emerald-400/20 bg-black/30 px-2 py-1 text-slate-400">
+                    Mode: <span className="text-emerald-400">{settings.trading.execution_mode}</span>
+                  </span>
+                  <span className="rounded border border-emerald-400/20 bg-black/30 px-2 py-1 text-slate-400">
+                    Broker: <span className="text-emerald-400">{settings.trading.broker_provider}</span>
+                  </span>
+                </div>
+              </section>
+            ) : null}
+
+            <section className={`${cardShell} p-3`}>
+              <h3 className="mb-2 text-xs font-bold uppercase tracking-[0.2em] text-slate-500">Execution configuration</h3>
+              <div className="grid grid-cols-1 gap-3 lg:grid-cols-3">
+                <div className="rounded-xl border border-emerald-400/10 bg-black/25 p-3">
+                  <div className="mb-2 flex items-center gap-2">
+                    <Power className="h-4 w-4 text-emerald-300" />
+                    <span className="text-xs font-bold text-white">Manual</span>
+                  </div>
+                  {config ? (
+                    <div className="space-y-2 text-[11px] text-slate-300">
+                      <div className="flex flex-wrap gap-1">
+                        <StatusBadge value={config.status} />
+                        <StatusBadge value={config.execution_mode} />
+                      </div>
+                      <label className="flex items-center justify-between gap-2 rounded-lg border border-white/10 bg-white/[0.03] px-2 py-1.5">
+                        <span>UI enabled</span>
+                        <input type="checkbox" checked={config.user_enabled} onChange={(e) => updateConfig({ user_enabled: e.target.checked })} />
+                      </label>
+                      <select
+                        className="w-full rounded-lg border border-emerald-400/20 bg-black/40 px-2 py-1 text-[11px] text-white"
+                        value={config.execution_mode}
+                        onChange={(e) => updateConfig({ execution_mode: e.target.value as TradeNowConfig["execution_mode"] })}
+                        disabled={saving}
+                      >
+                        <option value="dry_run">Dry run</option>
+                        <option value="paper">Paper</option>
+                        <option value="live">Live (gated)</option>
+                        <option value="disabled">Disabled</option>
+                      </select>
+                      <div className="space-y-1 border-t border-white/10 pt-2">
+                        <div className="flex justify-between">
+                          <span className="text-slate-500">Broker env</span>
+                          <StatusBadge value={config.broker_execution_enabled_env} />
+                        </div>
+                        <div className="flex justify-between">
+                          <span className="text-slate-500">Paper env</span>
+                          <StatusBadge value={config.paper_trading_enabled_env} />
+                        </div>
+                        <div className="flex justify-between">
+                          <span className="text-slate-500">Human approval</span>
+                          <StatusBadge value={config.require_human_approval} />
+                        </div>
+                      </div>
+                    </div>
+                  ) : (
+                    <p className="text-[11px] text-slate-500">Loading…</p>
+                  )}
+                </div>
+
+                <div className="rounded-xl border border-emerald-400/10 bg-black/25 p-3">
+                  <div className="mb-2 flex items-center gap-2">
+                    <Bot className="h-4 w-4 text-cyan-300" />
+                    <span className="text-xs font-bold text-white">Automatic</span>
+                  </div>
+                  {config ? (
+                    <div className="space-y-2 text-[11px] text-slate-300">
+                      <div className="flex flex-wrap gap-1">
+                        <StatusBadge value={config.autonomous_status} />
+                        <StatusBadge value={`auto_env_${config.autonomous_execution_enabled_env}`} />
+                      </div>
+                      <label className="flex items-center justify-between gap-2 rounded-lg border border-white/10 bg-white/[0.03] px-2 py-1.5">
+                        <span>Auto paper (future)</span>
+                        <input
+                          type="checkbox"
+                          checked={config.automatic_execution_user_enabled}
+                          onChange={(e) => updateConfig({ automatic_execution_user_enabled: e.target.checked })}
+                        />
+                      </label>
+                      <p className="leading-snug text-slate-500">Requires autonomous env + gates. See Safety for blockers.</p>
+                      {config.autonomous_blockers?.length ? (
+                        <ul className="max-h-24 space-y-1 overflow-y-auto text-amber-200/90">
+                          {config.autonomous_blockers.slice(0, 4).map((b) => (
+                            <li key={b} className="rounded border border-amber-500/20 bg-amber-500/5 px-2 py-1">
+                              {b}
+                            </li>
+                          ))}
+                        </ul>
+                      ) : null}
+                    </div>
+                  ) : (
+                    <p className="text-[11px] text-slate-500">Loading…</p>
+                  )}
+                </div>
+
+                <div className="rounded-xl border border-amber-500/25 bg-black/25 p-3">
+                  <div className="mb-2 flex items-center gap-2">
+                    <ShieldCheck className="h-4 w-4 text-amber-300" />
+                    <span className="text-xs font-bold text-white">Safety</span>
+                  </div>
+                  {config?.blockers?.length ? (
+                    <ul className="mb-2 max-h-28 space-y-1 overflow-y-auto text-[11px] text-amber-200">
+                      {config.blockers.map((blocker) => (
+                        <li key={blocker} className="rounded border border-amber-500/25 bg-amber-500/5 px-2 py-1">
+                          {blocker}
+                        </li>
+                      ))}
+                    </ul>
+                  ) : (
+                    <p className="mb-2 text-[11px] text-emerald-200/90">No blockers for current mode.</p>
+                  )}
+                  <div className="border-t border-white/10 pt-2">
+                    <p className="mb-1 text-[10px] font-semibold uppercase tracking-wide text-slate-500">Env reference</p>
+                    <div className="space-y-1">
+                      <EnvLine value="ALPACA_API_KEY / ALPACA_SECRET_KEY" />
+                      <EnvLine value="BROKER_EXECUTION_ENABLED / LIVE_TRADING_ENABLED" />
+                    </div>
+                  </div>
+                </div>
+              </div>
+            </section>
+          </>
+        )}
+
+        {activeTab === "portfolio" && (
+          <section className={cardShell}>
+            <div className="mb-3 flex items-center gap-2">
+              <Wallet className="h-5 w-5 text-emerald-300" />
+              <h2 className="text-lg font-black text-white">Current portfolio</h2>
+              <Link href="/account-risk" className="ml-auto text-xs text-emerald-400/90 underline hover:text-emerald-300">
+                Open Account Risk Center →
+              </Link>
+            </div>
+            {alpaca?.account ? (
+              <div className="grid grid-cols-2 gap-3 md:grid-cols-4">
+                <MetricCard
+                  label="Buying power"
+                  value={`$${alpaca.account.buying_power?.toLocaleString(undefined, { maximumFractionDigits: 2 }) ?? "N/A"}`}
+                  accent
+                />
+                <MetricCard label="Account equity" value={`$${alpaca.account.equity?.toLocaleString(undefined, { maximumFractionDigits: 2 }) ?? "N/A"}`} />
+                <MetricCard label="Max risk / trade" value={riskProfile != null ? `${riskProfile.max_risk_per_trade_percent}%` : "—"} />
+                <MetricCard
+                  label="Day trades / PDT"
+                  value={`${alpaca.account.daytrade_count ?? 0} / ${alpaca.account.pattern_day_trader ? "flagged" : "clear"}`}
+                />
+              </div>
+            ) : (
+              <p className="text-sm text-slate-400">
+                {alpaca?.message ?? "Connect Alpaca paper keys in backend `.env` to load buying power and risk context."}
+              </p>
+            )}
+
+            <div className="mt-4 flex flex-wrap items-center gap-2">
+              {(["1D", "5D", "1M", "3M", "1Y"] as const).map((range) => (
+                <button
+                  key={range}
+                  type="button"
+                  onClick={() => setPortfolioRange(range)}
+                  className={`shrink-0 rounded-xl px-3 py-1.5 text-xs font-bold uppercase transition ${
+                    portfolioRange === range
+                      ? "border border-emerald-400/40 bg-emerald-500/15 text-emerald-200 shadow-[0_0_16px_rgba(16,185,129,0.10)]"
+                      : "border border-white/10 bg-white/[0.03] text-slate-400 hover:border-white/15 hover:bg-white/[0.05] hover:text-slate-200"
+                  }`}
+                >
+                  {range}
+                </button>
+              ))}
+              <button
+                type="button"
+                onClick={() => loadPortfolioHistory()}
+                className="ml-auto rounded-xl border border-emerald-400/20 bg-black/30 px-3 py-1.5 text-xs font-bold uppercase text-emerald-300 hover:border-emerald-400/40 hover:bg-black/40"
+              >
+                Refresh
+              </button>
+            </div>
+            <div className="mt-4">
+              <PortfolioHistoryChart history={portfolioHistory} height={360} />
+            </div>
+          </section>
+        )}
+
+        {activeTab === "stocks" && (
+          <div className="mt-4">
+            <StockSearchChart
+              variant="embedded"
+              pageEyebrow=""
+              pageTitle=""
+              pageDescription=""
+              onSelectionChange={(sel) => onTicketChartSelection(sel)}
+            />
+          </div>
+        )}
+
+        {isTradeTab && (
         <section className="grid grid-cols-1 gap-4 xl:grid-cols-2">
-          <div className={cardShell}>
-            <h2 className="mb-3 text-lg font-black text-white">Manual order ticket</h2>
+          <div className="space-y-4">
+            <div className={cardShell}>
+              <h2 className="mb-3 text-lg font-black text-white">Manual order ticket</h2>
             <div className="mb-3 rounded-xl border border-emerald-500/20 bg-emerald-500/10 px-3 py-2 text-xs leading-relaxed text-emerald-100/90">
               Active class: <span className="font-bold uppercase text-emerald-300">{activeTab}</span>. Paper submission needs paper mode, broker env, dry-run off, and human approval when required.
             </div>
@@ -734,8 +881,8 @@ export default function TradeNowPage() {
             >
               <Play className="h-4 w-4" /> Submit order
             </button>
-            {order ? (
-              <div className="mt-4 space-y-2 rounded-xl border border-emerald-400/20 bg-black/35 p-3">
+              {order ? (
+                <div className="mt-4 space-y-2 rounded-xl border border-emerald-400/20 bg-black/35 p-3">
                 <div className="flex flex-wrap gap-2">
                   <StatusBadge value={order.status} />
                   <StatusBadge value={order.execution_mode} />
@@ -778,19 +925,57 @@ export default function TradeNowPage() {
                     ))}
                   </ul>
                 ) : null}
+                </div>
+              ) : null}
+
+            </div>
+
+            {(activeTab === "stocks" || activeTab === "etf") && (
+              <div className={cardShell}>
+                <div className="mb-3 flex items-center justify-between">
+                  <h3 className="text-lg font-black text-white">Feature pipeline</h3>
+                  {ticketStockSelection?.symbol ? (
+                    <span className="rounded-full border border-white/10 bg-black/30 px-3 py-1 text-xs font-bold uppercase text-slate-300">
+                      {ticketStockSelection.symbol} · {calcStockReport(ticketStockSelection).source} · {calcStockReport(ticketStockSelection).provider}
+                    </span>
+                  ) : (
+                    <span className="text-xs text-slate-500">Load a symbol in the chart below.</span>
+                  )}
+                </div>
+                {(() => {
+                  const rep = calcStockReport(ticketStockSelection);
+                  return (
+                    <div className="grid grid-cols-2 gap-3">
+                      <div className="rounded-xl border border-emerald-400/15 bg-black/40 p-4">
+                        <p className="text-[10px] font-semibold uppercase tracking-wide text-emerald-400">Momentum</p>
+                        <p className="mt-2 text-2xl font-black text-white">{percent(rep.momentum)}</p>
+                      </div>
+                      <div className="rounded-xl border border-emerald-400/15 bg-black/40 p-4">
+                        <p className="text-[10px] font-semibold uppercase tracking-wide text-emerald-400">Feature status</p>
+                        <p className="mt-2 text-sm font-black capitalize text-white">{rep.featureStatus.replace(/_/g, " ")}</p>
+                      </div>
+                      <div className="rounded-xl border border-emerald-400/15 bg-black/40 p-4">
+                        <p className="text-[10px] font-semibold uppercase tracking-wide text-emerald-400">Latest volume</p>
+                        <p className="mt-2 text-xl font-black text-white">{number(rep.latestVolume)}</p>
+                      </div>
+                      <div className="rounded-xl border border-emerald-400/15 bg-black/40 p-4">
+                        <p className="text-[10px] font-semibold uppercase tracking-wide text-emerald-400">Avg volume</p>
+                        <p className="mt-2 text-xl font-black text-white">{number(rep.avgVolume)}</p>
+                      </div>
+                    </div>
+                  );
+                })()}
               </div>
-            ) : null}
+            )}
           </div>
 
-          <div className={`${cardShell} max-h-[85vh] overflow-y-auto pr-1`}>
-            <h2 className="mb-3 text-lg font-black text-white">Workspace (same as sidebar)</h2>
-            <p className="mb-3 text-xs text-slate-500">
-              Stocks / ETF → Stocks workspace (ETF variant). Options → Options route. Crypto → Crypto route.
-            </p>
+          <div className={cardShell}>
             <TradeNowWorkspacePanel tab={activeTab} />
           </div>
         </section>
+        )}
 
+        {isTradeTab && (
         <section className={cardShell}>
           <div className="mb-3 flex items-center justify-between">
             <h2 className="text-lg font-black text-white">Current holdings</h2>
@@ -829,6 +1014,7 @@ export default function TradeNowPage() {
             </div>
           )}
         </section>
+        )}
       </div>
     </div>
   );

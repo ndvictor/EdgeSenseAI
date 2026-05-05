@@ -58,8 +58,16 @@ class RateLimitSettings(BaseModel):
     max_daily_agent_runs: int
 
 
+class RiskSettings(BaseModel):
+    max_risk_per_trade_percent: float
+    max_daily_loss_percent: float
+    max_position_size_percent: float
+    min_reward_risk_ratio: float
+
+
 class SettingsResponse(BaseModel):
     trading: TradingSettings
+    risk: RiskSettings
     llm_gateway: LlmGatewaySettings
     market_data: MarketDataSettings
     news: NewsSettings
@@ -111,8 +119,16 @@ class RateLimitSettingsUpdate(BaseModel):
     max_daily_agent_runs: int | None = None
 
 
+class RiskSettingsUpdate(BaseModel):
+    max_risk_per_trade_percent: float | None = None
+    max_daily_loss_percent: float | None = None
+    max_position_size_percent: float | None = None
+    min_reward_risk_ratio: float | None = None
+
+
 class SettingsUpdateRequest(BaseModel):
     trading: TradingSettingsUpdate | None = None
+    risk: RiskSettingsUpdate | None = None
     llm_gateway: LlmGatewaySettingsUpdate | None = None
     market_data: MarketDataSettingsUpdate | None = None
     news: NewsSettingsUpdate | None = None
@@ -146,6 +162,12 @@ def get_settings() -> SettingsResponse:
             paper_starting_cash=runtime.get("PAPER_STARTING_CASH", settings.paper_starting_cash),
             broker_provider=runtime.get("BROKER_PROVIDER", settings.broker_provider),
             alpaca_paper_trade=runtime.get("ALPACA_PAPER_TRADE", settings.alpaca_paper_trade),
+        ),
+        risk=RiskSettings(
+            max_risk_per_trade_percent=float(runtime.get("MAX_RISK_PER_TRADE_PERCENT", 1.0)),
+            max_daily_loss_percent=float(runtime.get("MAX_DAILY_LOSS_PERCENT", 2.0)),
+            max_position_size_percent=float(runtime.get("MAX_POSITION_SIZE_PERCENT", 10.0)),
+            min_reward_risk_ratio=float(runtime.get("MIN_REWARD_RISK_RATIO", 3.0)),
         ),
         llm_gateway=LlmGatewaySettings(
             llm_gateway_enable_paid_tests=runtime.get("LLM_GATEWAY_ENABLE_PAID_TESTS", settings.llm_gateway_enable_paid_tests),
@@ -259,6 +281,19 @@ def _apply_rate_limit_updates(current: dict, updates: RateLimitSettingsUpdate | 
         current["MAX_DAILY_AGENT_RUNS"] = updates.max_daily_agent_runs
 
 
+def _apply_risk_updates(current: dict, updates: RiskSettingsUpdate | None) -> None:
+    if updates is None:
+        return
+    if updates.max_risk_per_trade_percent is not None:
+        current["MAX_RISK_PER_TRADE_PERCENT"] = updates.max_risk_per_trade_percent
+    if updates.max_daily_loss_percent is not None:
+        current["MAX_DAILY_LOSS_PERCENT"] = updates.max_daily_loss_percent
+    if updates.max_position_size_percent is not None:
+        current["MAX_POSITION_SIZE_PERCENT"] = updates.max_position_size_percent
+    if updates.min_reward_risk_ratio is not None:
+        current["MIN_REWARD_RISK_RATIO"] = updates.min_reward_risk_ratio
+
+
 @router.post("/settings", response_model=SettingsResponse)
 def update_settings(request: SettingsUpdateRequest) -> SettingsResponse:
     """Update runtime settings.
@@ -270,6 +305,7 @@ def update_settings(request: SettingsUpdateRequest) -> SettingsResponse:
     
     # Apply updates by category
     _apply_trading_updates(current, request.trading)
+    _apply_risk_updates(current, request.risk)
     _apply_llm_gateway_updates(current, request.llm_gateway)
     _apply_market_data_updates(current, request.market_data)
     _apply_news_updates(current, request.news)

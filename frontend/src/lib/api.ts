@@ -110,6 +110,22 @@ export type AlpacaPaperSnapshot = {
   last_checked?: string;
 };
 
+export type AlpacaPaperPortfolioHistory = {
+  provider: "alpaca";
+  mode: "paper";
+  status: "connected" | "not_configured" | "unavailable";
+  endpoint: string;
+  keys_configured: boolean;
+  period: string;
+  timeframe: string;
+  timestamps: number[];
+  equity: number[];
+  base_value?: number | null;
+  message: string;
+  warnings: string[];
+  last_checked?: string;
+};
+
 // Settings API Types - Comprehensive Platform Settings
 export type TradingSettings = {
   paper_trading_enabled: boolean;
@@ -155,8 +171,16 @@ export type RateLimitSettings = {
   max_daily_agent_runs: number;
 };
 
+export type RiskSettings = {
+  max_risk_per_trade_percent: number;
+  max_daily_loss_percent: number;
+  max_position_size_percent: number;
+  min_reward_risk_ratio: number;
+};
+
 export type SettingsResponse = {
   trading: TradingSettings;
+  risk: RiskSettings;
   llm_gateway: LlmGatewaySettings;
   market_data: MarketDataSettings;
   news: NewsSettings;
@@ -208,8 +232,16 @@ export type RateLimitSettingsUpdate = {
   max_daily_agent_runs?: number;
 };
 
+export type RiskSettingsUpdate = {
+  max_risk_per_trade_percent?: number;
+  max_daily_loss_percent?: number;
+  max_position_size_percent?: number;
+  min_reward_risk_ratio?: number;
+};
+
 export type SettingsUpdateRequest = {
   trading?: TradingSettingsUpdate;
+  risk?: RiskSettingsUpdate;
   llm_gateway?: LlmGatewaySettingsUpdate;
   market_data?: MarketDataSettingsUpdate;
   news?: NewsSettingsUpdate;
@@ -2401,6 +2433,8 @@ export const api = {
 
   // Alpaca Paper Account APIs
   getAlpacaPaperSnapshot: () => request<AlpacaPaperSnapshot>("/api/paper-trading/alpaca"),
+  getAlpacaPaperPortfolioHistory: (period = "3M", timeframe = "1D") =>
+    request<AlpacaPaperPortfolioHistory>(`/api/paper-trading/alpaca/portfolio-history?period=${period}&timeframe=${timeframe}`),
 
   // Performance Drift APIs
   runPerformanceDrift: (payload?: { lookback_days?: number; strategy_key?: string; model_name?: string; min_samples?: number; source?: string }) =>

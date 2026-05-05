@@ -2,6 +2,7 @@
 
 import { useEffect, useState } from "react";
 import Link from "next/link";
+import { useSearchParams } from "next/navigation";
 import { 
   api, 
   type SettingsResponse, 
@@ -11,6 +12,7 @@ import {
   type NewsSettingsUpdate,
   type PlatformFeaturesUpdate,
   type RateLimitSettingsUpdate,
+  type RiskSettings,
   type AlpacaPaperSnapshot
 } from "@/lib/api";
 import { PageHeader } from "@/components/Cards";
@@ -22,11 +24,24 @@ import {
 } from "lucide-react";
 
 export default function SettingsPage() {
+  const searchParams = useSearchParams();
   const [settings, setSettings] = useState<SettingsResponse | null>(null);
   const [alpaca, setAlpaca] = useState<AlpacaPaperSnapshot | null>(null);
+  const [riskDraft, setRiskDraft] = useState<RiskSettings | null>(null);
   const [error, setError] = useState<string | null>(null);
   const [loading, setLoading] = useState(false);
   const [message, setMessage] = useState<string | null>(null);
+  const [activeTab, setActiveTab] = useState<
+    "overview" | "trading" | "risk" | "market" | "llm" | "news" | "platform" | "rate_limits"
+  >("overview");
+
+  useEffect(() => {
+    const tab = searchParams.get("tab");
+    if (!tab) return;
+    if (tab === "trading" || tab === "risk" || tab === "market" || tab === "llm" || tab === "news" || tab === "platform" || tab === "rate_limits" || tab === "overview") {
+      setActiveTab(tab);
+    }
+  }, [searchParams]);
 
   const loadSettings = () => {
     api.getSettings()
@@ -44,6 +59,41 @@ export default function SettingsPage() {
     loadSettings();
     loadAlpaca();
   }, []);
+
+  useEffect(() => {
+    if (settings?.risk) setRiskDraft(settings.risk);
+  }, [settings?.risk]);
+
+  const riskDirty = Boolean(
+    settings?.risk &&
+      riskDraft &&
+      (settings.risk.max_risk_per_trade_percent !== riskDraft.max_risk_per_trade_percent ||
+        settings.risk.max_daily_loss_percent !== riskDraft.max_daily_loss_percent ||
+        settings.risk.max_position_size_percent !== riskDraft.max_position_size_percent ||
+        settings.risk.min_reward_risk_ratio !== riskDraft.min_reward_risk_ratio),
+  );
+
+  const saveRiskDraft = async () => {
+    if (!settings?.risk || !riskDraft || loading || !riskDirty) return;
+    setLoading(true);
+    setMessage(null);
+    try {
+      const updated = await api.updateSettings({
+        risk: {
+          max_risk_per_trade_percent: riskDraft.max_risk_per_trade_percent,
+          max_daily_loss_percent: riskDraft.max_daily_loss_percent,
+          max_position_size_percent: riskDraft.max_position_size_percent,
+          min_reward_risk_ratio: riskDraft.min_reward_risk_ratio,
+        },
+      });
+      setSettings(updated);
+      setMessage("Risk settings saved to runtime_settings.json");
+    } catch (err) {
+      setError(err instanceof Error ? err.message : "Failed to update risk settings");
+    } finally {
+      setLoading(false);
+    }
+  };
 
   const updateTrading = async (updates: TradingSettingsUpdate) => {
     if (!settings || loading) return;
@@ -306,8 +356,39 @@ export default function SettingsPage() {
           </div>
         )}
 
-        {/* Tab-specific Settings Cards */}
-        {settings && (
+        {/* Settings subtabs */}
+        <div className="mb-4 border-b border-emerald-400/15 pb-2">
+          <div className="flex flex-nowrap gap-2 overflow-x-auto whitespace-nowrap pr-2 [-ms-overflow-style:none] [scrollbar-width:none] [&::-webkit-scrollbar]:hidden">
+            {(
+              [
+                ["overview", "Overview"],
+                ["trading", "Trading"],
+                ["risk", "Account risk"],
+                ["market", "Market data"],
+                ["llm", "LLM"],
+                ["news", "News"],
+                ["platform", "Platform"],
+                ["rate_limits", "Rate limits"],
+              ] as const
+            ).map(([id, label]) => (
+              <button
+                key={id}
+                type="button"
+                onClick={() => setActiveTab(id)}
+                className={`shrink-0 rounded-xl px-4 py-2 text-sm font-semibold transition ${
+                  activeTab === id
+                    ? "border border-emerald-400/40 bg-emerald-500/15 text-emerald-200 shadow-[0_0_20px_rgba(16,185,129,0.12)]"
+                    : "border border-transparent text-slate-400 hover:border-white/10 hover:bg-white/[0.04] hover:text-slate-200"
+                }`}
+              >
+                {label}
+              </button>
+            ))}
+          </div>
+        </div>
+
+        {/* Overview cards */}
+        {activeTab === "overview" && settings && (
           <div className="mb-6 grid grid-cols-1 gap-4 md:grid-cols-2 lg:grid-cols-3 xl:grid-cols-4">
             {/* Account Risk Center Card */}
             <SettingsCard 
@@ -427,6 +508,7 @@ export default function SettingsPage() {
         ) : (
           <div className="space-y-6">
             {/* Trading Settings */}
+            {(activeTab === "trading" || activeTab === "overview") && (
             <section className="rounded-2xl border border-emerald-400/15 bg-black/35 p-6 backdrop-blur shadow-[0_0_40px_rgba(0,0,0,0.25)]">
               <h2 className="mb-4 text-xl font-semibold text-emerald-400">Trading Configuration</h2>
               <div className="grid grid-cols-1 gap-4 lg:grid-cols-2">
@@ -505,8 +587,90 @@ export default function SettingsPage() {
                 />
               </div>
             </section>
+            )}
+
+            {/* Account Risk Controls */}
+            {(activeTab === "risk" || activeTab === "overview") && (
+            <section className="rounded-2xl border border-emerald-400/15 bg-black/35 p-6 backdrop-blur shadow-[0_0_40px_rgba(0,0,0,0.25)]">
+              <div className="mb-4 flex items-center justify-between">
+                <h2 className="text-xl font-semibold text-emerald-400">Account Risk Controls</h2>
+                <Link href="/account-risk" className="text-xs text-emerald-400 underline hover:text-emerald-300">
+                  Open Account Risk Center →
+                </Link>
+              </div>
+              <p className="mb-4 text-sm text-slate-400">
+                These thresholds drive risk gating (including reward:risk checks). They are saved to runtime_settings.json and used across the platform.
+              </p>
+
+              {!riskDraft ? (
+                <div className="rounded-xl border border-emerald-400/15 bg-black/35 p-4 text-sm text-slate-400">Loading account risk profile…</div>
+              ) : (
+                <div className="space-y-4">
+                  <div className="flex flex-wrap items-center gap-2">
+                    <button
+                      type="button"
+                      onClick={saveRiskDraft}
+                      disabled={loading || !riskDirty}
+                      className="rounded-xl border border-emerald-400/40 bg-emerald-500/10 px-4 py-2 text-sm font-bold uppercase text-emerald-300 hover:bg-emerald-500/20 disabled:opacity-50"
+                    >
+                      Save risk settings
+                    </button>
+                    <button
+                      type="button"
+                      onClick={() => setRiskDraft(settings?.risk ?? null)}
+                      disabled={loading || !riskDirty}
+                      className="rounded-xl border border-white/10 bg-white/[0.03] px-4 py-2 text-sm font-bold uppercase text-slate-300 hover:bg-white/[0.06] disabled:opacity-50"
+                    >
+                      Reset
+                    </button>
+                    {riskDirty ? <span className="text-xs text-amber-300">Unsaved changes</span> : <span className="text-xs text-slate-500">Saved</span>}
+                  </div>
+
+                  <div className="grid grid-cols-1 gap-4 md:grid-cols-2">
+                    <NumberInput
+                      label="Max risk per trade (%)"
+                      description="Hard cap per-trade risk as a percent of equity"
+                      value={riskDraft.max_risk_per_trade_percent}
+                      onChange={(val) => setRiskDraft((prev) => (prev ? { ...prev, max_risk_per_trade_percent: val } : prev))}
+                      min={0.1}
+                      max={10}
+                      step={0.1}
+                    />
+                    <NumberInput
+                      label="Max daily loss (%)"
+                      description="Stop trading after this daily drawdown"
+                      value={riskDraft.max_daily_loss_percent}
+                      onChange={(val) => setRiskDraft((prev) => (prev ? { ...prev, max_daily_loss_percent: val } : prev))}
+                      min={0.5}
+                      max={10}
+                      step={0.1}
+                    />
+                    <NumberInput
+                      label="Max position size (%)"
+                      description="Max position size as a percent of buying power"
+                      value={riskDraft.max_position_size_percent}
+                      onChange={(val) => setRiskDraft((prev) => (prev ? { ...prev, max_position_size_percent: val } : prev))}
+                      min={1}
+                      max={100}
+                      step={1}
+                    />
+                    <NumberInput
+                      label="Min reward:risk (R)"
+                      description="Reject trades below this reward:risk ratio (e.g. 3R)"
+                      value={riskDraft.min_reward_risk_ratio}
+                      onChange={(val) => setRiskDraft((prev) => (prev ? { ...prev, min_reward_risk_ratio: val } : prev))}
+                      min={1}
+                      max={20}
+                      step={0.5}
+                    />
+                  </div>
+                </div>
+              )}
+            </section>
+            )}
 
             {/* LLM Gateway Settings */}
+            {(activeTab === "llm" || activeTab === "overview") && (
             <section className="rounded-2xl border border-emerald-400/15 bg-black/35 p-6 backdrop-blur shadow-[0_0_40px_rgba(0,0,0,0.25)]">
               <h2 className="mb-4 text-xl font-semibold text-emerald-400">LLM Gateway</h2>
               <div className="grid grid-cols-1 gap-4 lg:grid-cols-2">
@@ -556,8 +720,10 @@ export default function SettingsPage() {
                 />
               </div>
             </section>
+            )}
 
             {/* Market Data Settings */}
+            {(activeTab === "market" || activeTab === "overview") && (
             <section className="rounded-2xl border border-emerald-400/15 bg-black/35 p-6 backdrop-blur shadow-[0_0_40px_rgba(0,0,0,0.25)]">
               <h2 className="mb-4 text-xl font-semibold text-emerald-400">Market Data</h2>
               <div className="grid grid-cols-1 gap-4 lg:grid-cols-2">
@@ -599,8 +765,10 @@ export default function SettingsPage() {
                 />
               </div>
             </section>
+            )}
 
             {/* News Settings */}
+            {(activeTab === "news" || activeTab === "overview") && (
             <section className="rounded-2xl border border-emerald-400/15 bg-black/35 p-6 backdrop-blur shadow-[0_0_40px_rgba(0,0,0,0.25)]">
               <h2 className="mb-4 text-xl font-semibold text-emerald-400">News & Sentiment</h2>
               <div className="grid grid-cols-1 gap-4 lg:grid-cols-2">
@@ -635,8 +803,10 @@ export default function SettingsPage() {
                 />
               </div>
             </section>
+            )}
 
             {/* Platform Features */}
+            {(activeTab === "platform" || activeTab === "overview") && (
             <section className="rounded-2xl border border-emerald-400/15 bg-black/35 p-6 backdrop-blur shadow-[0_0_40px_rgba(0,0,0,0.25)]">
               <h2 className="mb-4 text-xl font-semibold text-emerald-400">Platform Features</h2>
               <div className="grid grid-cols-1 gap-4 lg:grid-cols-2">
@@ -654,8 +824,10 @@ export default function SettingsPage() {
                 />
               </div>
             </section>
+            )}
 
             {/* Rate Limits */}
+            {(activeTab === "rate_limits" || activeTab === "overview") && (
             <section className="rounded-2xl border border-emerald-400/15 bg-black/35 p-6 backdrop-blur shadow-[0_0_40px_rgba(0,0,0,0.25)]">
               <h2 className="mb-4 text-xl font-semibold text-emerald-400">Rate Limits & Safety</h2>
               <div className="grid grid-cols-1 gap-4 md:grid-cols-2">
@@ -677,79 +849,9 @@ export default function SettingsPage() {
                 />
               </div>
             </section>
+            )}
 
-            {/* Account Risk Center - Display Only with Alpaca Data */}
-            <section className="rounded-2xl border border-emerald-400/15 bg-black/35 p-6 backdrop-blur shadow-[0_0_40px_rgba(0,0,0,0.25)]">
-              <div className="mb-4 flex items-center justify-between">
-                <h2 className="text-xl font-semibold text-emerald-400">Account Risk Center</h2>
-                <span className="rounded-full border border-emerald-500/30 bg-emerald-500/10 px-3 py-1 text-xs text-emerald-300">
-                  Alpaca Paper Account
-                </span>
-              </div>
-              <p className="mb-4 text-sm text-slate-400">
-                Live account data from Alpaca paper trading. This section is display-only; values are sourced directly from your Alpaca account.
-              </p>
-              
-              {alpaca?.account ? (
-                <div className="grid grid-cols-1 gap-4 md:grid-cols-2 lg:grid-cols-4">
-                  <div className="rounded-xl border border-emerald-400/15 bg-white/[0.03] p-4">
-                    <p className="text-xs uppercase tracking-wide text-slate-500">Buying Power</p>
-                    <p className="mt-1 text-xl font-semibold text-emerald-400">
-                      ${alpaca.account.buying_power?.toLocaleString(undefined, { maximumFractionDigits: 2 }) ?? "N/A"}
-                    </p>
-                    <p className="text-xs text-slate-500">Available for trading</p>
-                  </div>
-                  <div className="rounded-xl border border-emerald-400/15 bg-white/[0.03] p-4">
-                    <p className="text-xs uppercase tracking-wide text-slate-500">Account Equity</p>
-                    <p className="mt-1 text-xl font-semibold text-emerald-400">
-                      ${alpaca.account.equity?.toLocaleString(undefined, { maximumFractionDigits: 2 }) ?? "N/A"}
-                    </p>
-                    <p className="text-xs text-slate-500">Total portfolio value</p>
-                  </div>
-                  <div className="rounded-xl border border-emerald-400/15 bg-white/[0.03] p-4">
-                    <p className="text-xs uppercase tracking-wide text-slate-500">Cash</p>
-                    <p className="mt-1 text-xl font-semibold text-emerald-400">
-                      ${alpaca.account.cash?.toLocaleString(undefined, { maximumFractionDigits: 2 }) ?? "N/A"}
-                    </p>
-                    <p className="text-xs text-slate-500">Unsettled cash</p>
-                  </div>
-                  <div className="rounded-xl border border-emerald-400/15 bg-white/[0.03] p-4">
-                    <p className="text-xs uppercase tracking-wide text-slate-500">Portfolio Value</p>
-                    <p className="mt-1 text-xl font-semibold text-emerald-400">
-                      ${alpaca.account.portfolio_value?.toLocaleString(undefined, { maximumFractionDigits: 2 }) ?? "N/A"}
-                    </p>
-                    <p className="text-xs text-slate-500">Positions + cash</p>
-                  </div>
-                </div>
-              ) : (
-                <div className="rounded-xl border border-amber-500/30 bg-amber-500/10 p-4 text-amber-200">
-                  <p className="text-sm">No Alpaca account data available. Please configure your Alpaca API keys in the backend .env file.</p>
-                </div>
-              )}
-              
-              {alpaca?.account && (
-                <div className="mt-4 grid grid-cols-2 gap-3 md:grid-cols-4 text-sm">
-                  <div className="rounded-lg border border-emerald-400/15 bg-white/[0.03] px-3 py-2">
-                    <span className="text-slate-500">Account #:</span>
-                    <span className="ml-2 text-slate-300 font-mono">{alpaca.account.account_number ?? "N/A"}</span>
-                  </div>
-                  <div className="rounded-lg border border-emerald-400/15 bg-white/[0.03] px-3 py-2">
-                    <span className="text-slate-500">Status:</span>
-                    <span className="ml-2 text-slate-300">{alpaca.account.status ?? "N/A"}</span>
-                  </div>
-                  <div className="rounded-lg border border-emerald-400/15 bg-white/[0.03] px-3 py-2">
-                    <span className="text-slate-500">Day Trades:</span>
-                    <span className="ml-2 text-slate-300">{alpaca.account.daytrade_count ?? 0}</span>
-                  </div>
-                  <div className="rounded-lg border border-emerald-400/15 bg-white/[0.03] px-3 py-2">
-                    <span className="text-slate-500">PDT Status:</span>
-                    <span className={`ml-2 ${alpaca.account.pattern_day_trader ? "text-amber-400" : "text-emerald-400"}`}>
-                      {alpaca.account.pattern_day_trader ? "Flagged" : "Clear"}
-                    </span>
-                  </div>
-                </div>
-              )}
-            </section>
+            {/* Account snapshot belongs in Account Risk Center. */}
 
             {/* Actions */}
             <section className="flex gap-4">
