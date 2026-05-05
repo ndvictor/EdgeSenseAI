@@ -19,6 +19,22 @@ from app.services.persistence_service import (
     save_journal_entry,
 )
 
+ResolutionPath = Literal[
+    "target_first",
+    "stop_first",
+    "timed_exit",
+    "invalidation_before_entry",
+    "unknown",
+]
+
+_VALID_RESOLUTION_PATHS = frozenset({
+    "target_first",
+    "stop_first",
+    "timed_exit",
+    "invalidation_before_entry",
+    "unknown",
+})
+
 
 class JournalEntryCreateRequest(BaseModel):
     """Request to create a journal entry."""
@@ -45,6 +61,10 @@ class JournalEntryCreateRequest(BaseModel):
     closed_at: datetime | None = None
     notes: str | None = None
     tags: list[str] = Field(default_factory=list)
+    resolution_path: ResolutionPath | None = Field(
+        default=None,
+        description="Optional explicit resolution path (overrides deterministic inference).",
+    )
 
 
 class JournalEntryResponse(BaseModel):
@@ -57,6 +77,7 @@ class JournalEntryResponse(BaseModel):
     source_id: str | None = None
     symbol: str | None = None
     outcome_label: Literal["win", "loss", "breakeven", "avoided_loss", "missed_opportunity", "invalidated", "unknown"] = "unknown"
+    resolution_path: ResolutionPath = "unknown"
     mfe_percent: float | None = None
     mae_percent: float | None = None
     realized_r: float | None = None
@@ -93,14 +114,101 @@ _JOURNAL_ENTRIES: dict[str, JournalEntryResponse] = {}
 _JOURNAL_CREATE_REQUESTS: dict[str, JournalEntryCreateRequest] = {}  # Store original request for updates
 
 
+def _price_tolerance(entry: float) -> float:
+    return max(abs(entry) * 1e-6, 0.01)
+
+
+def _parse_resolution_from_tags(tags: Any) -> ResolutionPath | None:
+    if not tags or not isinstance(tags, (list, tuple)):
+        return None
+    for t in tags:
+        if isinstance(t, str) and t.startswith("resolution_path="):
+            val = t.split("=", 1)[1].strip()
+            if val in _VALID_RESOLUTION_PATHS:
+                return val  # type: ignore[return-value]
+    return None
+
+
+def _merge_resolution_tag(tags: list[str], resolution_path: ResolutionPath) -> list[str]:
+    out = [t for t in tags if not (isinstance(t, str) and t.startswith("resolution_path="))]
+    out.append(f"resolution_path={resolution_path}")
+    return out
+
+
+def _infer_direction(entry: float, stop: float, target: float) -> Literal["long", "short", "ambiguous"]:
+    if stop < entry < target:
+        return "long"
+    if target < entry < stop:
+        return "short"
+    return "ambiguous"
+
+
+def _compute_resolution_path(request: JournalEntryCreateRequest) -> ResolutionPath:
+    """Infer how the trade resolved relative to stop/target (learning-loop labels).
+
+    Uses exit vs stop/target bands for long and short structures. Does not invent tick-level
+    ordering when both bands are touched; interior exits are labeled timed_exit.
+    """
+    if request.resolution_path and request.resolution_path in _VALID_RESOLUTION_PATHS:
+        return request.resolution_path
+
+    if request.entry_price is None:
+        blob = " ".join(
+            [
+                (request.actual_outcome or "").lower(),
+                (request.notes or "").lower(),
+                " ".join(request.tags).lower() if request.tags else "",
+            ]
+        )
+        if "invalidation_before_entry" in blob or "invalidated before entry" in blob or "setup invalidated" in blob:
+            return "invalidation_before_entry"
+        if request.actual_outcome and "invalid" in request.actual_outcome.lower():
+            return "invalidation_before_entry"
+        return "unknown"
+
+    if request.exit_price is None or request.stop_loss is None or request.target_price is None:
+        return "unknown"
+
+    entry = float(request.entry_price)
+    exit_p = float(request.exit_price)
+    stop = float(request.stop_loss)
+    target = float(request.target_price)
+    direction = _infer_direction(entry, stop, target)
+    if direction == "ambiguous":
+        return "unknown"
+
+    tol = _price_tolerance(entry)
+
+    if direction == "long":
+        near_stop = exit_p <= stop + tol
+        near_target = exit_p >= target - tol
+        if near_stop and not near_target:
+            return "stop_first"
+        if near_target and not near_stop:
+            return "target_first"
+        return "timed_exit"
+
+    near_stop = exit_p >= stop - tol
+    near_target = exit_p <= target + tol
+    if near_stop and not near_target:
+        return "stop_first"
+    if near_target and not near_stop:
+        return "target_first"
+    return "timed_exit"
+
+
 def _journal_response_from_row(row: dict) -> JournalEntryResponse | None:
     try:
+        rp = row.get("resolution_path")
+        if not isinstance(rp, str) or rp not in _VALID_RESOLUTION_PATHS:
+            rp = _parse_resolution_from_tags(row.get("tags")) or "unknown"
         return JournalEntryResponse.model_validate({
             "id": row.get("id"),
             "source_type": row.get("source_type"),
             "source_id": row.get("source_id"),
             "symbol": row.get("symbol"),
             "outcome_label": row.get("outcome_label", "unknown"),
+            "resolution_path": rp,
             "mfe_percent": row.get("mfe_percent"),
             "mae_percent": row.get("mae_percent"),
             "realized_r": row.get("realized_r"),
@@ -149,10 +257,22 @@ def _compute_outcome_label(
     # Need entry and exit to determine win/loss
     if entry_price is None or exit_price is None:
         return "unknown"
-    
-    # Compute PnL
-    pnl = exit_price - entry_price
-    
+
+    entry_f = float(entry_price)
+    exit_f = float(exit_price)
+
+    # Direction-aware PnL when stop/target bracket the entry (long vs short structure)
+    if stop_loss is not None and target_price is not None:
+        direction = _infer_direction(entry_f, float(stop_loss), float(target_price))
+        if direction == "long":
+            pnl = exit_f - entry_f
+        elif direction == "short":
+            pnl = entry_f - exit_f
+        else:
+            pnl = exit_f - entry_f
+    else:
+        pnl = exit_f - entry_f
+
     # Determine win/loss/ breakeven
     if abs(pnl) < 0.01:  # Within 1 cent is breakeven
         return "breakeven"
@@ -222,10 +342,23 @@ def _extract_lessons(
     mfe_percent: float | None,
     mae_percent: float | None,
     followed_plan: bool | None,
+    resolution_path: ResolutionPath,
 ) -> list[str]:
     """Extract lessons from outcome data."""
     lessons = []
-    
+
+    if resolution_path == "stop_first" and outcome_label == "loss":
+        lessons.append("Resolved at stop before target — review entry, stop placement, or regime fit")
+
+    if resolution_path == "target_first" and outcome_label == "win":
+        lessons.append("Target reached before stop — planned reward/risk behavior")
+
+    if resolution_path == "timed_exit" and outcome_label in ("win", "loss", "breakeven"):
+        lessons.append("Exit between stop and target — tag as timed/rule-based exit for ranker calibration")
+
+    if resolution_path == "invalidation_before_entry":
+        lessons.append("Setup invalidated before entry — discipline / avoidance signal for scorecards")
+
     if outcome_label == "loss" and realized_r is not None:
         if realized_r < -1:
             lessons.append("Stop loss exceeded - risk management review needed")
@@ -271,7 +404,9 @@ def create_journal_entry(request: JournalEntryCreateRequest) -> JournalEntryResp
         request.actual_outcome,
         request.source_type,
     )
-    
+
+    resolution_path = _compute_resolution_path(request)
+
     mfe_percent, mae_percent = _compute_mfe_mae(
         request.entry_price,
         request.max_favorable_price,
@@ -308,14 +443,26 @@ def create_journal_entry(request: JournalEntryCreateRequest) -> JournalEntryResp
             confidence_error = 0.5
     
     # Extract lessons
-    lessons = _extract_lessons(outcome_label, realized_r, mfe_percent, mae_percent, followed_plan)
-    
+    lessons = _extract_lessons(
+        outcome_label,
+        realized_r,
+        mfe_percent,
+        mae_percent,
+        followed_plan,
+        resolution_path,
+    )
+
+    persist_request = request.model_copy(
+        update={"tags": _merge_resolution_tag(list(request.tags), resolution_path)}
+    )
+
     response = JournalEntryResponse(
         id=entry_id,
         source_type=request.source_type,
         source_id=request.source_id,
         symbol=request.symbol,
         outcome_label=outcome_label,
+        resolution_path=resolution_path,
         mfe_percent=mfe_percent,
         mae_percent=mae_percent,
         realized_r=realized_r,
@@ -331,11 +478,11 @@ def create_journal_entry(request: JournalEntryCreateRequest) -> JournalEntryResp
     # Store in memory
     global _JOURNAL_ENTRIES, _JOURNAL_CREATE_REQUESTS
     _JOURNAL_ENTRIES[entry_id] = response
-    _JOURNAL_CREATE_REQUESTS[entry_id] = request
-    
+    _JOURNAL_CREATE_REQUESTS[entry_id] = persist_request
+
     # Try to persist to DB
     try:
-        save_journal_entry(request, response)
+        save_journal_entry(persist_request, response)
     except Exception:
         pass  # Memory fallback is acceptable
     

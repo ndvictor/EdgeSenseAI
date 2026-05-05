@@ -24,7 +24,6 @@ from app.api.routes.event_scanner_models import router as event_scanner_router
 from app.api.routes.feature_store import router as feature_store_router
 from app.api.routes.historical_analogs import router as historical_analogs_router
 from app.api.routes.historical_similarity import router as historical_similarity_router
-from app.api.routes.journal_outcomes import router as journal_outcomes_router
 from app.api.routes.llm_budget_gate import router as llm_budget_gate_router
 from app.api.routes.memory_update import router as memory_update_router
 from app.api.routes.model_registry import router as model_registry_router

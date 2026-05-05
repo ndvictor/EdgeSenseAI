@@ -3,6 +3,18 @@ from typing import Any, Literal
 from pydantic import BaseModel, Field
 
 
+class StrategyRegistrySummary(BaseModel):
+    """Aggregated view of the in-code strategy registry (Phase 1 surface)."""
+
+    data_source: Literal["strategy_registry"] = "strategy_registry"
+    total_count: int
+    by_status: dict[str, int]
+    active_approved_count: int
+    candidate_count: int
+    production_ready_count: int
+    disabled_or_blocked_count: int
+
+
 class StrategyConfig(BaseModel):
     strategy_key: str
     display_name: str
@@ -234,6 +246,11 @@ _STRATEGIES: list[StrategyConfig] = [
     ),
 ]
 
+_keys = [s.strategy_key for s in _STRATEGIES]
+_dup_keys = sorted({k for k in _keys if _keys.count(k) > 1})
+if _dup_keys:
+    raise RuntimeError("Duplicate strategy_key in _STRATEGIES: " + ", ".join(_dup_keys))
+
 
 def list_strategies() -> list[StrategyConfig]:
     return _STRATEGIES
@@ -267,4 +284,26 @@ def is_strategy_available_for_production(strategy_key: str) -> bool:
         strategy.status in ("active", "approved")
         and strategy.promotion_status == "active"
         and strategy.disabled_reason is None
+    )
+
+
+def get_strategy_registry_summary() -> StrategyRegistrySummary:
+    """Return rollups for dashboards and readiness checks without loading clients with full configs."""
+    all_s = _STRATEGIES
+    by_status: dict[str, int] = {}
+    for s in all_s:
+        by_status[s.status] = by_status.get(s.status, 0) + 1
+    production_ready = sum(
+        1 for s in all_s if is_strategy_available_for_production(s.strategy_key)
+    )
+    disabled_or_blocked = sum(
+        1 for s in all_s if s.disabled_reason or s.status == "rejected"
+    )
+    return StrategyRegistrySummary(
+        total_count=len(all_s),
+        by_status=by_status,
+        active_approved_count=len(list_active_strategies()),
+        candidate_count=len(list_candidate_strategies()),
+        production_ready_count=production_ready,
+        disabled_or_blocked_count=disabled_or_blocked,
     )

@@ -119,7 +119,7 @@ export default function EdgeSignalsPage() {
   const reviewNeeded = signals.length - fullyValidated;
 
   return (
-    <div className="min-h-screen bg-slate-500 p-4 lg:p-6">
+    <div className="w-full min-h-full p-4 lg:p-8">
       <div className="mx-auto w-full max-w-[1600px] space-y-4">
         <PageHeader
           eyebrow="urgent edge validation"

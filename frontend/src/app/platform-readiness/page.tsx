@@ -45,21 +45,21 @@ export default function PlatformReadinessPage() {
 
   if (loading) {
     return (
-      <div className="flex items-center justify-center min-h-screen">
-        <div className="animate-spin rounded-full h-8 w-8 border-b-2 border-blue-500" />
+      <div className="flex min-h-[50vh] items-center justify-center">
+        <div className="h-8 w-8 animate-spin rounded-full border-2 border-emerald-400 border-t-transparent" />
       </div>
     );
   }
 
   if (error) {
     return (
-      <div className="p-6">
-        <div className="bg-red-50 border border-red-200 rounded-lg p-4">
-          <h2 className="text-red-700 font-semibold mb-2">Error Loading Platform Readiness</h2>
-          <p className="text-red-600">{error}</p>
+      <div className="w-full p-4 lg:p-8">
+        <div className="rounded-2xl border border-red-500/35 bg-red-500/10 p-4 backdrop-blur">
+          <h2 className="mb-2 font-semibold text-red-300">Error Loading Platform Readiness</h2>
+          <p className="text-sm text-red-200/90">{error}</p>
           <button
             onClick={handleRefresh}
-            className="mt-4 px-4 py-2 bg-red-600 text-white rounded hover:bg-red-700"
+            className="mt-4 rounded-lg border border-red-500/40 bg-red-500/20 px-4 py-2 text-sm text-red-100 transition hover:bg-red-500/30"
           >
             Retry
           </button>
@@ -70,9 +70,9 @@ export default function PlatformReadinessPage() {
 
   if (!readiness) {
     return (
-      <div className="p-6">
-        <div className="bg-yellow-50 border border-yellow-200 rounded-lg p-4">
-          <p className="text-yellow-700">No readiness data available</p>
+      <div className="w-full p-4 lg:p-8">
+        <div className="rounded-2xl border border-amber-500/35 bg-amber-500/10 p-4 backdrop-blur">
+          <p className="text-amber-200">No readiness data available</p>
         </div>
       </div>
     );
@@ -92,7 +92,7 @@ export default function PlatformReadinessPage() {
   );
 
   return (
-    <div className="p-6 max-w-7xl mx-auto">
+    <div className="mx-auto w-full max-w-7xl p-4 lg:p-8">
       {/* Header */}
       <div className="mb-8 flex items-center justify-between">
         <div>
@@ -103,7 +103,7 @@ export default function PlatformReadinessPage() {
         </div>
         <button
           onClick={handleRefresh}
-          className="px-4 py-2 bg-blue-600 text-white rounded hover:bg-blue-700 flex items-center gap-2"
+          className="flex items-center gap-2 rounded-xl border border-emerald-400/40 bg-emerald-500/10 px-4 py-2 text-sm font-semibold text-emerald-300 transition hover:bg-emerald-500/20"
         >
           <svg className="w-4 h-4" fill="none" stroke="currentColor" viewBox="0 0 24 24">
             <path strokeLinecap="round" strokeLinejoin="round" strokeWidth={2} d="M4 4v5h.582m15.356 2A8.001 8.001 0 004.582 9m0 0H9m11 11v-5h-.581m0 0a8.003 8.003 0 01-15.357-2m15.357 2H15" />

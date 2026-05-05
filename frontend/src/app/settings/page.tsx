@@ -170,7 +170,7 @@ export default function SettingsPage() {
     danger?: boolean;
     disabled?: boolean;
   }) => (
-    <div className={`rounded-xl border p-4 ${danger ? "border-red-800 bg-red-950/20" : "border-slate-800 bg-slate-900"} ${disabled ? "opacity-50" : ""}`}>
+    <div className={`rounded-xl border p-4 ${danger ? "border-red-800 bg-red-950/20" : "border-emerald-400/15 bg-black/35 backdrop-blur"} ${disabled ? "opacity-50" : ""}`}>
       <div className="flex items-center justify-between">
         <div>
           <h3 className={`font-semibold ${danger ? "text-red-400" : "text-white"}`}>{label}</h3>
@@ -212,7 +212,7 @@ export default function SettingsPage() {
     max?: number;
     step?: number;
   }) => (
-    <div className="rounded-xl border border-slate-800 bg-slate-900 p-4">
+    <div className="rounded-xl border border-emerald-400/15 bg-black/35 p-4 backdrop-blur">
       <div>
         <h3 className="font-semibold text-white">{label}</h3>
         <p className="text-sm text-slate-400">{description}</p>
@@ -225,7 +225,7 @@ export default function SettingsPage() {
         max={max}
         step={step}
         disabled={loading}
-        className="mt-3 w-full rounded-lg border border-slate-700 bg-slate-950 px-3 py-2 text-sm text-white focus:border-emerald-500 focus:outline-none disabled:opacity-50"
+        className="mt-3 w-full rounded-lg border border-emerald-400/20 bg-black/40 px-3 py-2 text-sm text-white focus:border-emerald-500 focus:outline-none disabled:opacity-50"
       />
     </div>
   );
@@ -243,7 +243,7 @@ export default function SettingsPage() {
     onChange: (val: string) => void;
     placeholder?: string;
   }) => (
-    <div className="rounded-xl border border-slate-800 bg-slate-900 p-4">
+    <div className="rounded-xl border border-emerald-400/15 bg-black/35 p-4 backdrop-blur">
       <div>
         <h3 className="font-semibold text-white">{label}</h3>
         <p className="text-sm text-slate-400">{description}</p>
@@ -254,7 +254,7 @@ export default function SettingsPage() {
         onChange={(e) => onChange(e.target.value)}
         placeholder={placeholder}
         disabled={loading}
-        className="mt-3 w-full rounded-lg border border-slate-700 bg-slate-950 px-3 py-2 text-sm text-white focus:border-emerald-500 focus:outline-none disabled:opacity-50"
+        className="mt-3 w-full rounded-lg border border-emerald-400/20 bg-black/40 px-3 py-2 text-sm text-white focus:border-emerald-500 focus:outline-none disabled:opacity-50"
       />
     </div>
   );
@@ -272,7 +272,7 @@ export default function SettingsPage() {
     onChange: (val: string) => void;
     options: { value: string; label: string }[];
   }) => (
-    <div className="rounded-xl border border-slate-800 bg-slate-900 p-4">
+    <div className="rounded-xl border border-emerald-400/15 bg-black/35 p-4 backdrop-blur">
       <div>
         <h3 className="font-semibold text-white">{label}</h3>
         <p className="text-sm text-slate-400">{description}</p>
@@ -281,7 +281,7 @@ export default function SettingsPage() {
         value={value}
         onChange={(e) => onChange(e.target.value)}
         disabled={loading}
-        className="mt-3 w-full rounded-lg border border-slate-700 bg-slate-950 px-3 py-2 text-sm text-white focus:border-emerald-500 focus:outline-none disabled:opacity-50"
+        className="mt-3 w-full rounded-lg border border-emerald-400/20 bg-black/40 px-3 py-2 text-sm text-white focus:border-emerald-500 focus:outline-none disabled:opacity-50"
       >
         {options.map((opt) => (
           <option key={opt.value} value={opt.value}>{opt.label}</option>
@@ -291,7 +291,7 @@ export default function SettingsPage() {
   );
 
   return (
-    <div className="min-h-screen bg-slate-950 p-4 lg:p-6">
+    <div className="w-full min-h-full p-4 lg:p-8">
       <div className="mx-auto w-full max-w-[1600px]">
         <PageHeader
           eyebrow="Platform Configuration"
@@ -427,7 +427,7 @@ export default function SettingsPage() {
         ) : (
           <div className="space-y-6">
             {/* Trading Settings */}
-            <section className="rounded-xl border border-slate-700 bg-slate-900/50 p-6">
+            <section className="rounded-2xl border border-emerald-400/15 bg-black/35 p-6 backdrop-blur shadow-[0_0_40px_rgba(0,0,0,0.25)]">
               <h2 className="mb-4 text-xl font-semibold text-emerald-400">Trading Configuration</h2>
               <div className="grid grid-cols-1 gap-4 lg:grid-cols-2">
                 <ToggleSwitch
@@ -507,7 +507,7 @@ export default function SettingsPage() {
             </section>
 
             {/* LLM Gateway Settings */}
-            <section className="rounded-xl border border-slate-700 bg-slate-900/50 p-6">
+            <section className="rounded-2xl border border-emerald-400/15 bg-black/35 p-6 backdrop-blur shadow-[0_0_40px_rgba(0,0,0,0.25)]">
               <h2 className="mb-4 text-xl font-semibold text-emerald-400">LLM Gateway</h2>
               <div className="grid grid-cols-1 gap-4 lg:grid-cols-2">
                 <ToggleSwitch
@@ -558,7 +558,7 @@ export default function SettingsPage() {
             </section>
 
             {/* Market Data Settings */}
-            <section className="rounded-xl border border-slate-700 bg-slate-900/50 p-6">
+            <section className="rounded-2xl border border-emerald-400/15 bg-black/35 p-6 backdrop-blur shadow-[0_0_40px_rgba(0,0,0,0.25)]">
               <h2 className="mb-4 text-xl font-semibold text-emerald-400">Market Data</h2>
               <div className="grid grid-cols-1 gap-4 lg:grid-cols-2">
                 <ToggleSwitch
@@ -601,7 +601,7 @@ export default function SettingsPage() {
             </section>
 
             {/* News Settings */}
-            <section className="rounded-xl border border-slate-700 bg-slate-900/50 p-6">
+            <section className="rounded-2xl border border-emerald-400/15 bg-black/35 p-6 backdrop-blur shadow-[0_0_40px_rgba(0,0,0,0.25)]">
               <h2 className="mb-4 text-xl font-semibold text-emerald-400">News & Sentiment</h2>
               <div className="grid grid-cols-1 gap-4 lg:grid-cols-2">
                 <ToggleSwitch
@@ -637,7 +637,7 @@ export default function SettingsPage() {
             </section>
 
             {/* Platform Features */}
-            <section className="rounded-xl border border-slate-700 bg-slate-900/50 p-6">
+            <section className="rounded-2xl border border-emerald-400/15 bg-black/35 p-6 backdrop-blur shadow-[0_0_40px_rgba(0,0,0,0.25)]">
               <h2 className="mb-4 text-xl font-semibold text-emerald-400">Platform Features</h2>
               <div className="grid grid-cols-1 gap-4 lg:grid-cols-2">
                 <ToggleSwitch
@@ -656,7 +656,7 @@ export default function SettingsPage() {
             </section>
 
             {/* Rate Limits */}
-            <section className="rounded-xl border border-slate-700 bg-slate-900/50 p-6">
+            <section className="rounded-2xl border border-emerald-400/15 bg-black/35 p-6 backdrop-blur shadow-[0_0_40px_rgba(0,0,0,0.25)]">
               <h2 className="mb-4 text-xl font-semibold text-emerald-400">Rate Limits & Safety</h2>
               <div className="grid grid-cols-1 gap-4 md:grid-cols-2">
                 <NumberInput
@@ -679,7 +679,7 @@ export default function SettingsPage() {
             </section>
 
             {/* Account Risk Center - Display Only with Alpaca Data */}
-            <section className="rounded-xl border border-slate-700 bg-slate-900/50 p-6">
+            <section className="rounded-2xl border border-emerald-400/15 bg-black/35 p-6 backdrop-blur shadow-[0_0_40px_rgba(0,0,0,0.25)]">
               <div className="mb-4 flex items-center justify-between">
                 <h2 className="text-xl font-semibold text-emerald-400">Account Risk Center</h2>
                 <span className="rounded-full border border-emerald-500/30 bg-emerald-500/10 px-3 py-1 text-xs text-emerald-300">
@@ -692,28 +692,28 @@ export default function SettingsPage() {
               
               {alpaca?.account ? (
                 <div className="grid grid-cols-1 gap-4 md:grid-cols-2 lg:grid-cols-4">
-                  <div className="rounded-xl border border-slate-800 bg-slate-950 p-4">
+                  <div className="rounded-xl border border-emerald-400/15 bg-white/[0.03] p-4">
                     <p className="text-xs uppercase tracking-wide text-slate-500">Buying Power</p>
                     <p className="mt-1 text-xl font-semibold text-emerald-400">
                       ${alpaca.account.buying_power?.toLocaleString(undefined, { maximumFractionDigits: 2 }) ?? "N/A"}
                     </p>
                     <p className="text-xs text-slate-500">Available for trading</p>
                   </div>
-                  <div className="rounded-xl border border-slate-800 bg-slate-950 p-4">
+                  <div className="rounded-xl border border-emerald-400/15 bg-white/[0.03] p-4">
                     <p className="text-xs uppercase tracking-wide text-slate-500">Account Equity</p>
                     <p className="mt-1 text-xl font-semibold text-emerald-400">
                       ${alpaca.account.equity?.toLocaleString(undefined, { maximumFractionDigits: 2 }) ?? "N/A"}
                     </p>
                     <p className="text-xs text-slate-500">Total portfolio value</p>
                   </div>
-                  <div className="rounded-xl border border-slate-800 bg-slate-950 p-4">
+                  <div className="rounded-xl border border-emerald-400/15 bg-white/[0.03] p-4">
                     <p className="text-xs uppercase tracking-wide text-slate-500">Cash</p>
                     <p className="mt-1 text-xl font-semibold text-emerald-400">
                       ${alpaca.account.cash?.toLocaleString(undefined, { maximumFractionDigits: 2 }) ?? "N/A"}
                     </p>
                     <p className="text-xs text-slate-500">Unsettled cash</p>
                   </div>
-                  <div className="rounded-xl border border-slate-800 bg-slate-950 p-4">
+                  <div className="rounded-xl border border-emerald-400/15 bg-white/[0.03] p-4">
                     <p className="text-xs uppercase tracking-wide text-slate-500">Portfolio Value</p>
                     <p className="mt-1 text-xl font-semibold text-emerald-400">
                       ${alpaca.account.portfolio_value?.toLocaleString(undefined, { maximumFractionDigits: 2 }) ?? "N/A"}
@@ -729,19 +729,19 @@ export default function SettingsPage() {
               
               {alpaca?.account && (
                 <div className="mt-4 grid grid-cols-2 gap-3 md:grid-cols-4 text-sm">
-                  <div className="rounded-lg border border-slate-800 bg-slate-950 px-3 py-2">
+                  <div className="rounded-lg border border-emerald-400/15 bg-white/[0.03] px-3 py-2">
                     <span className="text-slate-500">Account #:</span>
                     <span className="ml-2 text-slate-300 font-mono">{alpaca.account.account_number ?? "N/A"}</span>
                   </div>
-                  <div className="rounded-lg border border-slate-800 bg-slate-950 px-3 py-2">
+                  <div className="rounded-lg border border-emerald-400/15 bg-white/[0.03] px-3 py-2">
                     <span className="text-slate-500">Status:</span>
                     <span className="ml-2 text-slate-300">{alpaca.account.status ?? "N/A"}</span>
                   </div>
-                  <div className="rounded-lg border border-slate-800 bg-slate-950 px-3 py-2">
+                  <div className="rounded-lg border border-emerald-400/15 bg-white/[0.03] px-3 py-2">
                     <span className="text-slate-500">Day Trades:</span>
                     <span className="ml-2 text-slate-300">{alpaca.account.daytrade_count ?? 0}</span>
                   </div>
-                  <div className="rounded-lg border border-slate-800 bg-slate-950 px-3 py-2">
+                  <div className="rounded-lg border border-emerald-400/15 bg-white/[0.03] px-3 py-2">
                     <span className="text-slate-500">PDT Status:</span>
                     <span className={`ml-2 ${alpaca.account.pattern_day_trader ? "text-amber-400" : "text-emerald-400"}`}>
                       {alpaca.account.pattern_day_trader ? "Flagged" : "Clear"}
@@ -756,14 +756,14 @@ export default function SettingsPage() {
               <button
                 onClick={resetSettings}
                 disabled={loading}
-                className="rounded-lg border border-slate-600 bg-slate-800 px-4 py-2 text-sm text-slate-300 hover:bg-slate-700 disabled:opacity-50"
+                className="rounded-lg border border-white/15 bg-white/[0.06] px-4 py-2 text-sm text-slate-200 hover:bg-white/10 disabled:opacity-50"
               >
                 Reset to Defaults
               </button>
               <button
                 onClick={loadSettings}
                 disabled={loading}
-                className="rounded-lg border border-emerald-600 bg-emerald-900/30 px-4 py-2 text-sm text-emerald-400 hover:bg-emerald-900/50 disabled:opacity-50"
+                className="rounded-lg border border-emerald-400/40 bg-emerald-500/10 px-4 py-2 text-sm text-emerald-300 hover:bg-emerald-500/20 disabled:opacity-50"
               >
                 Refresh Settings
               </button>
@@ -790,7 +790,7 @@ function SettingsCard({
   return (
     <Link 
       href={href}
-      className="group rounded-xl border border-slate-700 bg-slate-900/50 p-4 transition hover:border-emerald-500/30 hover:bg-slate-800/50"
+      className="group rounded-xl border border-emerald-400/15 bg-black/35 p-4 backdrop-blur transition hover:border-emerald-400/40 hover:bg-white/[0.05]"
     >
       <div className="mb-3 flex items-center gap-2">
         <Icon className="h-5 w-5 text-emerald-400" />

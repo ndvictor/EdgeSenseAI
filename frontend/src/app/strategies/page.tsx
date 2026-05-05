@@ -239,7 +239,7 @@ export default function StrategiesPage() {
   const needsAttention = notReadyStrategies.filter((strategy) => strategy.status === "Blocked" || strategy.status === "Testing").length;
 
   return (
-    <div className="min-h-screen bg-slate-500 p-4 lg:p-6">
+    <div className="w-full min-h-full p-4 lg:p-8">
       <div className="mx-auto w-full max-w-[1600px] space-y-4">
         <PageHeader
           eyebrow="strategy control plane"

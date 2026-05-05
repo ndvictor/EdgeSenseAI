@@ -266,7 +266,7 @@ export default function StrategyLabPage() {
   };
 
   return (
-    <div className="mx-auto max-w-6xl p-6">
+    <div className="mx-auto w-full max-w-6xl p-4 lg:p-8">
       <PageHeader
         eyebrow="workflow step 3-7"
         title="Strategy Lab"

@@ -3,6 +3,8 @@
 import dynamic from "next/dynamic";
 import { usePathname } from "next/navigation";
 
+import { PlatformPortalScaffold } from "@/components/PlatformPortalScaffold";
+
 const Sidebar = dynamic(() => import("@/components/Sidebar").then((mod) => mod.Sidebar), {
   ssr: false,
   loading: () => <aside className="min-h-screen w-68 shrink-0 border-r border-emerald-400/10 bg-[#05080d]" />,
@@ -23,7 +25,9 @@ export function AppShell({ children }: { children: React.ReactNode }) {
   return (
     <div className="flex min-h-screen">
       <Sidebar />
-      <main className="min-h-screen flex-1 min-w-0 bg-[#03070b]">{children}</main>
+      <main className="relative min-h-screen flex-1 min-w-0 overflow-hidden bg-emerald-950">
+        <PlatformPortalScaffold>{children}</PlatformPortalScaffold>
+      </main>
     </div>
   );
 }

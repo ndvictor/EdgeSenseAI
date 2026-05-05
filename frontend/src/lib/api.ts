@@ -98,9 +98,16 @@ export type AlpacaPaperSnapshot = {
   mode: "paper";
   status: "connected" | "not_configured" | "unavailable";
   endpoint: string;
+  keys_configured: boolean;
+  paper_trading_enabled: boolean;
+  live_trading_enabled: boolean;
+  broker_execution_enabled: boolean;
   account?: AlpacaPaperAccount;
-  positions?: AlpacaPaperPosition[];
-  orders?: AlpacaPaperOrder[];
+  positions: AlpacaPaperPosition[];
+  open_orders: AlpacaPaperOrder[];
+  message: string;
+  warnings: string[];
+  last_checked?: string;
 };
 
 // Settings API Types - Comprehensive Platform Settings
@@ -1165,6 +1172,16 @@ export type StrategyConfig = {
 
 export type StrategyRegistryResponse = StrategyConfig[];
 
+export type StrategyRegistrySummary = {
+  data_source: "strategy_registry";
+  total_count: number;
+  by_status: Record<string, number>;
+  active_approved_count: number;
+  candidate_count: number;
+  production_ready_count: number;
+  disabled_or_blocked_count: number;
+};
+
 export type PlatformReadinessCheck = {
   key: string;
   label: string;
@@ -2032,6 +2049,8 @@ export type JournalOutcomeResponse = {
   source_id: string | null;
   symbol: string | null;
   outcome_label: "win" | "loss" | "breakeven" | "avoided_loss" | "missed_opportunity" | "invalidated" | "unknown";
+  /** How price resolved vs planned stop/target (learning-loop calibration). */
+  resolution_path: "target_first" | "stop_first" | "timed_exit" | "invalidation_before_entry" | "unknown";
   mfe_percent: number | null;
   mae_percent: number | null;
   realized_r: number | null;
@@ -2204,6 +2223,7 @@ export const api = {
   testLlmGatewayCall: (payload: LlmGatewayTestCallRequest) => request<LlmGatewayTestCallResponse>("/api/llm-gateway/test-call", { method: "POST", body: JSON.stringify(payload) }),
   getAgentRegistry: () => request<CoreAgentRegistryResponse>("/api/agents/registry"),
   getStrategies: () => request<StrategyRegistryResponse>("/api/strategies"),
+  getStrategyRegistrySummary: () => request<StrategyRegistrySummary>("/api/strategies/summary"),
   getCandidateStrategies: () => request<StrategyRegistryResponse>("/api/strategies/candidates"),
   getActiveStrategies: () => request<StrategyRegistryResponse>("/api/strategies/active"),
   getStrategy: (strategyKey: string) => request<StrategyConfig>(`/api/strategies/${strategyKey}`),

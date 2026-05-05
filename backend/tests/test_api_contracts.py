@@ -359,6 +359,13 @@ def test_agent_strategy_rules_scanner_and_auto_run_contracts():
     assert len(strategy_payload) >= 9
     assert any(strategy["strategy_key"] == "stock_day_trading" for strategy in strategy_payload)
 
+    strat_summary = client.get("/api/strategies/summary")
+    assert strat_summary.status_code == 200
+    strat_summary_payload = strat_summary.json()
+    assert strat_summary_payload["data_source"] == "strategy_registry"
+    assert strat_summary_payload["total_count"] == len(strategy_payload)
+    assert strat_summary_payload["total_count"] >= 9
+
     stock_day = client.get("/api/strategies/stock_day_trading")
     assert stock_day.status_code == 200
     assert stock_day.json()["live_trading_supported"] is False

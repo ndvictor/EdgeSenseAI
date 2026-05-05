@@ -19,6 +19,7 @@ type TradeNowConfig = {
   live_trading_enabled_env: boolean;
   broker_execution_enabled_env: boolean;
   paper_trading_enabled_env: boolean;
+  autonomous_execution_enabled_env: boolean;
   alpaca_keys_configured: boolean;
   alpaca_key_id_configured: boolean;
   alpaca_secret_key_configured: boolean;
@@ -167,7 +168,7 @@ export default function TradeNowPage() {
   };
 
   return (
-    <div className="min-h-screen bg-slate-500 p-4 lg:p-6">
+    <div className="w-full min-h-full p-4 lg:p-8">
       <div className="mx-auto w-full max-w-[1500px] space-y-4">
         <PageHeader
           eyebrow="execution foundation"

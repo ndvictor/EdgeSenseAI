@@ -118,7 +118,7 @@ export default function SignalsPage() {
   };
 
   return (
-    <div className="mx-auto max-w-6xl p-6">
+    <div className="mx-auto w-full max-w-6xl p-4 lg:p-8">
       <PageHeader
         eyebrow="workflow step 9-11"
         title="Signals"

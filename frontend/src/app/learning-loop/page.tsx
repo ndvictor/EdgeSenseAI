@@ -5,6 +5,21 @@ import { PageHeader, MetricCard } from "@/components/Cards";
 import { api, type JournalOutcomeResponse, type PerformanceDriftResponse, type ResearchPriorityResponse, type ModelStrategyUpdateResponse, type MemoryUpdateResponse } from "@/lib/api";
 import { Play, Target, TrendingUp, Brain, Database, AlertTriangle, CheckCircle, Clock, BookOpen, Activity, RotateCw, XCircle } from "lucide-react";
 
+function resolutionPathBadge(path: string) {
+  switch (path) {
+    case "target_first":
+      return <span className="rounded bg-emerald-900/40 px-1.5 py-0.5 text-[10px] font-bold uppercase text-emerald-400">Target first</span>;
+    case "stop_first":
+      return <span className="rounded bg-red-900/40 px-1.5 py-0.5 text-[10px] font-bold uppercase text-red-400">Stop first</span>;
+    case "timed_exit":
+      return <span className="rounded bg-sky-900/40 px-1.5 py-0.5 text-[10px] font-bold uppercase text-sky-400">Timed exit</span>;
+    case "invalidation_before_entry":
+      return <span className="rounded bg-amber-900/40 px-1.5 py-0.5 text-[10px] font-bold uppercase text-amber-400">Pre-entry invalid</span>;
+    default:
+      return null;
+  }
+}
+
 function outcomeBadge(label: string) {
   switch (label) {
     case "win":
@@ -155,7 +170,7 @@ export default function LearningLoopPage() {
   };
 
   return (
-    <div className="mx-auto max-w-6xl p-6">
+    <div className="mx-auto w-full max-w-6xl p-4 lg:p-8">
       <PageHeader
         eyebrow="workflow steps 20-24"
         title="Learning Loop"
@@ -260,9 +275,12 @@ export default function LearningLoopPage() {
             <div className="space-y-2 max-h-64 overflow-y-auto">
               {journalEntries.map(entry => (
                 <div key={entry.id} className="rounded-lg bg-slate-800/50 p-2 text-xs">
-                  <div className="flex items-center justify-between">
+                  <div className="flex items-center justify-between gap-2">
                     <span className="font-bold text-slate-300">{entry.symbol || "N/A"}</span>
-                    {outcomeBadge(entry.outcome_label)}
+                    <div className="flex flex-wrap items-center justify-end gap-1">
+                      {resolutionPathBadge(entry.resolution_path)}
+                      {outcomeBadge(entry.outcome_label)}
+                    </div>
                   </div>
                   <div className="mt-1 flex gap-2 text-slate-500">
                     <span>R: {entry.realized_r?.toFixed(2) || "N/A"}</span>

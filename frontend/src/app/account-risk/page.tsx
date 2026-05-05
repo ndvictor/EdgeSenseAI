@@ -22,8 +22,8 @@ export default function AccountRiskPage() {
 
   if (error) {
     return (
-      <div className="min-h-screen bg-slate-500 p-4 lg:p-6">
-        <div className="mx-auto w-full max-w-[1600px] rounded-xl border border-rose-800 bg-slate-950 p-4 shadow-sm">
+      <div className="w-full min-h-full p-4 lg:p-8">
+        <div className="mx-auto w-full max-w-[1600px] rounded-2xl border border-rose-500/35 bg-black/35 p-4 shadow-[0_0_40px_rgba(0,0,0,0.35)] backdrop-blur">
           <PageHeader
             eyebrow="account-aware control"
             title="Account Risk Center"
@@ -38,10 +38,10 @@ export default function AccountRiskPage() {
     );
   }
 
-  if (!alpaca) return <div className="min-h-screen bg-slate-500 p-4 text-sm text-slate-300">Loading...</div>;
+  if (!alpaca) return <div className="w-full min-h-full p-4 text-sm text-slate-400">Loading...</div>;
 
   return (
-    <div className="min-h-screen bg-slate-500 p-4 lg:p-6">
+    <div className="w-full min-h-full p-4 lg:p-8">
       <div className="mx-auto w-full max-w-[1600px] rounded-xl border border-emerald-800 bg-slate-950 p-4 shadow-sm">
         <div className="flex items-center justify-between">
           <PageHeader
@@ -160,12 +160,12 @@ export default function AccountRiskPage() {
                 <DisplayField 
                   label="Trading Blocked" 
                   value={alpaca.account.trading_blocked ? "Yes" : "No"} 
-                  warning={alpaca.account.trading_blocked}
+                  warning={alpaca.account.trading_blocked === true}
                 />
                 <DisplayField 
                   label="Account Blocked" 
                   value={alpaca.account.account_blocked ? "Yes" : "No"} 
-                  warning={alpaca.account.account_blocked}
+                  warning={alpaca.account.account_blocked === true}
                 />
               </div>
             </>

@@ -9,6 +9,7 @@ from pydantic import BaseModel, ConfigDict, Field
 from app.services.journal_outcome_service import (
     JournalEntryCreateRequest,
     JournalEntryResponse,
+    ResolutionPath,
     create_journal_entry,
     create_journal_entry_from_paper_trade,
     get_journal_entry,
@@ -44,6 +45,7 @@ class CreateJournalEntryRequest(BaseModel):
     closed_at: datetime | None = None
     notes: str | None = None
     tags: list[str] = Field(default_factory=list)
+    resolution_path: ResolutionPath | None = None
 
 
 class LabelFromPaperTradeRequest(BaseModel):
@@ -90,6 +92,7 @@ def post_journal_outcome(request: CreateJournalEntryRequest):
         closed_at=request.closed_at,
         notes=request.notes,
         tags=request.tags,
+        resolution_path=request.resolution_path,
     )
     return create_journal_entry(internal_request)
 

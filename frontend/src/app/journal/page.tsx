@@ -15,6 +15,21 @@ function outcomeIcon(label: string) {
   }
 }
 
+function resolutionPathBadge(path: string) {
+  switch (path) {
+    case "target_first":
+      return <span className="rounded bg-emerald-900/40 px-1.5 py-0.5 text-[10px] font-bold uppercase text-emerald-400">Target first</span>;
+    case "stop_first":
+      return <span className="rounded bg-red-900/40 px-1.5 py-0.5 text-[10px] font-bold uppercase text-red-400">Stop first</span>;
+    case "timed_exit":
+      return <span className="rounded bg-sky-900/40 px-1.5 py-0.5 text-[10px] font-bold uppercase text-sky-400">Timed exit</span>;
+    case "invalidation_before_entry":
+      return <span className="rounded bg-amber-900/40 px-1.5 py-0.5 text-[10px] font-bold uppercase text-amber-400">Pre-entry invalid</span>;
+    default:
+      return null;
+  }
+}
+
 function outcomeBadge(label: string) {
   switch (label) {
     case "win": return <span className="rounded-full border border-emerald-500 bg-emerald-500/10 px-2 py-0.5 text-xs font-bold uppercase text-emerald-400">Win</span>;
@@ -60,7 +75,7 @@ export default function JournalPage() {
   }, []);
 
   return (
-    <div className="mx-auto max-w-6xl p-6">
+    <div className="mx-auto w-full max-w-6xl p-4 lg:p-8">
       <PageHeader
         eyebrow="learning loop"
         title="Journal"
@@ -141,7 +156,10 @@ export default function JournalPage() {
                           MFE: {entry.mfe_percent?.toFixed(1) || "N/A"}% / MAE: {entry.mae_percent?.toFixed(1) || "N/A"}%
                         </div>
                       </div>
-                      {outcomeBadge(entry.outcome_label)}
+                      <div className="flex flex-col items-end gap-1">
+                        {resolutionPathBadge(entry.resolution_path)}
+                        {outcomeBadge(entry.outcome_label)}
+                      </div>
                     </div>
                   </div>
                 ))}

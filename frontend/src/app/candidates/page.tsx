@@ -157,7 +157,7 @@ export default function CandidatesPage() {
   const activeCandidates = candidates.filter((c) => c.status === "active");
 
   return (
-    <div className="min-h-screen bg-slate-500 p-4 lg:p-6">
+    <div className="w-full min-h-full p-4 lg:p-8">
       <div className="mx-auto w-full max-w-[1600px]">
         <PageHeader
           eyebrow="trading intelligence pipeline"

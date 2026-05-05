@@ -162,7 +162,7 @@ export default function RecommendationsPage() {
   const recommendationProvenance = recommendation ? (recommendation as typeof recommendation & ProvenanceLike) : null;
 
   return (
-    <div className="mx-auto max-w-6xl p-6">
+    <div className="mx-auto w-full max-w-6xl p-4 lg:p-8">
       <PageHeader
         eyebrow="workflow step 14-19"
         title="Recommendations"

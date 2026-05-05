@@ -4,7 +4,9 @@ from app.agents.registry import CoreAgentRegistryEntry, list_core_agents
 from app.services.edge_signal_rules_service import EdgeSignalRule, list_edge_signal_rules
 from app.strategies.registry import (
     StrategyConfig,
+    StrategyRegistrySummary,
     get_strategy,
+    get_strategy_registry_summary,
     list_active_strategies,
     list_candidate_strategies,
     list_strategies,
@@ -34,6 +36,12 @@ def get_strategies_candidates():
 def get_strategies_active():
     """Get active/approved strategies (excludes candidates)."""
     return list_active_strategies()
+
+
+@router.get("/strategies/summary", response_model=StrategyRegistrySummary)
+def get_strategies_summary():
+    """Rollup counts for the in-code strategy registry (Phase 1)."""
+    return get_strategy_registry_summary()
 
 
 @router.get("/strategies/{strategy_key}", response_model=StrategyConfig)
