@@ -211,6 +211,58 @@ def test_edge_signals_contract():
         assert signal["risk_factors"]
 
 
+def test_candidates_status_contract():
+    response = client.get("/api/candidates/status")
+    assert response.status_code == 200
+    payload = response.json()
+
+    assert payload["status"] == "ok"
+    assert payload["data_mode"] == "summary"
+    assert payload["updated_at"]
+
+    summary = payload["summary"]
+    assert summary["candidates_status"] in {"ready", "warning", "error", "disabled"}
+    assert summary["candidate_sources_configured"] == 7
+    assert summary["active_candidates"] >= 0
+    assert summary["ranked_candidates"] >= 0
+    assert summary["blocked_candidates"] >= 0
+    assert summary["last_candidate_at"] is None
+    assert summary["next_action"]
+
+    sources = payload["candidate_sources"]
+    assert isinstance(sources, list)
+    assert {s["key"] for s in sources} == {
+        "signal_engine",
+        "manual_watchlist",
+        "scanner_watchlist",
+        "strategy_lab",
+        "live_watchlist",
+        "market_regime_filter",
+        "catalyst_filter",
+    }
+
+    for source in sources:
+        assert source["label"]
+        assert source["status"] in {"ready", "warning", "error", "disabled"}
+        assert source["description"]
+        assert source["input_stage"] == "signals"
+        assert isinstance(source["candidate_types"], list) and source["candidate_types"]
+        assert source["downstream_consumers"] == ["recommendations", "risk", "command_center"]
+        assert source["active_count"] >= 0
+        assert source["ranked_count"] >= 0
+        assert source["blocked_count"] >= 0
+        assert source["last_candidate_at"] is None
+        assert isinstance(source["warnings"], list)
+        assert isinstance(source["errors"], list)
+        assert source["next_action"]
+
+    pos = payload["pipeline_position"]
+    assert pos["previous_stage"] == "signals"
+    assert pos["current_stage"] == "candidates"
+    assert pos["next_stage"] == "recommendations"
+    assert pos["downstream_stage"] == "risk"
+
+
 def test_market_snapshots_contract():
     response = client.get("/api/market/snapshots")
     assert response.status_code == 200

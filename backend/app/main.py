@@ -9,6 +9,7 @@ from app.api.routes.agent_scorecards import router as agent_scorecards_router
 from app.api.routes.agent_validation import router as agent_validation_router
 from app.api.routes.ai_ops import router as ai_ops_router
 from app.api.routes.auto_run import router as auto_run_router
+from app.api.routes.candidates_status import router as candidates_status_router
 from app.api.routes.candidate_universe import router as candidate_universe_router
 from app.api.routes.capital_allocation import router as capital_allocation_router
 from app.api.routes.journal_outcomes import router as journal_outcomes_router
@@ -149,6 +150,7 @@ app.include_router(auto_run_router, prefix="/api")
 app.include_router(memory_router, prefix="/api")
 app.include_router(decision_workflows_router, prefix="/api")
 app.include_router(candidate_universe_router, prefix="/api")
+app.include_router(candidates_status_router, prefix="/api")
 app.include_router(runtime_router, prefix="/api")
 app.include_router(universe_discovery_router, prefix="/api")
 app.include_router(universe_selection_router, prefix="/api")
