@@ -217,12 +217,12 @@ def get_data_sources_status():
     source_specs = [
         ("yfinance", "yfinance", "market_data", ["stocks", "crypto", "market_regime", "charting"], ["research_charting"]),
         ("Alpaca Market Data", "alpaca", "market_data", ["stocks", "quotes", "intraday"], ["reliable_stock_quotes"]),
-        ("Polygon.io", "polygon", "market_data", ["stocks", "options", "intraday"], ["production_intraday", "options_flow"]),
-        ("Alpha Vantage", "alpha_vantage", "market_data", ["stocks", "fundamentals"], ["fallback_market_data"]),
+        ("Massive / Polygon", "polygon", "market_data", ["stocks", "options", "intraday", "historical_bars", "aggregates"], ["production_intraday", "options_flow"]),
+        ("Alpha Vantage", "alpha_vantage", "enrichment", ["technical_indicators", "fundamentals", "commodities", "macro_enrichment", "fallback_time_series"], ["research_enrichment", "fallback_market_data"]),
         ("IEX Cloud", "iex", "market_data", ["stocks", "quotes"], ["fallback_quotes"]),
-        ("FRED", "fred", "macro", ["rates", "macro", "regime"], ["macro_agent"]),
+        ("FRED", "fred", "macro", ["rates", "inflation", "unemployment", "gdp", "yield_curve", "recession_indicators", "market_regime"], ["macro_agent", "market_regime"]),
         ("NewsAPI", "newsapi", "news", ["news", "sentiment", "market_radar"], ["news_sentiment_agent"]),
-        ("Finnhub", "finnhub", "news", ["news", "sentiment", "earnings"], ["news_sentiment_agent"]),
+        ("Finnhub", "finnhub", "news", ["company_news", "market_news", "sentiment", "earnings", "transcripts", "analyst_context"], ["catalyst_agent", "news_sentiment_agent"]),
         ("Benzinga", "benzinga", "news", ["news", "events", "market_radar"], ["market_radar_agent"]),
         ("OpenAI", "openai", "internal", ["agents", "explanations"], ["llm_explanations"]),
         ("PostgreSQL", "postgresql", "database", ["feature_store", "recommendations", "paper_trading"], ["persistence"]),
@@ -262,7 +262,7 @@ def get_data_sources_status():
             used_for=["options_analysis", "options_flow_agent"],
             required_for=["options_flow", "iv_rank", "greeks", "gamma_exposure"],
             last_checked=now,
-            message="Dedicated options chain and Greeks provider is not configured yet. Prefer Polygon Options or Tradier.",
+            message="Dedicated options chain and Greeks provider is not configured yet. Prefer Massive / Polygon Options or Tradier.",
         )
     )
     sources.append(
