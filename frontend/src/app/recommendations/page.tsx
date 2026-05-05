@@ -38,7 +38,7 @@ type ProvenanceLike = {
 
 function SourceChip({ icon, label, value, warn = false }: { icon?: React.ReactNode; label: string; value?: string | boolean | null; warn?: boolean }) {
   return (
-    <div className={`rounded-lg border px-3 py-2 ${warn ? "border-amber-500/40 bg-amber-500/10" : "border-slate-700 bg-slate-800/50"}`}>
+    <div className={`rounded-lg border px-3 py-2 ${warn ? "border-amber-500/40 bg-amber-500/10" : "border-emerald-400/15 bg-black/35"}`}>
       <div className="flex items-center gap-2 text-[10px] font-bold uppercase tracking-wide text-slate-500">
         {icon}
         {label}
@@ -51,7 +51,7 @@ function SourceChip({ icon, label, value, warn = false }: { icon?: React.ReactNo
 function SourcePanel({ provenance }: { provenance?: ProvenanceLike | null }) {
   const p = provenance || {};
   return (
-    <div className="mt-3 rounded-xl border border-slate-700 bg-slate-950 p-3">
+    <div className="mt-3 rounded-xl border border-emerald-400/15 bg-black/35 p-3 shadow-[0_0_28px_rgba(0,0,0,0.2)] backdrop-blur">
       <div className="mb-3 flex items-center gap-2 text-xs font-bold uppercase tracking-wide text-emerald-400">
         <Database className="h-4 w-4" />
         Source / Model / Agent Truth

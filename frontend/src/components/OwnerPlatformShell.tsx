@@ -187,17 +187,28 @@ export function OwnerPlatformShell({ children }: { children: React.ReactNode }) 
                 {pages.map((page) => {
                   const Icon = page.icon;
                   const active = pathname === page.href || (page.href === "/owner/pnl" && pathname === "/owner");
+                  const isAgentOps = page.key === "agentops" || page.href === "/owner/agentops";
                   return (
                     <Link
                       key={page.href}
                       href={page.href}
                       className={`group flex items-center gap-3 rounded-xl px-2 py-2 text-sm font-medium transition-all ${
                         active
-                          ? "border border-emerald-400/40 bg-emerald-400/10 text-white shadow-[0_0_28px_rgba(16,185,129,0.12)]"
+                          ? isAgentOps
+                            ? "border border-emerald-400/45 bg-emerald-400/12 text-emerald-100 shadow-[0_0_28px_rgba(16,185,129,0.16)]"
+                            : "border border-emerald-400/40 bg-emerald-400/10 text-white shadow-[0_0_28px_rgba(16,185,129,0.12)]"
                           : "text-slate-300 hover:bg-white/[0.04] hover:text-emerald-200"
                       }`}
                     >
-                      <span className="flex h-9 w-9 items-center justify-center rounded-xl border border-emerald-400/25 bg-emerald-400/[0.04] text-emerald-400">
+                      <span
+                        className={`flex h-9 w-9 items-center justify-center rounded-xl border transition-colors ${
+                          active
+                            ? isAgentOps
+                              ? "border-emerald-300/70 bg-emerald-300/10 text-emerald-200"
+                              : "border-emerald-400/60 bg-emerald-400/10 text-emerald-300"
+                            : "border-emerald-400/25 bg-emerald-400/[0.04] text-emerald-400"
+                        }`}
+                      >
                         <Icon className="h-4 w-4" />
                       </span>
                       <span className="flex-1">{page.title}</span>

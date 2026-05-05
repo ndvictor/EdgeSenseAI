@@ -6,6 +6,14 @@ import { api, type UpperWorkflowResponse, type UniverseDiscoverResponse, type Un
 import { Play, Globe, Target, ListFilter, TrendingUp, AlertTriangle, CheckCircle, XCircle, Clock, ArrowRight, Radar, Activity, Zap } from "lucide-react";
 import Link from "next/link";
 
+const cardShell = "rounded-2xl border border-emerald-400/15 bg-black/35 p-4 shadow-[0_0_40px_rgba(0,0,0,0.25)] backdrop-blur";
+const cardInner = "rounded-xl border border-emerald-400/10 bg-black/25 p-3";
+const btnDisabled = "cursor-not-allowed border border-slate-600 bg-slate-800 text-slate-500";
+const btnPrimary = "border border-emerald-400/40 bg-emerald-500/10 text-emerald-300 hover:bg-emerald-500 hover:text-slate-950";
+const btnSecondary = "border border-emerald-400/20 bg-black/30 text-emerald-300 hover:border-emerald-400/40 hover:bg-black/40";
+const btnTertiary = "border border-white/10 bg-white/[0.03] text-slate-400 hover:border-white/15 hover:bg-white/[0.05] hover:text-slate-200";
+type UniverseTab = "selection" | "discovery" | "results";
+
 function formatDate(dateStr: string | null | undefined) {
   if (!dateStr) return "—";
   try {
@@ -38,8 +46,8 @@ function phaseBadge(phase: string) {
     pre_market: "border-amber-500 bg-amber-500/10 text-amber-400",
     market_open_first_30_min: "border-emerald-500 bg-emerald-500/10 text-emerald-400",
     market_open: "border-emerald-500 bg-emerald-500/10 text-emerald-400",
-    midday: "border-blue-500 bg-blue-500/10 text-blue-400",
-    power_hour: "border-purple-500 bg-purple-500/10 text-purple-400",
+    midday: "border-emerald-500/70 bg-emerald-500/10 text-emerald-300",
+    power_hour: "border-amber-500/70 bg-amber-500/10 text-amber-300",
     after_hours: "border-slate-500 bg-slate-500/10 text-slate-400",
   };
   const colorClass = phaseColors[phase] || phaseColors.market_closed;
@@ -70,6 +78,7 @@ export default function UniversePage() {
   const [isDiscovering, setIsDiscovering] = useState(false);
   const [error, setError] = useState<string | null>(null);
   const [successMessage, setSuccessMessage] = useState<string | null>(null);
+  const [activeTab, setActiveTab] = useState<UniverseTab>("selection");
 
   // Discovery Mode
   const [discoveryGroups, setDiscoveryGroups] = useState<Record<string, boolean>>({
@@ -134,6 +143,7 @@ export default function UniversePage() {
       });
 
       setLatestRun(response);
+      setActiveTab("results");
 
       // Build success message
       let msg = `Workflow completed: ${response.universe_selection?.selected_watchlist?.length || 0} candidates selected`;
@@ -193,6 +203,7 @@ export default function UniversePage() {
       });
 
       setLatestDiscovery(response);
+      setActiveTab("discovery");
       setSuccessMessage(
         `Discovery ${response.status}: ${response.selected_watchlist.length} selected, ${response.rejected_candidates.length} rejected, ${response.research_only_candidates.length} research-only`
       );
@@ -222,6 +233,7 @@ export default function UniversePage() {
 
       if (response.success) {
         setSuccessMessage(`Promoted ${response.promoted_count} symbol(s) to Candidate Universe`);
+        setActiveTab("results");
       } else {
         setError("Failed to promote candidates");
       }
@@ -239,6 +251,32 @@ export default function UniversePage() {
         title="Universe Selection"
         description="Preselect and rank symbols worth monitoring. This is the STARTING POINT of the workflow - Candidate Universe is downstream. No LLMs. No hardcoded defaults."
       />
+
+      {/* Top subpage tabs (TradeNow-style) */}
+      <div className="mb-4 border-b border-emerald-400/15 pb-2">
+        <div className="flex flex-nowrap gap-2 overflow-x-auto whitespace-nowrap pr-2 [-ms-overflow-style:none] [scrollbar-width:none] [&::-webkit-scrollbar]:hidden">
+          {(
+            [
+              ["selection", "Selection"],
+              ["discovery", "Discovery"],
+              ["results", "Results"],
+            ] as const
+          ).map(([id, label]) => (
+            <button
+              key={id}
+              type="button"
+              onClick={() => setActiveTab(id)}
+              className={`shrink-0 rounded-xl px-4 py-2 text-sm font-semibold transition ${
+                activeTab === id
+                  ? "border border-emerald-400/40 bg-emerald-500/15 text-emerald-200 shadow-[0_0_20px_rgba(16,185,129,0.12)]"
+                  : "border border-transparent text-slate-400 hover:border-white/10 hover:bg-white/[0.04] hover:text-slate-200"
+              }`}
+            >
+              {label}
+            </button>
+          ))}
+        </div>
+      </div>
 
       {error && (
         <div className="mb-4 rounded-xl border border-red-500/30 bg-red-500/10 px-4 py-3 text-sm text-red-400">
@@ -258,357 +296,368 @@ export default function UniversePage() {
         </div>
       )}
 
-      {/* Current Market Phase */}
-      {latestRun && (
-        <div className="mb-6 rounded-xl border border-slate-700 bg-slate-900/50 p-4">
-          <div className="flex flex-wrap items-center gap-4">
-            <div>
-              <span className="text-xs font-bold uppercase text-slate-500">Market Phase</span>
-              <div className="mt-1">{phaseBadge(latestRun.market_phase)}</div>
+      {activeTab === "selection" && (
+        <>
+          {/* Input Form */}
+          <div className={`mb-6 ${cardShell}`}>
+            <h3 className="mb-4 text-sm font-bold uppercase text-slate-300">Run Universe Selection</h3>
+
+            <div className="mb-4">
+              <label className="mb-1 block text-xs font-bold uppercase text-slate-500">Symbols (comma or newline separated)</label>
+              <textarea
+                value={symbolsInput}
+                onChange={(e) => setSymbolsInput(e.target.value)}
+                placeholder="Enter symbols (e.g., TSLA, META, PLTR)..."
+                className="h-24 w-full rounded-lg border border-emerald-400/15 bg-black/40 px-3 py-2 text-sm text-slate-200 placeholder:text-slate-600 focus:border-emerald-400/50 focus:outline-none"
+              />
+              <p className="mt-1 text-xs text-slate-500">No default stock universe. You must explicitly provide symbols.</p>
             </div>
-            <div>
-              <span className="text-xs font-bold uppercase text-slate-500">Active Loop</span>
-              <div className="mt-1 text-sm font-medium text-slate-200">{latestRun.active_loop.replace(/_/g, " ")}</div>
+
+            <div className="mb-4 grid grid-cols-2 gap-4 md:grid-cols-4">
+              <div>
+                <label className="mb-1 block text-xs font-bold uppercase text-slate-500">Horizon</label>
+                <select
+                  value={horizon}
+                  onChange={(e) => setHorizon(e.target.value as any)}
+                  className="w-full rounded-lg border border-emerald-400/15 bg-black/40 px-3 py-2 text-sm text-slate-200 focus:border-emerald-400/50 focus:outline-none"
+                >
+                  <option value="day_trade">Day Trade</option>
+                  <option value="swing">Swing</option>
+                  <option value="one_month">One Month</option>
+                </select>
+              </div>
+
+              <div>
+                <label className="mb-1 block text-xs font-bold uppercase text-slate-500">Data Source</label>
+                <select
+                  value={source}
+                  onChange={(e) => setSource(e.target.value as any)}
+                  className="w-full rounded-lg border border-emerald-400/15 bg-black/40 px-3 py-2 text-sm text-slate-200 focus:border-emerald-400/50 focus:outline-none"
+                >
+                  <option value="auto">Auto</option>
+                  <option value="yfinance">YFinance</option>
+                  <option value="alpaca">Alpaca</option>
+                  <option value="polygon">Polygon</option>
+                  <option value="mock">Mock (Explicit)</option>
+                </select>
+              </div>
+
+              <div>
+                <label className="mb-1 block text-xs font-bold uppercase text-slate-500">Min Score</label>
+                <input
+                  type="number"
+                  min={0}
+                  max={100}
+                  value={minScore}
+                  onChange={(e) => setMinScore(parseInt(e.target.value))}
+                  className="w-full rounded-lg border border-emerald-400/15 bg-black/40 px-3 py-2 text-sm text-slate-200 focus:border-emerald-400/50 focus:outline-none"
+                />
+              </div>
+
+              <div>
+                <label className="mb-1 block text-xs font-bold uppercase text-slate-500">Max Candidates</label>
+                <input
+                  type="number"
+                  min={1}
+                  max={100}
+                  value={maxCandidates}
+                  onChange={(e) => setMaxCandidates(parseInt(e.target.value))}
+                  className="w-full rounded-lg border border-emerald-400/15 bg-black/40 px-3 py-2 text-sm text-slate-200 focus:border-emerald-400/50 focus:outline-none"
+                />
+              </div>
             </div>
-            <div>
-              <span className="text-xs font-bold uppercase text-slate-500">Workflow Status</span>
-              <div className="mt-1 text-sm font-medium text-slate-200">{latestRun.status}</div>
+
+            <div className="mb-4 flex flex-wrap gap-4">
+              <label className="flex items-center gap-2 text-sm text-slate-300">
+                <input
+                  type="checkbox"
+                  checked={includeMock}
+                  onChange={(e) => setIncludeMock(e.target.checked)}
+                  className="rounded border-slate-600 bg-slate-700 text-emerald-500"
+                />
+                Include Mock Data (Explicit Opt-in)
+              </label>
+
+              <label className="flex items-center gap-2 text-sm text-slate-300">
+                <input
+                  type="checkbox"
+                  checked={promoteToCandidates}
+                  onChange={(e) => setPromoteToCandidates(e.target.checked)}
+                  className="rounded border-slate-600 bg-slate-700 text-emerald-500"
+                />
+                Auto-promote to Candidate Universe
+              </label>
             </div>
-            <div>
-              <span className="text-xs font-bold uppercase text-slate-500">Stages</span>
-              <div className="mt-1 text-sm font-medium text-slate-200">{latestRun.stages.filter(s => s.status === "completed").length}/{latestRun.stages.length}</div>
+
+            <div className="flex flex-wrap gap-3">
+              <button
+                onClick={handleRunSelection}
+                disabled={isRunning}
+                className={`flex items-center gap-2 rounded-xl px-4 py-2 text-sm font-bold uppercase transition-all ${
+                  isRunning ? btnDisabled : btnPrimary
+                }`}
+              >
+                {isRunning ? (
+                  <>
+                    <div className="h-4 w-4 animate-spin rounded-full border-2 border-emerald-400 border-t-transparent" />
+                    Running...
+                  </>
+                ) : (
+                  <>
+                    <Play className="h-4 w-4" />
+                    Run Universe Selection
+                  </>
+                )}
+              </button>
+
+              {latestRun && (
+                <button
+                  onClick={handlePromoteToCandidates}
+                  disabled={isPromoting || (latestRun.universe_selection?.selected_watchlist?.length || 0) === 0}
+                  className={`flex items-center gap-2 rounded-xl px-4 py-2 text-sm font-bold uppercase transition-all ${
+                    isPromoting || (latestRun.universe_selection?.selected_watchlist?.length || 0) === 0 ? btnDisabled : btnSecondary
+                  }`}
+                >
+                  {isPromoting ? (
+                    <>
+                      <div className="h-4 w-4 animate-spin rounded-full border-2 border-emerald-400 border-t-transparent" />
+                      Promoting...
+                    </>
+                  ) : (
+                    <>
+                      <ArrowRight className="h-4 w-4" />
+                      Promote to Candidates ({latestRun.universe_selection?.selected_watchlist?.length || 0})
+                    </>
+                  )}
+                </button>
+              )}
+
+              <Link
+                href="/candidates"
+                className={`flex items-center gap-2 rounded-xl px-4 py-2 text-sm font-bold uppercase transition-all ${btnTertiary}`}
+              >
+                <Target className="h-4 w-4" />
+                View Candidates
+              </Link>
             </div>
           </div>
-        </div>
+        </>
       )}
 
-      {/* Input Form */}
-      <div className="mb-6 rounded-xl border border-slate-700 bg-slate-900/50 p-4">
-        <h3 className="mb-4 text-sm font-bold uppercase text-slate-300">Run Universe Selection</h3>
+      {activeTab === "discovery" && (
+        <div className={`mb-6 ${cardShell}`}>
+          <h3 className="mb-2 text-sm font-bold uppercase text-slate-300">Discovery Mode (new)</h3>
+          <p className="mb-4 text-sm text-slate-400">
+            Generates strategy-mapped watchlist candidates with TTL and trigger rules. Discovery is always watchlist-only (execution is blocked by design).
+          </p>
 
-        <div className="mb-4">
-          <label className="mb-1 block text-xs font-bold uppercase text-slate-500">Symbols (comma or newline separated)</label>
-          <textarea
-            value={symbolsInput}
-            onChange={(e) => setSymbolsInput(e.target.value)}
-            placeholder="Enter symbols (e.g., TSLA, META, PLTR)..."
-            className="h-24 w-full rounded-lg border border-slate-700 bg-slate-950 px-3 py-2 text-sm text-slate-200 placeholder:text-slate-600 focus:border-sky-500 focus:outline-none"
-          />
-          <p className="mt-1 text-xs text-slate-500">No default stock universe. You must explicitly provide symbols.</p>
-        </div>
-
-        <div className="mb-4 grid grid-cols-2 gap-4 md:grid-cols-4">
-          <div>
-            <label className="mb-1 block text-xs font-bold uppercase text-slate-500">Horizon</label>
-            <select
-              value={horizon}
-              onChange={(e) => setHorizon(e.target.value as any)}
-              className="w-full rounded-lg border border-slate-700 bg-slate-950 px-3 py-2 text-sm text-slate-200 focus:border-sky-500 focus:outline-none"
-            >
-              <option value="day_trade">Day Trade</option>
-              <option value="swing">Swing</option>
-              <option value="one_month">One Month</option>
-            </select>
+          <div className="grid grid-cols-1 gap-2 md:grid-cols-2">
+            {[
+              ["premarket_gap_momentum", "Pre-market Gap Momentum"],
+              ["opening_range_breakout_group", "Opening Range Breakout"],
+              ["high_rvol_momentum_group", "High RVOL Momentum"],
+              ["vwap_reclaim_group", "VWAP Reclaim"],
+              ["breakout_retest_group", "Breakout Retest"],
+              ["relative_strength_rotation_group", "Relative Strength Rotation"],
+              ["mean_reversion_range_group", "Mean Reversion Range"],
+              ["etf_stock_lag_group", "ETF/Stock Lag"],
+              ["earnings_news_drift_group", "Earnings/News Drift"],
+              ["low_float_breakout_group", "Low Float Breakout (research-only)"],
+            ].map(([key, label]) => (
+              <label key={key} className={`flex items-center gap-3 rounded-lg border border-emerald-400/10 bg-black/40 px-3 py-2 text-sm text-slate-200`}>
+                <input
+                  type="checkbox"
+                  checked={Boolean(discoveryGroups[key])}
+                  onChange={(e) => setDiscoveryGroups((prev) => ({ ...prev, [key]: e.target.checked }))}
+                />
+                <span>{label}</span>
+              </label>
+            ))}
           </div>
 
-          <div>
-            <label className="mb-1 block text-xs font-bold uppercase text-slate-500">Data Source</label>
-            <select
-              value={source}
-              onChange={(e) => setSource(e.target.value as any)}
-              className="w-full rounded-lg border border-slate-700 bg-slate-950 px-3 py-2 text-sm text-slate-200 focus:border-sky-500 focus:outline-none"
-            >
-              <option value="auto">Auto</option>
-              <option value="yfinance">YFinance</option>
-              <option value="alpaca">Alpaca</option>
-              <option value="polygon">Polygon</option>
-              <option value="mock">Mock (Explicit)</option>
-            </select>
-          </div>
-
-          <div>
-            <label className="mb-1 block text-xs font-bold uppercase text-slate-500">Min Score</label>
-            <input
-              type="number"
-              min={0}
-              max={100}
-              value={minScore}
-              onChange={(e) => setMinScore(parseInt(e.target.value))}
-              className="w-full rounded-lg border border-slate-700 bg-slate-950 px-3 py-2 text-sm text-slate-200 focus:border-sky-500 focus:outline-none"
-            />
-          </div>
-
-          <div>
-            <label className="mb-1 block text-xs font-bold uppercase text-slate-500">Max Candidates</label>
-            <input
-              type="number"
-              min={1}
-              max={100}
-              value={maxCandidates}
-              onChange={(e) => setMaxCandidates(parseInt(e.target.value))}
-              className="w-full rounded-lg border border-slate-700 bg-slate-950 px-3 py-2 text-sm text-slate-200 focus:border-sky-500 focus:outline-none"
-            />
-          </div>
-        </div>
-
-        <div className="mb-4 flex flex-wrap gap-4">
-          <label className="flex items-center gap-2 text-sm text-slate-300">
-            <input
-              type="checkbox"
-              checked={includeMock}
-              onChange={(e) => setIncludeMock(e.target.checked)}
-              className="rounded border-slate-600 bg-slate-700 text-sky-500"
-            />
-            Include Mock Data (Explicit Opt-in)
-          </label>
-
-          <label className="flex items-center gap-2 text-sm text-slate-300">
-            <input
-              type="checkbox"
-              checked={promoteToCandidates}
-              onChange={(e) => setPromoteToCandidates(e.target.checked)}
-              className="rounded border-slate-600 bg-slate-700 text-sky-500"
-            />
-            Auto-promote to Candidate Universe
-          </label>
-        </div>
-
-        <div className="flex flex-wrap gap-3">
-          <button
-            onClick={handleRunSelection}
-            disabled={isRunning}
-            className={`flex items-center gap-2 rounded-xl px-4 py-2 text-sm font-bold uppercase transition-all ${
-              isRunning
-                ? "cursor-not-allowed border border-slate-600 bg-slate-800 text-slate-500"
-                : "border border-sky-500 bg-slate-900 text-sky-400 hover:bg-sky-500 hover:text-slate-950"
-            }`}
-          >
-            {isRunning ? (
-              <>
-                <div className="h-4 w-4 animate-spin rounded-full border-2 border-sky-400 border-t-transparent" />
-                Running...
-              </>
-            ) : (
-              <>
-                <Play className="h-4 w-4" />
-                Run Universe Selection
-              </>
-            )}
-          </button>
-
-          {latestRun && (
+          <div className="mt-4 flex flex-wrap items-center gap-3">
             <button
-              onClick={handlePromoteToCandidates}
-              disabled={isPromoting || (latestRun.universe_selection?.selected_watchlist?.length || 0) === 0}
+              onClick={handleRunDiscovery}
+              disabled={isDiscovering}
               className={`flex items-center gap-2 rounded-xl px-4 py-2 text-sm font-bold uppercase transition-all ${
-                isPromoting || (latestRun.universe_selection?.selected_watchlist?.length || 0) === 0
-                  ? "cursor-not-allowed border border-slate-600 bg-slate-800 text-slate-500"
-                  : "border border-emerald-500 bg-slate-900 text-emerald-400 hover:bg-emerald-500 hover:text-slate-950"
+                isDiscovering ? btnDisabled : btnSecondary
               }`}
             >
-              {isPromoting ? (
+              {isDiscovering ? (
                 <>
                   <div className="h-4 w-4 animate-spin rounded-full border-2 border-emerald-400 border-t-transparent" />
-                  Promoting...
+                  Discovering...
                 </>
               ) : (
                 <>
-                  <ArrowRight className="h-4 w-4" />
-                  Promote to Candidates ({latestRun.universe_selection?.selected_watchlist?.length || 0})
+                  <Radar className="h-4 w-4" />
+                  Run Universe Discovery
                 </>
               )}
             </button>
-          )}
+            <span className="text-xs text-slate-500">API: /api/universe/discover</span>
+          </div>
 
-          <Link
-            href="/candidates"
-            className="flex items-center gap-2 rounded-xl border border-slate-600 bg-slate-900 px-4 py-2 text-sm font-bold uppercase text-slate-400 transition-all hover:border-slate-500 hover:text-slate-300"
-          >
-            <Target className="h-4 w-4" />
-            View Candidates
-          </Link>
-        </div>
-      </div>
-
-      {/* Discovery Mode */}
-      <div className="mb-6 rounded-xl border border-slate-700 bg-slate-900/50 p-4">
-        <h3 className="mb-2 text-sm font-bold uppercase text-slate-300">Discovery Mode (new)</h3>
-        <p className="mb-4 text-sm text-slate-400">
-          Generates strategy-mapped watchlist candidates with TTL and trigger rules. Discovery is always watchlist-only (execution is blocked by design).
-        </p>
-
-        <div className="grid grid-cols-1 gap-2 md:grid-cols-2">
-          {[
-            ["premarket_gap_momentum", "Pre-market Gap Momentum"],
-            ["opening_range_breakout_group", "Opening Range Breakout"],
-            ["high_rvol_momentum_group", "High RVOL Momentum"],
-            ["vwap_reclaim_group", "VWAP Reclaim"],
-            ["breakout_retest_group", "Breakout Retest"],
-            ["relative_strength_rotation_group", "Relative Strength Rotation"],
-            ["mean_reversion_range_group", "Mean Reversion Range"],
-            ["etf_stock_lag_group", "ETF/Stock Lag"],
-            ["earnings_news_drift_group", "Earnings/News Drift"],
-            ["low_float_breakout_group", "Low Float Breakout (research-only)"],
-          ].map(([key, label]) => (
-            <label key={key} className="flex items-center gap-3 rounded-lg border border-slate-800 bg-slate-950 px-3 py-2 text-sm text-slate-200">
-              <input
-                type="checkbox"
-                checked={Boolean(discoveryGroups[key])}
-                onChange={(e) => setDiscoveryGroups((prev) => ({ ...prev, [key]: e.target.checked }))}
-              />
-              <span>{label}</span>
-            </label>
-          ))}
-        </div>
-
-        <div className="mt-4 flex flex-wrap items-center gap-3">
-          <button
-            onClick={handleRunDiscovery}
-            disabled={isDiscovering}
-            className={`flex items-center gap-2 rounded-xl px-4 py-2 text-sm font-bold uppercase transition-all ${
-              isDiscovering
-                ? "cursor-not-allowed border border-slate-600 bg-slate-800 text-slate-500"
-                : "border border-sky-400/40 bg-sky-500/10 text-sky-300 hover:bg-sky-500 hover:text-slate-950"
-            }`}
-          >
-            {isDiscovering ? (
-              <>
-                <div className="h-4 w-4 animate-spin rounded-full border-2 border-sky-400 border-t-transparent" />
-                Discovering...
-              </>
-            ) : (
-              <>
-                <Radar className="h-4 w-4" />
-                Run Universe Discovery
-              </>
-            )}
-          </button>
-          <span className="text-xs text-slate-500">API: /api/universe/discover</span>
-        </div>
-
-        {latestDiscovery && (
-          <div className="mt-4 rounded-xl border border-slate-800 bg-slate-950 p-4">
-            <div className="mb-2 flex flex-wrap items-center justify-between gap-3">
-              <div className="flex items-center gap-3">
-                <span className="text-xs font-bold uppercase text-slate-500">Discovery</span>
-                {phaseBadge(latestDiscovery.market_phase)}
-                <span className="text-xs text-slate-400">{latestDiscovery.status}</span>
+          {latestDiscovery && (
+            <div className={`mt-4 ${cardInner}`}>
+              <div className="mb-2 flex flex-wrap items-center justify-between gap-3">
+                <div className="flex items-center gap-3">
+                  <span className="text-xs font-bold uppercase text-slate-500">Discovery</span>
+                  {phaseBadge(latestDiscovery.market_phase)}
+                  <span className="text-xs text-slate-400">{latestDiscovery.status}</span>
+                </div>
+                <span className="text-xs text-slate-500">Created {formatDate(latestDiscovery.created_at)}</span>
               </div>
-              <span className="text-xs text-slate-500">Created {formatDate(latestDiscovery.created_at)}</span>
-            </div>
 
-            <div className="grid grid-cols-3 gap-3">
-              <MetricCard label="Selected" value={latestDiscovery.selected_watchlist.length} accent />
-              <MetricCard label="Rejected" value={latestDiscovery.rejected_candidates.length} />
-              <MetricCard label="Research-only" value={latestDiscovery.research_only_candidates.length} />
-            </div>
+              <div className="grid grid-cols-3 gap-3">
+                <MetricCard label="Selected" value={latestDiscovery.selected_watchlist.length} accent />
+                <MetricCard label="Rejected" value={latestDiscovery.rejected_candidates.length} />
+                <MetricCard label="Research-only" value={latestDiscovery.research_only_candidates.length} />
+              </div>
 
-            {latestDiscovery.selected_watchlist.length > 0 && (
-              <div className="mt-4 overflow-x-auto">
-                <table className="w-full text-left text-sm">
-                  <thead className="text-xs uppercase text-slate-500">
-                    <tr>
-                      <th className="py-2 pr-3">Symbol</th>
-                      <th className="py-2 pr-3">Group</th>
-                      <th className="py-2 pr-3">Strategy</th>
-                      <th className="py-2 pr-3">Score</th>
-                      <th className="py-2 pr-3">TTL</th>
-                      <th className="py-2 pr-3">Execution</th>
-                    </tr>
-                  </thead>
-                  <tbody className="text-slate-200">
-                    {latestDiscovery.selected_watchlist.slice(0, 12).map((c: UniverseDiscoveryCandidate) => (
-                      <tr key={`${c.symbol}-${c.scanner_group}`} className="border-t border-slate-800">
-                        <td className="py-2 pr-3 font-semibold">{c.symbol}</td>
-                        <td className="py-2 pr-3 text-slate-400">{c.scanner_group.replace(/_/g, " ")}</td>
-                        <td className="py-2 pr-3 text-slate-300">{c.strategy_key}</td>
-                        <td className="py-2 pr-3">{scoreBadge(c.universe_score)}</td>
-                        <td className="py-2 pr-3 text-slate-400">{c.watchlist_ttl_minutes}m</td>
-                        <td className="py-2 pr-3 text-rose-300">blocked</td>
+              {latestDiscovery.selected_watchlist.length > 0 && (
+                <div className="mt-4 overflow-x-auto">
+                  <table className="w-full text-left text-sm">
+                    <thead className="text-xs uppercase text-slate-500">
+                      <tr>
+                        <th className="py-2 pr-3">Symbol</th>
+                        <th className="py-2 pr-3">Group</th>
+                        <th className="py-2 pr-3">Strategy</th>
+                        <th className="py-2 pr-3">Score</th>
+                        <th className="py-2 pr-3">TTL</th>
+                        <th className="py-2 pr-3">Execution</th>
                       </tr>
-                    ))}
-                  </tbody>
-                </table>
-                <p className="mt-2 text-xs text-slate-500">Showing top 12 selected. Triggers and invalidations are included in the API payload for each candidate.</p>
-              </div>
-            )}
-          </div>
-        )}
-      </div>
+                    </thead>
+                    <tbody className="text-slate-200">
+                      {latestDiscovery.selected_watchlist.slice(0, 12).map((c: UniverseDiscoveryCandidate) => (
+                        <tr key={`${c.symbol}-${c.scanner_group}`} className="border-t border-white/10">
+                          <td className="py-2 pr-3 font-semibold">{c.symbol}</td>
+                          <td className="py-2 pr-3 text-slate-400">{c.scanner_group.replace(/_/g, " ")}</td>
+                          <td className="py-2 pr-3 text-slate-300">{c.strategy_key}</td>
+                          <td className="py-2 pr-3">{scoreBadge(c.universe_score)}</td>
+                          <td className="py-2 pr-3 text-slate-400">{c.watchlist_ttl_minutes}m</td>
+                          <td className="py-2 pr-3 text-rose-300">blocked</td>
+                        </tr>
+                      ))}
+                    </tbody>
+                  </table>
+                  <p className="mt-2 text-xs text-slate-500">Showing top 12 selected. Triggers and invalidations are included in the API payload for each candidate.</p>
+                </div>
+              )}
+            </div>
+          )}
+        </div>
+      )}
 
-      {/* Latest Run Results */}
-      {latestRun && (
+      {activeTab === "results" && (
         <>
-          {/* Summary */}
-          <div className="mb-6 grid grid-cols-2 gap-4 md:grid-cols-4">
-            <MetricCard label="Requested" value={latestRun.universe_selection?.requested_symbols?.length?.toString() || "0"} accent />
-            <MetricCard label="Ranked" value={latestRun.universe_selection?.ranked_candidates?.length?.toString() || "0"} />
-            <MetricCard label="Selected" value={latestRun.universe_selection?.selected_watchlist?.length?.toString() || "0"} />
-            <MetricCard label="Rejected" value={latestRun.universe_selection?.rejected_candidates?.length?.toString() || "0"} />
-          </div>
+          {/* Current Market Phase */}
+          {latestRun && (
+            <div className={`mb-6 ${cardShell}`}>
+              <div className="flex flex-wrap items-center gap-4">
+                <div>
+                  <span className="text-xs font-bold uppercase text-slate-500">Market Phase</span>
+                  <div className="mt-1">{phaseBadge(latestRun.market_phase)}</div>
+                </div>
+                <div>
+                  <span className="text-xs font-bold uppercase text-slate-500">Active Loop</span>
+                  <div className="mt-1 text-sm font-medium text-slate-200">{latestRun.active_loop.replace(/_/g, " ")}</div>
+                </div>
+                <div>
+                  <span className="text-xs font-bold uppercase text-slate-500">Workflow Status</span>
+                  <div className="mt-1 text-sm font-medium text-slate-200">{latestRun.status}</div>
+                </div>
+                <div>
+                  <span className="text-xs font-bold uppercase text-slate-500">Stages</span>
+                  <div className="mt-1 text-sm font-medium text-slate-200">
+                    {latestRun.stages.filter((s) => s.status === "completed").length}/{latestRun.stages.length}
+                  </div>
+                </div>
+              </div>
+            </div>
+          )}
 
-          {/* Blockers & Warnings */}
-          {(latestRun.blockers.length > 0 || latestRun.warnings.length > 0) && (
-            <div className="mb-6 space-y-2">
-              {latestRun.blockers.map((blocker, i) => (
-                <div key={`blocker-${i}`} className="rounded-xl border border-red-500/30 bg-red-500/10 px-4 py-2 text-sm text-red-400">
-                  <div className="flex items-center gap-2">
+          {/* Latest Run Results */}
+          {latestRun ? (
+            <>
+              {/* Summary */}
+              <div className="mb-6 grid grid-cols-2 gap-4 md:grid-cols-4">
+                <MetricCard label="Requested" value={latestRun.universe_selection?.requested_symbols?.length?.toString() || "0"} accent />
+                <MetricCard label="Ranked" value={latestRun.universe_selection?.ranked_candidates?.length?.toString() || "0"} />
+                <MetricCard label="Selected" value={latestRun.universe_selection?.selected_watchlist?.length?.toString() || "0"} />
+                <MetricCard label="Rejected" value={latestRun.universe_selection?.rejected_candidates?.length?.toString() || "0"} />
+              </div>
+
+              {/* Blockers & Warnings */}
+              {(latestRun.blockers.length > 0 || latestRun.warnings.length > 0) && (
+                <div className="mb-6 space-y-2">
+                  {latestRun.blockers.map((blocker, i) => (
+                    <div key={`blocker-${i}`} className="rounded-xl border border-red-500/30 bg-red-500/10 px-4 py-2 text-sm text-red-400">
+                      <div className="flex items-center gap-2">
+                        <XCircle className="h-4 w-4" />
+                        {blocker}
+                      </div>
+                    </div>
+                  ))}
+                  {latestRun.warnings.map((warning, i) => (
+                    <div key={`warning-${i}`} className="rounded-xl border border-amber-500/30 bg-amber-500/10 px-4 py-2 text-sm text-amber-400">
+                      <div className="flex items-center gap-2">
+                        <AlertTriangle className="h-4 w-4" />
+                        {warning}
+                      </div>
+                    </div>
+                  ))}
+                </div>
+              )}
+
+              {/* Selected Watchlist */}
+              {(latestRun.universe_selection?.selected_watchlist?.length || 0) > 0 && (
+                <div className="mb-6">
+                  <h3 className="mb-3 flex items-center gap-2 text-sm font-bold uppercase text-emerald-400">
+                    <CheckCircle className="h-4 w-4" />
+                    Selected Watchlist ({latestRun.universe_selection?.selected_watchlist?.length || 0})
+                  </h3>
+                  <div className="grid gap-3">
+                    {latestRun.universe_selection?.selected_watchlist?.map((candidate: UniverseSelectionCandidate) => (
+                      <CandidateCard key={candidate.symbol} candidate={candidate} />
+                    ))}
+                  </div>
+                </div>
+              )}
+
+              {/* Rejected Candidates */}
+              {(latestRun.universe_selection?.rejected_candidates?.length || 0) > 0 && (
+                <div className="mb-6">
+                  <h3 className="mb-3 flex items-center gap-2 text-sm font-bold uppercase text-slate-500">
                     <XCircle className="h-4 w-4" />
-                    {blocker}
+                    Rejected Candidates ({latestRun.universe_selection?.rejected_candidates?.length || 0})
+                  </h3>
+                  <div className="grid gap-3 opacity-60">
+                    {latestRun.universe_selection?.rejected_candidates?.slice(0, 5).map((candidate: UniverseSelectionCandidate) => (
+                      <CandidateCard key={candidate.symbol} candidate={candidate} rejected />
+                    ))}
+                    {(latestRun.universe_selection?.rejected_candidates?.length || 0) > 5 && (
+                      <p className="text-center text-xs text-slate-500">
+                        +{(latestRun.universe_selection?.rejected_candidates?.length || 0) - 5} more rejected
+                      </p>
+                    )}
                   </div>
                 </div>
-              ))}
-              {latestRun.warnings.map((warning, i) => (
-                <div key={`warning-${i}`} className="rounded-xl border border-amber-500/30 bg-amber-500/10 px-4 py-2 text-sm text-amber-400">
-                  <div className="flex items-center gap-2">
-                    <AlertTriangle className="h-4 w-4" />
-                    {warning}
-                  </div>
-                </div>
-              ))}
-            </div>
-          )}
-
-          {/* Selected Watchlist */}
-          {(latestRun.universe_selection?.selected_watchlist?.length || 0) > 0 && (
-            <div className="mb-6">
-              <h3 className="mb-3 flex items-center gap-2 text-sm font-bold uppercase text-emerald-400">
-                <CheckCircle className="h-4 w-4" />
-                Selected Watchlist ({latestRun.universe_selection?.selected_watchlist?.length || 0})
-              </h3>
-              <div className="grid gap-3">
-                {latestRun.universe_selection?.selected_watchlist?.map((candidate: UniverseSelectionCandidate) => (
-                  <CandidateCard key={candidate.symbol} candidate={candidate} />
-                ))}
-              </div>
-            </div>
-          )}
-
-          {/* Rejected Candidates */}
-          {(latestRun.universe_selection?.rejected_candidates?.length || 0) > 0 && (
-            <div className="mb-6">
-              <h3 className="mb-3 flex items-center gap-2 text-sm font-bold uppercase text-slate-500">
-                <XCircle className="h-4 w-4" />
-                Rejected Candidates ({latestRun.universe_selection?.rejected_candidates?.length || 0})
-              </h3>
-              <div className="grid gap-3 opacity-60">
-                {latestRun.universe_selection?.rejected_candidates?.slice(0, 5).map((candidate: UniverseSelectionCandidate) => (
-                  <CandidateCard key={candidate.symbol} candidate={candidate} rejected />
-                ))}
-                {(latestRun.universe_selection?.rejected_candidates?.length || 0) > 5 && (
-                  <p className="text-center text-xs text-slate-500">
-                    +{(latestRun.universe_selection?.rejected_candidates?.length || 0) - 5} more rejected
-                  </p>
-                )}
-              </div>
+              )}
+            </>
+          ) : (
+            <div className={`text-center ${cardShell} border-dashed p-8`}>
+              <Globe className="mx-auto mb-3 h-12 w-12 text-slate-600" />
+              <p className="text-slate-400">No universe selection run yet.</p>
+              <p className="mt-1 text-sm text-slate-500">Run Universe Selection to see results here.</p>
             </div>
           )}
         </>
       )}
 
       {/* Empty State */}
-      {!latestRun && !isRunning && (
-        <div className="rounded-xl border border-dashed border-slate-700 bg-slate-900/30 p-8 text-center">
+      {!latestRun && !isRunning && activeTab === "selection" && (
+        <div className={`text-center ${cardShell} border-dashed p-8`}>
           <Globe className="mx-auto mb-3 h-12 w-12 text-slate-600" />
           <p className="text-slate-400">No universe selection run yet.</p>
           <p className="mt-1 text-sm text-slate-500">Enter symbols above and run universe selection to create your watchlist.</p>
@@ -620,10 +669,14 @@ export default function UniversePage() {
 
 function CandidateCard({ candidate, rejected = false }: { candidate: UniverseSelectionCandidate; rejected?: boolean }) {
   return (
-    <div className={`rounded-xl border p-4 ${rejected ? "border-slate-800 bg-slate-900/30" : "border-slate-700 bg-slate-900/50"}`}>
+    <div
+      className={`rounded-2xl border p-4 shadow-[0_0_28px_rgba(0,0,0,0.22)] backdrop-blur ${
+        rejected ? "border-emerald-400/10 bg-black/25 opacity-70" : "border-emerald-400/15 bg-black/35"
+      }`}
+    >
       <div className="flex flex-wrap items-start justify-between gap-4">
         <div className="flex items-center gap-3">
-          <div className="flex h-10 w-10 items-center justify-center rounded-lg bg-slate-800 font-bold text-slate-300">
+          <div className="flex h-10 w-10 items-center justify-center rounded-lg border border-emerald-400/10 bg-black/40 font-bold text-slate-200">
             {candidate.symbol}
           </div>
           <div>
@@ -662,7 +715,7 @@ function CandidateCard({ candidate, rejected = false }: { candidate: UniverseSel
       {candidate.reasons.length > 0 && (
         <div className="mt-3 flex flex-wrap gap-2">
           {candidate.reasons.map((reason, i) => (
-            <span key={i} className="rounded bg-slate-800 px-2 py-1 text-xs text-slate-400">
+            <span key={i} className="rounded border border-emerald-400/10 bg-black/40 px-2 py-1 text-xs text-slate-300">
               {reason}
             </span>
           ))}

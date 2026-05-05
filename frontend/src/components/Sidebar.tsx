@@ -36,6 +36,7 @@ const items = [
   { label: "Universe", href: "/universe", icon: Globe },
   { label: "Strategy Lab", href: "/strategy-lab", icon: Brain },
   { label: "Signal Engine", href: "/signal-engine", icon: Radar },
+  { label: "Candidate Engine", href: "/candidate-engine", icon: Users },
   { label: "Signals", href: "/signals", icon: Radar },
   { label: "Recommendations", href: "/recommendations", icon: Target },
   { label: "Candidates", href: "/candidates", icon: Users },
@@ -80,6 +81,7 @@ export function Sidebar() {
         {items.map((item) => {
           const Icon = item.icon;
           const active = pathname === item.href || pathname.startsWith(`${item.href}/`);
+          const isAiOps = item.href === "/ai-ops";
 
           return (
             <Link
@@ -87,14 +89,18 @@ export function Sidebar() {
               href={item.href}
               className={`group flex items-center gap-3 rounded-xl px-2 py-2 text-sm font-medium transition-all ${
                 active
-                  ? "border border-emerald-400/40 bg-emerald-400/10 text-white shadow-[0_0_28px_rgba(16,185,129,0.12)]"
+                  ? isAiOps
+                    ? "border border-emerald-400/45 bg-emerald-400/12 text-emerald-100 shadow-[0_0_28px_rgba(16,185,129,0.16)]"
+                    : "border border-emerald-400/40 bg-emerald-400/10 text-white shadow-[0_0_28px_rgba(16,185,129,0.12)]"
                   : "text-slate-300 hover:bg-white/[0.04] hover:text-emerald-200"
               }`}
             >
               <span
                 className={`flex h-9 w-9 items-center justify-center rounded-xl border transition-colors ${
                   active
-                    ? "border-emerald-400/60 bg-emerald-400/10 text-emerald-300"
+                    ? isAiOps
+                      ? "border-emerald-300/70 bg-emerald-300/10 text-emerald-200"
+                      : "border-emerald-400/60 bg-emerald-400/10 text-emerald-300"
                     : "border-emerald-400/25 bg-emerald-400/[0.04] text-emerald-400"
                 }`}
               >

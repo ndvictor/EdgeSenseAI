@@ -2409,6 +2409,7 @@ export const api = {
   getNormalizationStatus: () => request<NormalizationStatusResponse>("/api/normalization/status"),
   getDataQualityStatus: () => request<DataQualityStatusResponse>("/api/data-quality/status"),
   getSignalsStatus: () => request<SignalsStatusResponse>("/api/signals/status"),
+  getCandidatesStatus: () => request<CandidatesStatusResponse>("/api/candidates/status"),
   getMarketDataSnapshot: (symbol: string, source: MarketDataSource = "auto") => request<MarketDataSnapshot>(`/api/market-data/snapshot/${symbol}?source=${source}`),
   getMarketDataHistory: (symbol: string, period = "6mo", interval = "1d", source: MarketDataSource = "auto") => request<PriceHistory>(`/api/market-data/history/${symbol}?period=${period}&interval=${interval}&source=${source}`),
   getMarketSnapshots: () => request<MarketSnapshot[]>("/api/market/snapshots"),

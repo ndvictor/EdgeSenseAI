@@ -6,6 +6,8 @@ import { api, type CommandCenterResponse } from "@/lib/api";
 import { EdgeSignalGrid, MetricCard, RecommendationTable } from "@/components/Cards";
 import { Gauge, Users, TrendingUp, AlertTriangle, Play, Clock } from "lucide-react";
 
+const cardShell = "rounded-2xl border border-emerald-400/15 bg-black/35 p-5 shadow-[0_0_40px_rgba(0,0,0,0.35)] backdrop-blur";
+
 function money(value: number) {
   return `$${value.toLocaleString(undefined, { maximumFractionDigits: 2 })}`;
 }
@@ -59,7 +61,7 @@ export default function CommandCenterPage() {
         </header>
 
         {error && (
-          <div className="rounded-xl border border-amber-500/35 bg-amber-500/10 px-4 py-3 text-sm text-amber-200">
+          <div className="rounded-xl border border-rose-500/30 bg-rose-500/10 px-4 py-3 text-sm text-rose-200">
             {error}
           </div>
         )}
@@ -69,7 +71,7 @@ export default function CommandCenterPage() {
         ) : (
           <div className="space-y-4">
             {data.dashboard_mode === "no_symbols_selected" ? (
-              <section className="rounded-2xl border border-amber-500/40 bg-black/35 p-5 shadow-[0_0_40px_rgba(0,0,0,0.35)] backdrop-blur">
+              <section className={cardShell}>
                 <div className="flex items-center gap-3">
                   <AlertTriangle className="h-8 w-8 text-amber-400" />
                   <div>
@@ -111,7 +113,7 @@ export default function CommandCenterPage() {
                 </div>
               </section>
             ) : data.dashboard_mode === "candidates_ready_not_ranked" ? (
-              <section className="rounded-2xl border border-cyan-400/35 bg-black/35 p-5 shadow-[0_0_40px_rgba(0,0,0,0.35)] backdrop-blur">
+              <section className={cardShell}>
                 <div className="flex items-center gap-3">
                   <Clock className="h-8 w-8 text-cyan-400" />
                   <div>
@@ -148,7 +150,7 @@ export default function CommandCenterPage() {
 
                   <Link
                     href="/candidates"
-                    className="flex items-center gap-2 rounded-xl border border-cyan-400/35 bg-cyan-500/10 px-4 py-2 text-sm font-bold uppercase text-cyan-300 transition-all hover:bg-cyan-500 hover:text-slate-950"
+                    className="flex items-center gap-2 rounded-xl border border-emerald-400/20 bg-black/30 px-4 py-2 text-sm font-bold uppercase text-emerald-300 transition-all hover:border-emerald-400/40 hover:bg-black/40"
                   >
                     <Users className="h-4 w-4" />
                     Go to Candidates
@@ -156,7 +158,7 @@ export default function CommandCenterPage() {
                 </div>
               </section>
             ) : !data.top_action || data.top_recommendations.length === 0 ? (
-              <section className="rounded-2xl border border-amber-500/40 bg-black/35 p-5 shadow-[0_0_40px_rgba(0,0,0,0.35)] backdrop-blur">
+              <section className={cardShell}>
                 <div className="flex items-center gap-3">
                   <AlertTriangle className="h-8 w-8 text-amber-400" />
                   <div>
@@ -193,7 +195,7 @@ export default function CommandCenterPage() {
 
                   <Link
                     href="/candidates"
-                    className="flex items-center gap-2 rounded-xl border border-cyan-400/35 bg-cyan-500/10 px-4 py-2 text-sm font-bold uppercase text-cyan-300 transition-all hover:bg-cyan-500 hover:text-slate-950"
+                    className="flex items-center gap-2 rounded-xl border border-emerald-400/20 bg-black/30 px-4 py-2 text-sm font-bold uppercase text-emerald-300 transition-all hover:border-emerald-400/40 hover:bg-black/40"
                   >
                     <Users className="h-4 w-4" />
                     Manage Candidates
@@ -221,7 +223,7 @@ export default function CommandCenterPage() {
               </section>
             ) : (
               <>
-                <section className="rounded-2xl border border-emerald-400/15 bg-black/35 p-5 shadow-[0_0_40px_rgba(0,0,0,0.35)] backdrop-blur">
+                <section className={cardShell}>
                   <div className="flex flex-col gap-4 lg:flex-row lg:items-start lg:justify-between">
                     <div>
                       <p className="text-xs font-semibold uppercase tracking-[0.22em] text-emerald-400">Top Source-Backed Watch Candidate</p>

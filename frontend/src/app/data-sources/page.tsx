@@ -4,6 +4,11 @@ import { useEffect, useMemo, useState } from "react";
 import { api, type DataSourcesStatusResponse } from "@/lib/api";
 import { MetricCard, PageHeader } from "@/components/Cards";
 
+const cardShell = "rounded-2xl border border-emerald-400/15 bg-black/35 p-4 shadow-[0_0_40px_rgba(0,0,0,0.25)] backdrop-blur";
+const cardInner = "rounded-xl border border-emerald-400/15 bg-black/30 p-4 backdrop-blur";
+const miniField = "rounded-lg border border-emerald-400/15 bg-black/35 px-3 py-2";
+const pill = "rounded-full border border-emerald-400/15 bg-black/35 px-3 py-1 text-xs text-slate-300";
+
 function statusClass(status: string) {
   if (["connected", "configured", "installed"].includes(status)) return "border-emerald-500 bg-emerald-500/10 text-emerald-300";
   if (status === "test_only") return "border-cyan-500 bg-cyan-500/10 text-cyan-300";
@@ -44,7 +49,7 @@ export default function DataSourcesPage() {
           <div className="py-8 text-center text-sm text-slate-300">Loading data source status...</div>
         ) : (
           <div className="space-y-4">
-            <section className="rounded-xl border border-emerald-800 bg-slate-950 p-4 shadow-sm">
+            <section className={cardShell}>
               <div className="grid grid-cols-2 gap-4 md:grid-cols-4">
                 <MetricCard label="Connected/Test" value={data.connected_sources} accent />
                 <MetricCard label="Total Sources" value={data.total_sources} />
@@ -54,11 +59,11 @@ export default function DataSourcesPage() {
             </section>
 
             {Object.entries(byType).map(([type, sources]) => (
-              <section key={type} className="rounded-xl border border-slate-700 bg-slate-950 p-4 shadow-sm">
-                <h2 className="mb-3 text-lg font-semibold capitalize text-emerald-500">{type.replace(/_/g, " ")}</h2>
+              <section key={type} className={cardShell}>
+                <h2 className="mb-3 text-lg font-semibold capitalize text-emerald-400">{type.replace(/_/g, " ")}</h2>
                 <div className="grid grid-cols-1 gap-4 xl:grid-cols-3">
                   {sources.map((source) => (
-                    <article key={source.key ?? source.name} className="rounded-xl border border-slate-800 bg-slate-900 p-4">
+                    <article key={source.key ?? source.name} className={cardInner}>
                       <div className="flex items-start justify-between gap-3">
                         <div>
                           <p className="text-xs uppercase tracking-wide text-slate-500">{source.key}</p>
@@ -68,24 +73,24 @@ export default function DataSourcesPage() {
                       </div>
                       <p className="mt-3 text-sm leading-relaxed text-slate-300">{source.message}</p>
                       <div className="mt-3 grid grid-cols-2 gap-2 text-xs">
-                        <div className="rounded-lg border border-slate-800 bg-slate-950 px-3 py-2">
+                        <div className={miniField}>
                           <p className="uppercase tracking-wide text-slate-500">Configured</p>
                           <p className={source.configured ? "font-bold text-emerald-300" : "font-bold text-amber-300"}>{source.configured ? "Yes" : "No"}</p>
                         </div>
-                        <div className="rounded-lg border border-slate-800 bg-slate-950 px-3 py-2">
+                        <div className={miniField}>
                           <p className="uppercase tracking-wide text-slate-500">Live Connectivity</p>
                           <p className={source.connected ? "font-bold text-emerald-300" : "font-bold text-slate-300"}>{source.connected ? "Yes" : "Checked during request"}</p>
                         </div>
                       </div>
                       <div className="mt-3 flex flex-wrap gap-2">
                         {source.used_for.map((usage) => (
-                          <span key={usage} className="rounded-full border border-slate-700 bg-slate-950 px-3 py-1 text-xs text-slate-300">{usage.replace(/_/g, " ")}</span>
+                          <span key={usage} className={pill}>{usage.replace(/_/g, " ")}</span>
                         ))}
                       </div>
                       {source.required_for && source.required_for.length > 0 && (
                         <div className="mt-3 flex flex-wrap gap-2">
                           {source.required_for.map((usage) => (
-                            <span key={usage} className="rounded-full border border-emerald-900 bg-emerald-950/40 px-3 py-1 text-xs text-emerald-300">required: {usage.replace(/_/g, " ")}</span>
+                            <span key={usage} className="rounded-full border border-emerald-400/20 bg-emerald-500/10 px-3 py-1 text-xs text-emerald-200">required: {usage.replace(/_/g, " ")}</span>
                           ))}
                         </div>
                       )}
