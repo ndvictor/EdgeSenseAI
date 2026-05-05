@@ -3,7 +3,7 @@
   "version": "0.1.0",
   "private": true,
   "scripts": {
-    "dev": "NEXT_TELEMETRY_DISABLED=1 NEXT_PUBLIC_API_URL=http://localhost:8900 next dev --turbopack -p 3900",
+    "dev": "NEXT_TELEMETRY_DISABLED=1 NEXT_PUBLIC_API_URL=http://localhost:8900 next dev --webpack -p 3900",
     "dev:clean": "rm -rf .next && npm run dev",
     "build": "NEXT_TELEMETRY_DISABLED=1 NEXT_PUBLIC_API_URL=http://localhost:8900 next build",
     "start": "NEXT_PUBLIC_API_URL=http://localhost:8900 next start -p 3900",

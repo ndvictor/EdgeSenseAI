@@ -48,6 +48,200 @@ export type AccountRiskProfile = {
   last_updated: string;
 };
 
+export type AlpacaPaperAccount = {
+  id?: string | null;
+  account_number?: string | null;
+  status?: string | null;
+  currency?: string | null;
+  cash?: number | null;
+  buying_power?: number | null;
+  portfolio_value?: number | null;
+  equity?: number | null;
+  last_equity?: number | null;
+  daytrade_count?: number | null;
+  pattern_day_trader?: boolean | null;
+  trading_blocked?: boolean | null;
+  transfers_blocked?: boolean | null;
+  account_blocked?: boolean | null;
+};
+
+export type AlpacaPaperPosition = {
+  symbol: string;
+  qty?: number | null;
+  side?: string | null;
+  market_value?: number | null;
+  cost_basis?: number | null;
+  unrealized_pl?: number | null;
+  unrealized_plpc?: number | null;
+  current_price?: number | null;
+  avg_entry_price?: number | null;
+};
+
+export type AlpacaPaperOrder = {
+  id: string;
+  client_order_id?: string | null;
+  symbol: string;
+  side?: string | null;
+  type?: string | null;
+  status?: string | null;
+  qty?: number | null;
+  notional?: number | null;
+  filled_qty?: number | null;
+  submitted_at?: string | null;
+  filled_at?: string | null;
+  limit_price?: number | null;
+  stop_price?: number | null;
+};
+
+export type AlpacaPaperSnapshot = {
+  provider: "alpaca";
+  mode: "paper";
+  status: "connected" | "not_configured" | "unavailable";
+  endpoint: string;
+  account?: AlpacaPaperAccount;
+  positions?: AlpacaPaperPosition[];
+  orders?: AlpacaPaperOrder[];
+};
+
+// Settings API Types - Comprehensive Platform Settings
+export type TradingSettings = {
+  paper_trading_enabled: boolean;
+  live_trading_enabled: boolean;
+  broker_execution_enabled: boolean;
+  require_human_approval: boolean;
+  execution_mode: string;
+  execution_agent_enabled: boolean;
+  paper_starting_cash: number;
+  broker_provider: string;
+  alpaca_paper_trade: boolean;
+};
+
+export type LlmGatewaySettings = {
+  llm_gateway_enable_paid_tests: boolean;
+  llm_gateway_daily_budget: number;
+  llm_gateway_default_cheap_model: string;
+  llm_gateway_default_reasoning_model: string;
+  llm_gateway_default_fallback_model: string;
+  embeddings_enable_paid_calls: boolean;
+};
+
+export type MarketDataSettings = {
+  market_data_provider: string;
+  market_data_provider_priority: string;
+  market_data_provider_timeout_seconds: number;
+  alpaca_market_data_enabled: boolean;
+};
+
+export type NewsSettings = {
+  news_provider_enabled: boolean;
+  news_provider_primary: string;
+  news_provider_timeout_seconds: number;
+};
+
+export type PlatformFeatures = {
+  langsmith_tracing: boolean;
+  vector_memory_enabled: boolean;
+};
+
+export type RateLimitSettings = {
+  max_daily_llm_cost: number;
+  max_daily_agent_runs: number;
+};
+
+export type SettingsResponse = {
+  trading: TradingSettings;
+  llm_gateway: LlmGatewaySettings;
+  market_data: MarketDataSettings;
+  news: NewsSettings;
+  platform: PlatformFeatures;
+  rate_limits: RateLimitSettings;
+};
+
+export type TradingSettingsUpdate = {
+  paper_trading_enabled?: boolean;
+  live_trading_enabled?: boolean;
+  broker_execution_enabled?: boolean;
+  require_human_approval?: boolean;
+  execution_mode?: string;
+  execution_agent_enabled?: boolean;
+  paper_starting_cash?: number;
+  broker_provider?: string;
+  alpaca_paper_trade?: boolean;
+};
+
+export type LlmGatewaySettingsUpdate = {
+  llm_gateway_enable_paid_tests?: boolean;
+  llm_gateway_daily_budget?: number;
+  llm_gateway_default_cheap_model?: string;
+  llm_gateway_default_reasoning_model?: string;
+  llm_gateway_default_fallback_model?: string;
+  embeddings_enable_paid_calls?: boolean;
+};
+
+export type MarketDataSettingsUpdate = {
+  market_data_provider?: string;
+  market_data_provider_priority?: string;
+  market_data_provider_timeout_seconds?: number;
+  alpaca_market_data_enabled?: boolean;
+};
+
+export type NewsSettingsUpdate = {
+  news_provider_enabled?: boolean;
+  news_provider_primary?: string;
+  news_provider_timeout_seconds?: number;
+};
+
+export type PlatformFeaturesUpdate = {
+  langsmith_tracing?: boolean;
+  vector_memory_enabled?: boolean;
+};
+
+export type RateLimitSettingsUpdate = {
+  max_daily_llm_cost?: number;
+  max_daily_agent_runs?: number;
+};
+
+export type SettingsUpdateRequest = {
+  trading?: TradingSettingsUpdate;
+  llm_gateway?: LlmGatewaySettingsUpdate;
+  market_data?: MarketDataSettingsUpdate;
+  news?: NewsSettingsUpdate;
+  platform?: PlatformFeaturesUpdate;
+  rate_limits?: RateLimitSettingsUpdate;
+};
+
+// Paper Trading Order Types
+export type PaperOrderRequest = {
+  symbol: string;
+  side: "buy" | "sell";
+  qty: number;
+  type?: "market" | "limit" | "stop" | "stop_limit";
+  time_in_force?: "day" | "gtc" | "ioc";
+  limit_price?: number | null;
+  stop_price?: number | null;
+  asset_class?: "stock" | "etf" | "crypto" | "option";
+  human_approval_confirmed: boolean;
+  dry_run: boolean;
+};
+
+export type PaperOrderResponse = {
+  status: "blocked" | "dry_run" | "submitted" | "failed";
+  broker: string;
+  execution_mode: string;
+  order_id: string | null;
+  client_order_id: string;
+  symbol: string;
+  asset_class: string;
+  side: string;
+  submitted_payload: Record<string, unknown>;
+  broker_response: Record<string, unknown> | null;
+  request_id: string | null;
+  blockers: string[];
+  warnings: string[];
+  safety_notes: string[];
+  created_at: string;
+};
+
 export type EdgeSignal = {
   symbol: string;
   asset_class: "stock" | "option" | "crypto";
@@ -2185,6 +2379,9 @@ export const api = {
   labelFromPaperTrade: (payload: { paper_trade_id: string; symbol: string; entry_price: number; exit_price?: number; stop_loss: number; target_price: number; opened_at: string; closed_at?: string; outcome_notes?: string }) =>
     request<JournalOutcomeResponse>("/api/journal/outcomes/label-from-paper-trade", { method: "POST", body: JSON.stringify(payload) }),
 
+  // Alpaca Paper Account APIs
+  getAlpacaPaperSnapshot: () => request<AlpacaPaperSnapshot>("/api/paper-trading/alpaca"),
+
   // Performance Drift APIs
   runPerformanceDrift: (payload?: { lookback_days?: number; strategy_key?: string; model_name?: string; min_samples?: number; source?: string }) =>
     request<PerformanceDriftResponse>("/api/performance-drift/run", { method: "POST", body: JSON.stringify(payload || {}) }),
@@ -2213,6 +2410,16 @@ export const api = {
 
   // Platform Readiness APIs
   getPlatformReadiness: () => request<PlatformReadinessResponse>("/api/platform-readiness"),
+
+  // Settings APIs
+  getSettings: () => request<SettingsResponse>("/api/settings"),
+  updateSettings: (payload: SettingsUpdateRequest) =>
+    request<SettingsResponse>("/api/settings", { method: "POST", body: JSON.stringify(payload) }),
+  resetSettings: () => request<SettingsResponse>("/api/settings/reset", { method: "POST" }),
+  
+  // Paper Trading Order API
+  placePaperOrder: (payload: PaperOrderRequest) =>
+    request<PaperOrderResponse>("/api/paper-trading/order", { method: "POST", body: JSON.stringify(payload) }),
 
   // Tracing APIs
   getTracingStatus: () => request<TracingStatusResponse>("/api/tracing/status"),

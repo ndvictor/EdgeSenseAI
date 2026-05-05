@@ -39,11 +39,16 @@ class Settings(BaseSettings):
 
     live_trading_enabled: bool = Field(default=False, alias="LIVE_TRADING_ENABLED")
     paper_trading_enabled: bool = Field(default=True, alias="PAPER_TRADING_ENABLED")
+    broker_execution_enabled: bool = Field(default=False, alias="BROKER_EXECUTION_ENABLED")
     execution_agent_enabled: bool = Field(default=False, alias="EXECUTION_AGENT_ENABLED")
     require_human_approval: bool = Field(default=True, alias="REQUIRE_HUMAN_APPROVAL")
+    broker_provider: str = Field(default="alpaca", alias="BROKER_PROVIDER")
+    alpaca_paper_trade: bool = Field(default=True, alias="ALPACA_PAPER_TRADE")
+    execution_mode: str = Field(default="dry_run", alias="EXECUTION_MODE")
     paper_starting_cash: float = Field(default=100000.0, alias="PAPER_STARTING_CASH")
     max_daily_llm_cost: int = Field(default=10, alias="MAX_DAILY_LLM_COST")
     max_daily_agent_runs: int = Field(default=500, alias="MAX_DAILY_AGENT_RUNS")
+    langsmith_tracing: bool = Field(default=False, alias="LANGSMITH_TRACING")
 
     market_data_provider: str = Field(default="mock", alias="MARKET_DATA_PROVIDER")
     market_data_provider_priority_raw: str = Field(default="alpaca,yfinance,mock", alias="MARKET_DATA_PROVIDER_PRIORITY")

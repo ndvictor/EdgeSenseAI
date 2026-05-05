@@ -12,10 +12,12 @@ from app.core.settings import settings
 
 
 ExecutionMode = Literal["disabled", "dry_run", "paper", "live"]
+AlpacaPaperAssetClass = Literal["stock", "etf", "crypto", "option"]
 OrderSide = Literal["buy", "sell"]
 OrderType = Literal["market", "limit", "stop", "stop_limit"]
 TimeInForce = Literal["day", "gtc", "opg", "cls", "ioc", "fok"]
 AutonomousSource = Literal["strategy_workflow", "scanner_trigger", "meta_controller", "manual_test"]
+ApprovalSource = Literal["human"]
 
 
 class TradeNowConfig(BaseModel):
@@ -48,6 +50,7 @@ class TradeNowConfigUpdate(BaseModel):
 
 class TradeNowOrderRequest(BaseModel):
     symbol: str
+    asset_class: AlpacaPaperAssetClass = "stock"
     side: OrderSide
     qty: float | None = None
     notional: float | None = None
@@ -57,6 +60,7 @@ class TradeNowOrderRequest(BaseModel):
     stop_price: float | None = None
     dry_run: bool = True
     human_approval_confirmed: bool = False
+    approval_source: ApprovalSource = "human"
     client_order_id: str | None = None
 
 
@@ -66,6 +70,7 @@ class AutonomousTradeExecutionRequest(BaseModel):
     recommendation_id: str | None = None
     strategy_key: str | None = None
     symbol: str
+    asset_class: AlpacaPaperAssetClass = "stock"
     side: OrderSide
     qty: float | None = None
     notional: float | None = None
@@ -77,6 +82,7 @@ class AutonomousTradeExecutionRequest(BaseModel):
     risk_gate_passed: bool = False
     execution_readiness_passed: bool = False
     human_approval_confirmed: bool = False
+    approval_source: ApprovalSource = "human"
     approved_by: str | None = None
     confidence_score: float | None = Field(default=None, ge=0.0, le=1.0)
     max_loss_dollars: float | None = None
@@ -90,6 +96,7 @@ class TradeNowOrderResponse(BaseModel):
     order_id: str | None = None
     client_order_id: str
     symbol: str
+    asset_class: AlpacaPaperAssetClass
     side: str
     submitted_payload: dict[str, Any]
     broker_response: dict[str, Any] | None = None
@@ -147,9 +154,9 @@ def _alpaca_secret_key() -> str:
 
 def _paper_base_url() -> str:
     return (
-        os.getenv("ALPACA_BASE_URL")
-        or os.getenv("ALPACA_PAPER_TRADING_BASE_URL")
+        os.getenv("ALPACA_PAPER_TRADING_BASE_URL")
         or os.getenv("APCA_API_BASE_URL")
+        or os.getenv("ALPACA_BASE_URL")
         or "https://paper-api.alpaca.markets"
     )
 
@@ -220,6 +227,8 @@ def _refresh_config() -> TradeNowConfig:
         "API keys must be configured server-side via environment variables, not saved in the browser.",
         "Dry-run is the default mode and does not contact Alpaca.",
         "Paper mode can submit only when user toggle, env flags, keys, and human approval are all present.",
+        "Automatic paper mode is future-ready but requires the automatic toggle, AUTONOMOUS_EXECUTION_ENABLED=true, broker execution env, risk gate, execution readiness, and human approval metadata.",
+        "Alpaca paper asset classes accepted here are stocks, ETFs, crypto, and option contracts.",
         "Live mode is blocked unless LIVE_TRADING_ENABLED and BROKER_EXECUTION_ENABLED are explicitly true.",
         "Autonomous execution still requires risk gate, execution readiness, and human approval unless a later audited policy explicitly changes it.",
     ]
@@ -277,6 +286,18 @@ def _validate_order_request(request: TradeNowOrderRequest, config: TradeNowConfi
         blockers.append("stop_price is required for stop and stop_limit orders.")
     if not request.human_approval_confirmed:
         blockers.append("Human approval checkbox is required before any broker submission.")
+    if request.approval_source != "human":
+        blockers.append("Only human approval is allowed for broker submission.")
+    if request.asset_class not in {"stock", "etf", "crypto", "option"}:
+        blockers.append("Asset class must be stock, ETF, crypto, or option for Alpaca paper trading.")
+    if request.asset_class in {"stock", "etf", "option"} and request.notional is not None:
+        blockers.append("Notional orders are only enabled for crypto in this ticket; use quantity for stocks, ETFs, and options.")
+    if request.asset_class == "crypto" and request.time_in_force not in {"gtc", "ioc"}:
+        blockers.append("Crypto paper orders should use GTC or IOC time in force.")
+    if request.asset_class == "option" and request.type not in {"market", "limit"}:
+        blockers.append("Options paper orders are limited to market or limit tickets here.")
+    if request.asset_class == "option" and request.notional is not None:
+        blockers.append("Options paper orders require contract quantity, not notional.")
     if config.execution_mode == "disabled":
         blockers.append("Execution mode is disabled.")
     if not config.user_enabled:
@@ -288,6 +309,7 @@ def _validate_autonomous_request(request: AutonomousTradeExecutionRequest, confi
     blockers: list[str] = []
     manual_like_request = TradeNowOrderRequest(
         symbol=request.symbol,
+        asset_class=request.asset_class,
         side=request.side,
         qty=request.qty,
         notional=request.notional,
@@ -297,6 +319,7 @@ def _validate_autonomous_request(request: AutonomousTradeExecutionRequest, confi
         stop_price=request.stop_price,
         dry_run=request.dry_run,
         human_approval_confirmed=request.human_approval_confirmed,
+        approval_source=request.approval_source,
         client_order_id=request.client_order_id,
     )
     blockers.extend([b for b in _validate_order_request(manual_like_request, config) if b != "TradeNow UI toggle is disabled."])
@@ -317,7 +340,7 @@ def _validate_autonomous_request(request: AutonomousTradeExecutionRequest, confi
     return sorted(set(blockers))
 
 
-def _submit_to_alpaca(payload: dict[str, Any], config: TradeNowConfig, side: str, warnings: list[str], safety_notes: list[str]) -> TradeNowOrderResponse:
+def _submit_to_alpaca(payload: dict[str, Any], config: TradeNowConfig, asset_class: AlpacaPaperAssetClass, side: str, warnings: list[str], safety_notes: list[str]) -> TradeNowOrderResponse:
     base_url = config.live_endpoint if config.execution_mode == "live" else config.paper_endpoint
     url = f"{base_url.rstrip('/')}/v2/orders"
     headers = {
@@ -338,6 +361,7 @@ def _submit_to_alpaca(payload: dict[str, Any], config: TradeNowConfig, side: str
                 execution_mode=config.execution_mode,
                 client_order_id=payload["client_order_id"],
                 symbol=payload["symbol"],
+                asset_class=asset_class,
                 side=side,
                 submitted_payload=payload,
                 broker_response=body,
@@ -352,6 +376,7 @@ def _submit_to_alpaca(payload: dict[str, Any], config: TradeNowConfig, side: str
             order_id=body.get("id"),
             client_order_id=payload["client_order_id"],
             symbol=payload["symbol"],
+            asset_class=asset_class,
             side=side,
             submitted_payload=payload,
             broker_response=body,
@@ -365,6 +390,7 @@ def _submit_to_alpaca(payload: dict[str, Any], config: TradeNowConfig, side: str
             execution_mode=config.execution_mode,
             client_order_id=payload["client_order_id"],
             symbol=payload["symbol"],
+            asset_class=asset_class,
             side=side,
             submitted_payload=payload,
             blockers=[str(exc)],
@@ -391,6 +417,7 @@ def place_trade_now_order(request: TradeNowOrderRequest) -> TradeNowOrderRespons
             execution_mode=config.execution_mode,
             client_order_id=client_order_id,
             symbol=payload["symbol"],
+            asset_class=request.asset_class,
             side=request.side,
             submitted_payload=payload,
             blockers=blockers,
@@ -409,6 +436,7 @@ def place_trade_now_order(request: TradeNowOrderRequest) -> TradeNowOrderRespons
             execution_mode=config.execution_mode,
             client_order_id=client_order_id,
             symbol=payload["symbol"],
+            asset_class=request.asset_class,
             side=request.side,
             submitted_payload=payload,
             blockers=sorted(set(blockers)),
@@ -418,7 +446,7 @@ def place_trade_now_order(request: TradeNowOrderRequest) -> TradeNowOrderRespons
         _LAST_ORDER = response
         return response
 
-    response = _submit_to_alpaca(payload, config, request.side, warnings, config.safety_notes)
+    response = _submit_to_alpaca(payload, config, request.asset_class, request.side, warnings, config.safety_notes)
     _LAST_ORDER = response
     return response
 
@@ -441,6 +469,7 @@ def place_autonomous_trade_order(request: AutonomousTradeExecutionRequest) -> Au
             execution_mode=config.execution_mode,
             client_order_id=payload["client_order_id"],
             symbol=payload["symbol"],
+            asset_class=request.asset_class,
             side=request.side,
             submitted_payload=payload,
             blockers=blockers,
@@ -470,6 +499,7 @@ def place_autonomous_trade_order(request: AutonomousTradeExecutionRequest) -> Au
             execution_mode=config.execution_mode,
             client_order_id=payload["client_order_id"],
             symbol=payload["symbol"],
+            asset_class=request.asset_class,
             side=request.side,
             submitted_payload=payload,
             blockers=sorted(set(blockers)),
@@ -490,7 +520,7 @@ def place_autonomous_trade_order(request: AutonomousTradeExecutionRequest) -> Au
         _LAST_AUTONOMOUS_ORDER = response
         return response
 
-    broker_response = _submit_to_alpaca(payload, config, request.side, warnings, config.safety_notes)
+    broker_response = _submit_to_alpaca(payload, config, request.asset_class, request.side, warnings, config.safety_notes)
     response = AutonomousTradeExecutionResponse(
         **broker_response.model_dump(),
         source=request.source,

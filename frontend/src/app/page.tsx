@@ -1,7 +1,7 @@
 "use client";
 
 import Link from "next/link";
-import { Activity, Crown, DatabaseZap, Gauge, LogIn, Settings, TrendingUp, Waves } from "lucide-react";
+import { Activity, Crown, DatabaseZap, Gauge, LogIn, Monitor, Settings, TrendingUp, Waves } from "lucide-react";
 
 const ticker = [
   { label: "SPY", value: "530.74", change: "+0.68%", positive: true },
@@ -59,9 +59,15 @@ export default function Home() {
             >
               Open Owner Command Center →
             </Link>
+            <Link
+              href="/login?next=/ops"
+              className="rounded-2xl border border-amber-400/35 bg-black/40 px-8 py-5 text-lg font-semibold text-amber-300 shadow-[0_0_40px_rgba(251,191,36,0.10)] backdrop-blur transition hover:-translate-y-0.5 hover:bg-amber-400/10"
+            >
+              Open Ops Command Center →
+            </Link>
           </div>
 
-          <div className="mt-16 grid w-full max-w-5xl grid-cols-1 gap-6 md:grid-cols-2">
+          <div className="mt-16 grid w-full max-w-6xl grid-cols-1 gap-6 md:grid-cols-2 lg:grid-cols-3">
             <Link href="/login?next=/owner" className="group rounded-3xl border border-emerald-400/20 bg-black/35 p-7 text-left backdrop-blur transition hover:border-emerald-300/45 hover:bg-emerald-400/[0.06]">
               <div className="flex items-start gap-5">
                 <div className="flex h-16 w-16 items-center justify-center rounded-2xl border border-emerald-400/25 bg-emerald-400/10 text-emerald-300">
@@ -83,6 +89,18 @@ export default function Home() {
                   <h2 className="text-xl font-semibold text-emerald-300">Platform Operations</h2>
                   <p className="mt-3 text-sm leading-6 text-slate-300">Manage agents, data pipelines, models, and platform performance.</p>
                   <p className="mt-6 text-sm font-medium text-emerald-300">Open Command Center →</p>
+                </div>
+              </div>
+            </Link>
+            <Link href="/login?next=/ops" className="group rounded-3xl border border-amber-400/20 bg-black/35 p-7 text-left backdrop-blur transition hover:border-amber-300/45 hover:bg-amber-400/[0.06]">
+              <div className="flex items-start gap-5">
+                <div className="flex h-16 w-16 items-center justify-center rounded-2xl border border-amber-400/25 bg-amber-400/10 text-amber-300">
+                  <Monitor className="h-8 w-8" />
+                </div>
+                <div>
+                  <h2 className="text-xl font-semibold text-amber-300">Ops Command</h2>
+                  <p className="mt-3 text-sm leading-6 text-slate-300">Infrastructure monitoring, deployments, workflow management, and operational oversight.</p>
+                  <p className="mt-6 text-sm font-medium text-amber-300">Open Ops Command Center →</p>
                 </div>
               </div>
             </Link>

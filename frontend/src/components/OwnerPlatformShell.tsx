@@ -338,7 +338,7 @@ export function OwnerPlatformShell({ children }: { children: React.ReactNode }) 
   const pathname = usePathname();
 
   return (
-    <div className="flex min-h-screen bg-[#03070b] text-white">
+    <div className="flex min-h-screen bg-emerald-950 text-white">
       <aside className="flex min-h-screen w-80 shrink-0 flex-col border-r border-emerald-400/10 bg-[#05080d] px-4 py-5 shadow-[18px_0_60px_rgba(0,0,0,0.45)]">
         <Link href="/owner" className="mb-8 flex items-center gap-3 px-1">
           <div className="flex h-12 w-12 items-center justify-center rounded-2xl border border-emerald-400/50 bg-emerald-400/10 text-xl font-black text-emerald-300 shadow-[0_0_28px_rgba(16,185,129,0.25)]">E</div>

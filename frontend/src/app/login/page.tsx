@@ -4,17 +4,23 @@ import { Suspense } from "react";
 import Link from "next/link";
 import { signIn } from "next-auth/react";
 import { useSearchParams } from "next/navigation";
-import { Activity, ArrowLeft, Crown, Gauge, LogIn, ShieldCheck } from "lucide-react";
+import { Activity, ArrowLeft, Crown, Gauge, LogIn, Monitor, ShieldCheck } from "lucide-react";
 
 function getSafeNext(next: string | null) {
-  if (next === "/command-center" || next === "/owner") return next;
+  if (next === "/command-center" || next === "/owner" || next === "/ops") return next;
   return "/owner";
+}
+
+function getDestinationLabel(next: string | null) {
+  if (next === "/command-center") return "Command Center";
+  if (next === "/ops") return "Ops Command Center";
+  return "Owner Command Center";
 }
 
 function LoginContent() {
   const searchParams = useSearchParams();
   const next = getSafeNext(searchParams.get("next"));
-  const destinationLabel = next === "/command-center" ? "Command Center" : "Owner Command Center";
+  const destinationLabel = getDestinationLabel(searchParams.get("next"));
 
   return (
     <div className="relative min-h-screen overflow-hidden bg-[#03070b] text-white">
@@ -93,8 +99,22 @@ function LoginContent() {
                 Google auth uses placeholder environment variables until you add your real Google OAuth client ID and secret.
               </div>
 
-              <div className="mt-6 text-xs leading-6 text-slate-500">
-                Required env: GOOGLE_CLIENT_ID, GOOGLE_CLIENT_SECRET, NEXTAUTH_SECRET, NEXTAUTH_URL.
+              <div className="mt-6 border-t border-white/10 pt-6">
+                <div className="mb-3 text-xs font-semibold uppercase tracking-wider text-slate-500">Other Access Points</div>
+                <div className="grid grid-cols-1 gap-2 text-sm">
+                  <Link href="/login?next=/owner" className="flex items-center gap-2 rounded-xl border border-white/10 px-3 py-2 text-slate-300 transition hover:border-emerald-400/30 hover:text-emerald-300">
+                    <Crown className="h-4 w-4" />
+                    <span>Owner Command Center</span>
+                  </Link>
+                  <Link href="/login?next=/command-center" className="flex items-center gap-2 rounded-xl border border-white/10 px-3 py-2 text-slate-300 transition hover:border-emerald-400/30 hover:text-emerald-300">
+                    <Gauge className="h-4 w-4" />
+                    <span>Engineering Console</span>
+                  </Link>
+                  <Link href="/login?next=/ops" className="flex items-center gap-2 rounded-xl border border-white/10 px-3 py-2 text-slate-300 transition hover:border-amber-400/30 hover:text-amber-300">
+                    <Monitor className="h-4 w-4" />
+                    <span>Ops Command Center</span>
+                  </Link>
+                </div>
               </div>
             </section>
           </div>

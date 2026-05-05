@@ -14,8 +14,9 @@ export function AppShell({ children }: { children: React.ReactNode }) {
   const pathname = usePathname();
   const isPublicRoute = publicRoutes.has(pathname);
   const isOwnerPlatformRoute = pathname === "/owner" || pathname.startsWith("/owner/");
+  const isOpsPlatformRoute = pathname === "/ops" || pathname.startsWith("/ops/");
 
-  if (isPublicRoute || isOwnerPlatformRoute) {
+  if (isPublicRoute || isOwnerPlatformRoute || isOpsPlatformRoute) {
     return <main className="min-h-screen bg-[#03070b]">{children}</main>;
   }
 
