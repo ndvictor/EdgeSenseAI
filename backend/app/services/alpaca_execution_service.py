@@ -8,7 +8,7 @@ from uuid import uuid4
 import requests
 from pydantic import BaseModel, Field
 
-from app.core.effective_runtime import broker_or_agent_execution_enabled, effective_bool
+from app.core.effective_runtime import effective_bool
 from app.core.settings import settings
 
 
@@ -171,7 +171,10 @@ def _refresh_config() -> TradeNowConfig:
     secret = _alpaca_secret_key()
     blockers: list[str] = []
     autonomous_blockers: list[str] = []
-    execution_enabled = broker_or_agent_execution_enabled()
+    # Broker submission must be explicitly enabled via process env.
+    # Avoid treating runtime_settings.json as an authorization mechanism.
+    broker_enabled_env = _env_bool("BROKER_EXECUTION_ENABLED", False)
+    execution_enabled = broker_enabled_env
     live_enabled = effective_bool("LIVE_TRADING_ENABLED")
     paper_enabled = effective_bool("PAPER_TRADING_ENABLED")
     autonomous_enabled = _env_bool("AUTONOMOUS_EXECUTION_ENABLED", False) or _env_bool("AUTO_TRADE_ENABLED", False)
@@ -183,7 +186,7 @@ def _refresh_config() -> TradeNowConfig:
     if _CONFIG.execution_mode == "paper" and not paper_enabled:
         blockers.append("PAPER_TRADING_ENABLED is false, so paper orders are blocked.")
     if not execution_enabled:
-        blockers.append("BROKER_EXECUTION_ENABLED/EXECUTION_AGENT_ENABLED is false, so broker submission is blocked.")
+        blockers.append("BROKER_EXECUTION_ENABLED is false, so broker submission is blocked.")
     if not key_id or not secret:
         blockers.append("Alpaca API key and secret are not configured in backend environment variables.")
 
@@ -192,7 +195,7 @@ def _refresh_config() -> TradeNowConfig:
     if not autonomous_enabled:
         autonomous_blockers.append("AUTONOMOUS_EXECUTION_ENABLED/AUTO_TRADE_ENABLED is false, so autonomous broker submission is blocked.")
     if not execution_enabled:
-        autonomous_blockers.append("BROKER_EXECUTION_ENABLED/EXECUTION_AGENT_ENABLED is false, so autonomous broker submission is blocked.")
+        autonomous_blockers.append("BROKER_EXECUTION_ENABLED is false, so autonomous broker submission is blocked.")
     if not key_id or not secret:
         autonomous_blockers.append("Alpaca API key and secret are not configured in backend environment variables.")
     if _CONFIG.execution_mode == "live" and not live_enabled:
@@ -212,7 +215,7 @@ def _refresh_config() -> TradeNowConfig:
     _CONFIG.live_endpoint = _live_base_url()
     _CONFIG.require_human_approval = True
     _CONFIG.live_trading_enabled_env = live_enabled
-    _CONFIG.broker_execution_enabled_env = execution_enabled
+    _CONFIG.broker_execution_enabled_env = broker_enabled_env
     _CONFIG.paper_trading_enabled_env = paper_enabled
     _CONFIG.autonomous_execution_enabled_env = autonomous_enabled
     _CONFIG.alpaca_key_id_configured = bool(key_id)

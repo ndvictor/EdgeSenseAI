@@ -16,9 +16,10 @@ from app.api.routes.platform_readiness import router as platform_readiness_route
 from app.api.routes.settings import router as settings_router
 from app.api.routes.tracing import router as tracing_router
 from app.api.routes.data_freshness import router as data_freshness_router
-from app.api.routes.data_ingestion import router as data_ingestion_router
 from app.api.routes.data_quality import router as data_quality_router
 from app.api.routes.data_sources import router as data_sources_router
+from app.api.routes.data_ingestion import router as data_ingestion_router
+from app.api.routes.normalization_status import router as normalization_status_router
 from app.api.routes.decision_workflows import router as decision_workflows_router
 from app.api.routes.edge_radar import router as edge_radar_router
 from app.api.routes.event_scanner_models import router as event_scanner_router
@@ -125,6 +126,7 @@ async def prometheus_middleware(request, call_next):
 app.include_router(market_data_router, prefix="/api")
 app.include_router(data_sources_router, prefix="/api")
 app.include_router(data_ingestion_router, prefix="/api")
+app.include_router(normalization_status_router, prefix="/api")
 app.include_router(watchlists_router, prefix="/api")
 app.include_router(paper_trading_lifecycle_router, prefix="/api")
 app.include_router(recommendation_lifecycle_router, prefix="/api")

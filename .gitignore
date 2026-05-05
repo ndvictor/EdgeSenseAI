@@ -32,3 +32,10 @@ __pycache__/
 
 # TypeScript build info
 frontend/tsconfig.tsbuildinfo
+
+# Local environment secrets
+.env
+.env.local
+.env.*.local
+backend/.env
+backend/.env.local

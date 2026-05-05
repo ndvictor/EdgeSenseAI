@@ -33,6 +33,91 @@ def test_data_sources_status_contract():
     assert "redis" in keys
 
 
+def test_data_ingestion_status_contract():
+    response = client.get("/api/data-ingestion/status")
+    assert response.status_code == 200
+    payload = response.json()
+
+    assert payload["status"] == "ok"
+    assert payload["data_mode"] == "summary"
+    assert payload["updated_at"]
+
+    summary = payload["summary"]
+    assert summary["total_sources"] == 7
+    assert summary["active_sources"] >= 0
+    assert summary["warning_sources"] >= 0
+    assert summary["error_sources"] >= 0
+    assert summary["records_ingested_today"] == 0
+    assert summary["last_ingested_at"] is None
+    assert summary["next_action"]
+
+    sources = payload["sources"]
+    keys = {source["key"] for source in sources}
+    assert keys == {"alpaca", "polygon", "yfinance", "news", "options_data", "account_state", "paper_trading"}
+    for source in sources:
+        assert source["name"]
+        assert source["provider_type"]
+        assert source["status"] in {"ready", "warning", "error", "disabled"}
+        assert source["ingestion_mode"] in {"pull", "stream", "webhook", "manual"}
+        assert isinstance(source["data_types"], list) and source["data_types"]
+        assert source["symbols_tracked"] >= 0
+        assert source["records_ingested_today"] == 0
+        assert source["last_ingested_at"] is None
+        assert source["freshness_seconds"] is None
+        assert source["latency_ms"] is None
+        assert isinstance(source["errors"], list)
+        assert source["next_action"]
+
+    position = payload["pipeline_position"]
+    assert position["previous_stage"] == "data_sources"
+    assert position["current_stage"] == "data_ingestion"
+    assert position["next_stage"] == "data_quality"
+    assert position["downstream_stage"] == "feature_store"
+
+
+def test_normalization_status_contract():
+    response = client.get("/api/normalization/status")
+    assert response.status_code == 200
+    payload = response.json()
+
+    assert payload["status"] == "ok"
+    assert payload["data_mode"] == "summary"
+    assert payload["updated_at"]
+
+    summary = payload["summary"]
+    assert summary["normalization_status"] in {"ready", "warning", "error", "disabled"}
+    assert summary["supported_payloads"] == 5
+    assert summary["records_normalized_today"] == 0
+    assert summary["warning_count"] == 0
+    assert summary["error_count"] == 0
+    assert summary["last_normalized_at"] is None
+    assert summary["next_action"]
+
+    payload_types = payload["payload_types"]
+    assert isinstance(payload_types, list)
+    assert {p["key"] for p in payload_types} == {"market_snapshot", "candle", "options_snapshot", "news_event", "macro_snapshot"}
+
+    for p in payload_types:
+        assert p["label"]
+        assert p["status"] in {"ready", "warning", "error", "disabled"}
+        assert p["input_source"] == "market_data_service"
+        assert p["output_schema"]
+        assert isinstance(p["required_fields"], list) and p["required_fields"]
+        assert isinstance(p["optional_fields"], list)
+        assert p["downstream_consumers"] == ["data_quality", "feature_store"]
+        assert p["records_normalized_today"] == 0
+        assert p["last_normalized_at"] is None
+        assert isinstance(p["warnings"], list)
+        assert isinstance(p["errors"], list)
+        assert p["next_action"]
+
+    pos = payload["pipeline_position"]
+    assert pos["previous_stage"] == "data_ingestion"
+    assert pos["current_stage"] == "normalization"
+    assert pos["next_stage"] == "data_quality"
+    assert pos["downstream_stage"] == "feature_store"
+
+
 def test_market_data_snapshot_contract():
     response = client.get("/api/market-data/snapshot/AMD")
     assert response.status_code == 200
