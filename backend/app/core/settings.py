@@ -60,6 +60,7 @@ class Settings(BaseSettings):
     alpaca_base_url: str = Field(default="https://data.alpaca.markets", alias="ALPACA_BASE_URL")
 
     polygon_api_key: str = Field(default="", alias="POLYGON_API_KEY")
+    tiingo_api_key: str = Field(default="", alias="TIINGO_API_KEY")
     alpha_vantage_key: str = Field(default="", alias="ALPHA_VANTAGE_KEY")
     iex_cloud_key: str = Field(default="", alias="IEX_CLOUD_KEY")
     fred_api_key: str = Field(default="", alias="FRED_API_KEY")
