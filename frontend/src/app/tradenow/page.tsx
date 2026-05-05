@@ -4,6 +4,7 @@ import { useCallback, useEffect, useMemo, useState } from "react";
 import { AlertTriangle, Bot, CheckCircle2, Play, Power, ShieldCheck, XCircle, Settings, Wallet } from "lucide-react";
 import Link from "next/link";
 import { MetricCard, PageHeader } from "@/components/Cards";
+import { TradeNowWorkspacePanel } from "@/components/workspace/TradeNowWorkspacePanel";
 import { api, type AccountRiskProfile, type AlpacaPaperPosition, type AlpacaPaperSnapshot, type SettingsResponse } from "@/lib/api";
 
 const API_BASE_URL = process.env.NEXT_PUBLIC_API_URL || "http://localhost:8900";
@@ -42,6 +43,41 @@ function positionTab(symbol: string): TradeTab {
   if (/^[A-Z]{1,5}\d+[CP]\d{3,}$/.test(u) && u.length >= 10) return "options";
   if (ETF_SYMBOLS.has(u)) return "etf";
   return "stocks";
+}
+
+/** OCC-style option symbol: root + YYMMDD + C|P + strike×1000 (8 digits). Compact form without space padding (matches Alpaca examples). */
+function isoDateToYymmdd(iso: string): string {
+  if (!iso || iso.length < 10) return "";
+  const year = Number(iso.slice(0, 4));
+  const mm = iso.slice(5, 7);
+  const dd = iso.slice(8, 10);
+  if (!Number.isFinite(year) || mm.length !== 2 || dd.length !== 2) return "";
+  const yy = String(year % 100).padStart(2, "0");
+  return `${yy}${mm}${dd}`;
+}
+
+function buildOptionOsiSymbol(root: string, yymmdd: string, right: "C" | "P", strike: number): string {
+  const r = root.toUpperCase().replace(/[^A-Z0-9.]/g, "").slice(0, 6);
+  const exp = yymmdd.replace(/\D/g, "");
+  if (r.length < 1 || exp.length !== 6 || !Number.isFinite(strike) || strike <= 0) return "";
+  const strikePart = Math.round(strike * 1000).toString().padStart(8, "0");
+  return `${r}${exp}${right}${strikePart}`;
+}
+
+function parseOsiSymbol(symbol: string): { root: string; expiryIso: string; right: "C" | "P"; strike: string } | null {
+  const u = symbol.toUpperCase().trim();
+  const m = u.match(/^([A-Z0-9.]{1,6})(\d{2})(\d{2})(\d{2})([CP])(\d{8})$/);
+  if (!m) return null;
+  const root = m[1];
+  const yy = parseInt(m[2], 10);
+  const mm = m[3];
+  const dd = m[4];
+  const right = m[5] as "C" | "P";
+  const strikeRaw = parseInt(m[6], 10);
+  const year = yy >= 70 ? 1900 + yy : 2000 + yy;
+  const strike = (strikeRaw / 1000).toString();
+  const expiryIso = `${year}-${mm}-${dd}`;
+  return { root, expiryIso, right, strike };
 }
 
 type TradeNowConfig = {
@@ -148,6 +184,13 @@ export default function TradeNowPage() {
     human_approval_confirmed: false,
   });
 
+  const [optionBuilder, setOptionBuilder] = useState({
+    root: "AAPL",
+    expiryIso: "2026-01-16",
+    right: "C" as "C" | "P",
+    strike: "200",
+  });
+
   const loadConfig = async () => {
     const next = await apiFetch<TradeNowConfig>("/api/tradenow/config");
     setConfig(next);
@@ -186,13 +229,32 @@ export default function TradeNowPage() {
   const setTab = (tab: TradeTab) => {
     setActiveTab(tab);
     const ac = TAB_TO_ASSET[tab];
+    const nextSymbol = defaultSymbolForTab(tab);
     setForm((f) => ({
       ...f,
       asset_class: ac,
-      symbol: defaultSymbolForTab(tab),
+      symbol: nextSymbol,
       time_in_force: ac === "crypto" ? "gtc" : "day",
       type: ac === "option" && !["market", "limit"].includes(f.type) ? "limit" : f.type,
     }));
+    if (tab === "options") {
+      const parsed = parseOsiSymbol(nextSymbol);
+      if (parsed) {
+        setOptionBuilder({
+          root: parsed.root,
+          expiryIso: parsed.expiryIso,
+          right: parsed.right,
+          strike: parsed.strike,
+        });
+      }
+    }
+  };
+
+  const applyOptionBuilder = () => {
+    const yymmdd = isoDateToYymmdd(optionBuilder.expiryIso);
+    const strike = parseFloat(optionBuilder.strike);
+    const sym = buildOptionOsiSymbol(optionBuilder.root, yymmdd, optionBuilder.right, strike);
+    if (sym) setForm((f) => ({ ...f, symbol: sym }));
   };
 
   const updateConfig = async (patch: Partial<TradeNowConfig>) => {
@@ -475,9 +537,93 @@ export default function TradeNowPage() {
             <div className="mb-3 rounded-xl border border-emerald-500/20 bg-emerald-500/10 px-3 py-2 text-xs leading-relaxed text-emerald-100/90">
               Active class: <span className="font-bold uppercase text-emerald-300">{activeTab}</span>. Paper submission needs paper mode, broker env, dry-run off, and human approval when required.
             </div>
+            {activeTab === "options" ? (
+              <div className="mb-3 space-y-3">
+                <div className="rounded-xl border border-cyan-500/25 bg-cyan-500/5 p-3 text-xs leading-relaxed text-slate-200">
+                  <p className="mb-2 font-bold uppercase tracking-wide text-cyan-300">Alpaca option contract (quick reference)</p>
+                  <ul className="list-inside list-disc space-y-1 text-slate-300">
+                    <li>Symbol is OCC format: underlying + YYMMDD + C or P + strike (strike × 1000, 8 digits). Example: AAPL260116C00200000.</li>
+                    <li>Qty is number of contracts; standard U.S. equity multiplier is 100 shares per contract.</li>
+                    <li>U.S. equity options are American-style (early exercise rules depend on the clearing/venue).</li>
+                    <li>Common order types: market and limit; time-in-force often day or GTC. Paper vs live and complex orders depend on account and API support.</li>
+                    <li>Check open interest, bid/ask width, and buying power / margin impact before submitting.</li>
+                  </ul>
+                  <a
+                    href="https://docs.alpaca.markets/docs/options-trading"
+                    target="_blank"
+                    rel="noreferrer"
+                    className="mt-2 inline-block text-cyan-400 underline hover:text-cyan-300"
+                  >
+                    Alpaca options trading docs →
+                  </a>
+                </div>
+                <div className="rounded-xl border border-emerald-400/20 bg-black/30 p-3">
+                  <p className="mb-2 text-xs font-bold uppercase tracking-wide text-emerald-400">Build OCC symbol</p>
+                  <div className="grid grid-cols-1 gap-2 sm:grid-cols-2">
+                    <label className="text-sm text-slate-300">
+                      Underlying
+                      <input
+                        value={optionBuilder.root}
+                        onChange={(e) => setOptionBuilder((o) => ({ ...o, root: e.target.value }))}
+                        className="mt-1 w-full rounded-xl border border-emerald-400/20 bg-black/40 px-3 py-2 font-mono text-white"
+                      />
+                    </label>
+                    <label className="text-sm text-slate-300">
+                      Expiration
+                      <input
+                        type="date"
+                        value={optionBuilder.expiryIso}
+                        onChange={(e) => setOptionBuilder((o) => ({ ...o, expiryIso: e.target.value }))}
+                        className="mt-1 w-full rounded-xl border border-emerald-400/20 bg-black/40 px-3 py-2 text-white"
+                      />
+                    </label>
+                    <label className="text-sm text-slate-300">
+                      Right
+                      <select
+                        value={optionBuilder.right}
+                        onChange={(e) => setOptionBuilder((o) => ({ ...o, right: e.target.value as "C" | "P" }))}
+                        className="mt-1 w-full rounded-xl border border-emerald-400/20 bg-black/40 px-3 py-2 text-white"
+                      >
+                        <option value="C">Call</option>
+                        <option value="P">Put</option>
+                      </select>
+                    </label>
+                    <label className="text-sm text-slate-300">
+                      Strike ($)
+                      <input
+                        value={optionBuilder.strike}
+                        onChange={(e) => setOptionBuilder((o) => ({ ...o, strike: e.target.value }))}
+                        type="number"
+                        min="0"
+                        step="0.01"
+                        className="mt-1 w-full rounded-xl border border-emerald-400/20 bg-black/40 px-3 py-2 text-white"
+                      />
+                    </label>
+                  </div>
+                  <div className="mt-2 flex flex-wrap items-center gap-2">
+                    <button
+                      type="button"
+                      onClick={applyOptionBuilder}
+                      className="rounded-lg border border-emerald-400/40 bg-emerald-500/15 px-3 py-1.5 text-xs font-bold uppercase text-emerald-300 hover:bg-emerald-500/25"
+                    >
+                      Apply to ticket symbol
+                    </button>
+                    <span className="break-all font-mono text-[11px] text-slate-400">
+                      Preview:{" "}
+                      {buildOptionOsiSymbol(
+                        optionBuilder.root,
+                        isoDateToYymmdd(optionBuilder.expiryIso),
+                        optionBuilder.right,
+                        parseFloat(optionBuilder.strike),
+                      ) || "—"}
+                    </span>
+                  </div>
+                </div>
+              </div>
+            ) : null}
             <div className="grid grid-cols-1 gap-3 md:grid-cols-2">
               <label className="text-sm text-slate-300">
-                Symbol
+                {activeTab === "options" ? "OCC symbol" : "Symbol"}
                 <input
                   value={form.symbol}
                   onChange={(e) => setForm({ ...form, symbol: e.target.value.toUpperCase() })}
@@ -496,7 +642,7 @@ export default function TradeNowPage() {
                 </select>
               </label>
               <label className="text-sm text-slate-300">
-                Quantity
+                {form.asset_class === "option" ? "Contracts (qty)" : "Quantity"}
                 <input
                   value={form.qty}
                   onChange={(e) => setForm({ ...form, qty: e.target.value })}
@@ -588,16 +734,15 @@ export default function TradeNowPage() {
             >
               <Play className="h-4 w-4" /> Submit order
             </button>
-          </div>
-
-          <div className={cardShell}>
-            <h2 className="mb-3 text-lg font-black text-white">Last order response</h2>
             {order ? (
-              <div className="space-y-3">
+              <div className="mt-4 space-y-2 rounded-xl border border-emerald-400/20 bg-black/35 p-3">
                 <div className="flex flex-wrap gap-2">
                   <StatusBadge value={order.status} />
                   <StatusBadge value={order.execution_mode} />
                   <StatusBadge value={order.asset_class} />
+                  {order.order_id ? (
+                    <span className="rounded-full border border-white/15 bg-black/30 px-2 py-0.5 font-mono text-[10px] text-slate-300">ID: {order.order_id}</span>
+                  ) : null}
                 </div>
                 {order.status === "submitted" ? (
                   <p className="flex items-center gap-2 text-sm text-emerald-300">
@@ -615,22 +760,34 @@ export default function TradeNowPage() {
                   </p>
                 ) : null}
                 {order.request_id ? (
-                  <p className="rounded-lg border border-cyan-500/30 bg-cyan-500/10 px-3 py-2 font-mono text-[11px] text-cyan-200">X-Request-ID: {order.request_id}</p>
+                  <p className="rounded-lg border border-cyan-500/30 bg-cyan-500/10 px-2 py-1.5 font-mono text-[10px] text-cyan-200">X-Request-ID: {order.request_id}</p>
                 ) : null}
                 {order.blockers?.length ? (
-                  <ul className="space-y-2 text-sm text-amber-200">
+                  <ul className="max-h-32 space-y-1 overflow-y-auto text-xs text-amber-200">
                     {order.blockers.map((b) => (
-                      <li key={b} className="rounded-lg border border-amber-500/30 bg-amber-500/10 px-3 py-2">
+                      <li key={b} className="rounded border border-amber-500/25 bg-amber-500/5 px-2 py-1">
                         {b}
                       </li>
                     ))}
                   </ul>
                 ) : null}
-                <pre className="max-h-72 overflow-auto rounded-xl border border-emerald-400/15 bg-black/50 p-3 text-[11px] text-slate-300">{JSON.stringify(order, null, 2)}</pre>
+                {order.warnings?.length ? (
+                  <ul className="text-xs text-slate-400">
+                    {order.warnings.map((w) => (
+                      <li key={w}>⚠ {w}</li>
+                    ))}
+                  </ul>
+                ) : null}
               </div>
-            ) : (
-              <p className="text-sm text-slate-400">No order submitted yet for this session.</p>
-            )}
+            ) : null}
+          </div>
+
+          <div className={`${cardShell} max-h-[85vh] overflow-y-auto pr-1`}>
+            <h2 className="mb-3 text-lg font-black text-white">Workspace (same as sidebar)</h2>
+            <p className="mb-3 text-xs text-slate-500">
+              Stocks / ETF → Stocks workspace (ETF variant). Options → Options route. Crypto → Crypto route.
+            </p>
+            <TradeNowWorkspacePanel tab={activeTab} />
           </div>
         </section>
 
