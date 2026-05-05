@@ -45,6 +45,7 @@ const items = [
   { label: "Model Lab", href: "/model-lab", icon: FlaskConical },
   { label: "Model Registry", href: "/model-registry", icon: ShieldCheck },
   { label: "Data Sources", href: "/data-sources", icon: DatabaseZap },
+  { label: "Data Quality", href: "/data-quality", icon: Activity },
   { label: "Platform Readiness", href: "/platform-readiness", icon: ShieldCheck },
   { label: "Stocks", href: "/stocks", icon: TrendingUp },
   { label: "Options", href: "/options", icon: LineChart },

@@ -69,6 +69,63 @@ export type DataIngestionStatusResponse = {
   };
 };
 
+export type NormalizationPayloadTypeStatus = {
+  payload_type: string;
+  status: "ready" | "warning" | "error" | "disabled" | string;
+  input_source?: string | null;
+  output_schema?: string | null;
+  required_fields?: string[];
+  optional_fields?: string[];
+  downstream_consumers?: string[];
+  records_today?: number;
+  warnings?: string[];
+  errors?: string[];
+  next_action?: string | null;
+};
+
+export type NormalizationStatusResponse = {
+  status: string;
+  data_mode?: "summary" | string;
+  updated_at?: string;
+  summary?: {
+    status?: string;
+    supported_payloads?: number;
+    records_normalized_today?: number;
+    warnings?: number;
+    errors?: number;
+  };
+  payloads?: NormalizationPayloadTypeStatus[];
+};
+
+export type DataQualityCheckStatus = {
+  check: string;
+  status: "pass" | "warn" | "fail" | "disabled" | string;
+  description?: string | null;
+  input_stage?: string | null;
+  blocks_downstream?: boolean;
+  downstream_consumers?: string[];
+  pass_count?: number;
+  warn_count?: number;
+  fail_count?: number;
+  last_checked?: string | null;
+  next_action?: string | null;
+};
+
+export type DataQualityStatusResponse = {
+  status: string;
+  data_mode?: "summary" | string;
+  updated_at?: string;
+  summary?: {
+    status?: string;
+    checks_configured?: number;
+    symbols_checked_today?: number;
+    pass?: number;
+    warnings?: number;
+    fails?: number;
+  };
+  checks?: DataQualityCheckStatus[];
+};
+
 export type MarketDataSource = "auto" | "yfinance" | "alpaca" | "mock";
 
 export type AccountRiskProfile = {
@@ -2291,6 +2348,8 @@ export const api = {
   getModelStatus: () => request<ModelStatusResponse>("/api/models/status"),
   getDataSourcesStatus: () => request<DataSourcesStatusResponse>("/api/data-sources/status"),
   getDataIngestionStatus: () => request<DataIngestionStatusResponse>("/api/data-ingestion/status"),
+  getNormalizationStatus: () => request<NormalizationStatusResponse>("/api/normalization/status"),
+  getDataQualityStatus: () => request<DataQualityStatusResponse>("/api/data-quality/status"),
   getMarketDataSnapshot: (symbol: string, source: MarketDataSource = "auto") => request<MarketDataSnapshot>(`/api/market-data/snapshot/${symbol}?source=${source}`),
   getMarketDataHistory: (symbol: string, period = "6mo", interval = "1d", source: MarketDataSource = "auto") => request<PriceHistory>(`/api/market-data/history/${symbol}?period=${period}&interval=${interval}&source=${source}`),
   getMarketSnapshots: () => request<MarketSnapshot[]>("/api/market/snapshots"),
