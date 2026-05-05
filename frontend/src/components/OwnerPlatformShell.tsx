@@ -7,22 +7,22 @@ import {
   BarChart3,
   BookOpen,
   BrainCircuit,
-  Building2,
   ChevronRight,
   Crown,
   DatabaseZap,
   FlaskConical,
   Gauge,
-  KeyRound,
   LineChart,
-  PlugZap,
   Settings,
   Shield,
   SlidersHorizontal,
   Target,
   WalletCards,
   Zap,
+  Terminal,
 } from "lucide-react";
+import { useAdminDashboardBundle } from "@/hooks/useAdminDashboardBundle";
+import { buildInsightTexts, buildOwnerCards, buildRecommendationRows, type DashboardCard } from "@/lib/adminDashboardDerived";
 
 type OwnerPageConfig = {
   key: string;
@@ -32,8 +32,6 @@ type OwnerPageConfig = {
   icon: typeof Crown;
   purpose: string;
   hero: string;
-  cards: Array<{ label: string; value: string; sub: string; tone?: string }>;
-  recommendations: Array<{ priority: string; area: string; recommendation: string; benefit: string; action: string }>;
 };
 
 export const ownerPages: OwnerPageConfig[] = [
@@ -44,20 +42,7 @@ export const ownerPages: OwnerPageConfig[] = [
     group: "Owner Command",
     icon: LineChart,
     purpose: "What is the platform doing financially?",
-    hero: "Track account value, gross P&L, platform costs, net profit, and forecasted performance.",
-    cards: [
-      { label: "Account Value", value: "$1,000", sub: "Broker-linked value pending", tone: "text-emerald-300" },
-      { label: "Gross P&L", value: "Paper", sub: "Research mode only" },
-      { label: "Total Cost", value: "Tracked", sub: "LLM + infra cost center" },
-      { label: "Net Profit", value: "Pending", sub: "Needs paper/live lifecycle" },
-      { label: "Cost/P&L", value: "Watch", sub: "Do not let AI cost eat edge", tone: "text-amber-300" },
-      { label: "30D Forecast", value: "Blocked", sub: "Needs labeled outcomes", tone: "text-amber-300" },
-    ],
-    recommendations: [
-      { priority: "High", area: "P&L", recommendation: "Use paper/research P&L until broker lifecycle is connected.", benefit: "Avoid fake profit", action: "Keep gated" },
-      { priority: "High", area: "Cost", recommendation: "Route routine workflows to deterministic mode unless strategy conflict is detected.", benefit: "Lower AI cost", action: "Apply policy" },
-      { priority: "Medium", area: "Forecast", recommendation: "Enable 7D and 30D forecasts only after enough journal outcomes exist.", benefit: "Better reliability", action: "Queue" },
-    ],
+    hero: "Account risk profile, Alpaca paper snapshot, LLM gateway costs, and journal outcome summary from live APIs.",
   },
   {
     key: "risk",
@@ -66,20 +51,7 @@ export const ownerPages: OwnerPageConfig[] = [
     group: "Owner Command",
     icon: Shield,
     purpose: "Are we risking too much relative to account goals?",
-    hero: "Owner-level capital protection for a small account: risk budget, exposure, approvals, and no-trade status.",
-    cards: [
-      { label: "Current Risk State", value: "Caution", sub: "Small-account mode", tone: "text-amber-300" },
-      { label: "Max Daily Loss", value: "$30", sub: "2-3% guardrail" },
-      { label: "Max Risk/Trade", value: "$5-$10", sub: "0.5-1% target" },
-      { label: "Target R/R", value: "2R+", sub: "Prefer 3R" },
-      { label: "No-Trade Status", value: "Available", sub: "Can veto everything", tone: "text-emerald-300" },
-      { label: "Live Trading", value: "Disabled", sub: "Read-only safety lock", tone: "text-rose-300" },
-    ],
-    recommendations: [
-      { priority: "High", area: "Risk", recommendation: "Keep one trade/day default and two trades/day absolute max.", benefit: "Reduce churn", action: "Enforce" },
-      { priority: "High", area: "Spread", recommendation: "Block execution when bid/ask is missing or spread is unknown.", benefit: "Avoid bad fills", action: "Keep blocked" },
-      { priority: "Medium", area: "Watchlist", recommendation: "Reduce active setups when buying power is low.", benefit: "Focus capital", action: "Review" },
-    ],
+    hero: "Risk percentages and guardrails from /api/account-risk/profile plus auto-run safety flags.",
   },
   {
     key: "trading",
@@ -88,20 +60,7 @@ export const ownerPages: OwnerPageConfig[] = [
     group: "Owner Command",
     icon: Target,
     purpose: "What is happening right now?",
-    hero: "Live decision cockpit for holdings, watchlist, active strategy, top setup, trigger countdowns, and approval status.",
-    cards: [
-      { label: "Active Strategy", value: "stock_swing", sub: "Production-approved" },
-      { label: "Top Setup", value: "NVDA", sub: "Awaiting trigger" },
-      { label: "Market Regime", value: "Mixed", sub: "3x2 classifier pending" },
-      { label: "Workflow Status", value: "Partial", sub: "Data quality degraded", tone: "text-amber-300" },
-      { label: "Approval", value: "Required", sub: "Owner review" },
-      { label: "Best Action", value: "Watch", sub: "No trade until spread is real", tone: "text-emerald-300" },
-    ],
-    recommendations: [
-      { priority: "High", area: "Trigger", recommendation: "Keep top setup active only until trigger TTL expires.", benefit: "Avoid stale trades", action: "Monitor" },
-      { priority: "High", area: "Execution", recommendation: "Do not rerun broker flow until data quality improves.", benefit: "Protect capital", action: "Block" },
-      { priority: "Medium", area: "Regime", recommendation: "Reduce breakout confidence if QQQ breadth weakens.", benefit: "Fewer false positives", action: "Review" },
-    ],
+    hero: "Command center payload, strategy ranking, regime services, live watchlist, and top action — all from backend routes.",
   },
   {
     key: "insights",
@@ -110,20 +69,7 @@ export const ownerPages: OwnerPageConfig[] = [
     group: "Owner Command",
     icon: BrainCircuit,
     purpose: "Across the whole platform, what should I improve?",
-    hero: "CEO-style recommendations across P&L, risk, cost, agents, models, strategies, data sources, journal, and backtests.",
-    cards: [
-      { label: "Top Improvement", value: "Data quality", sub: "Add execution-grade quotes" },
-      { label: "Highest Risk", value: "Spread", sub: "Bid/ask missing", tone: "text-amber-300" },
-      { label: "Best Strategy", value: "stock_swing", sub: "Active baseline" },
-      { label: "Worst Bottleneck", value: "yfinance", sub: "Research-only for execution" },
-      { label: "Most Costly", value: "LLM calls", sub: "Budget-gated" },
-      { label: "Recommended Change", value: "Alpaca data", sub: "Critical next" },
-    ],
-    recommendations: [
-      { priority: "High", area: "Data", recommendation: "Add Alpaca market data for bid/ask and spread validation.", benefit: "Execution readiness", action: "Build next" },
-      { priority: "High", area: "Strategy", recommendation: "Pause candidate strategies from active selection until promotion evidence exists.", benefit: "Governance safe", action: "Keep policy" },
-      { priority: "Medium", area: "Model", recommendation: "Train XGBoost only after 100+ labeled outcomes.", benefit: "Better ranking", action: "Queue" },
-    ],
+    hero: "Rolls up readiness, research queue, data-source health, registry summary, LLM budget gate, and journal stats.",
   },
   {
     key: "strategy-model-performance",
@@ -132,20 +78,7 @@ export const ownerPages: OwnerPageConfig[] = [
     group: "Performance Intelligence",
     icon: BarChart3,
     purpose: "Which strategies and models are actually working?",
-    hero: "Measure strategy follow-through, false positives, model calibration, drift, cost, and net contribution.",
-    cards: [
-      { label: "Best Strategy", value: "stock_swing", sub: "Active baseline" },
-      { label: "Worst Strategy", value: "Research TBD", sub: "Needs labels" },
-      { label: "Best Model", value: "weighted_ranker_v1", sub: "Only active model" },
-      { label: "XGBoost", value: "Not trained", sub: "Cannot score active trades", tone: "text-amber-300" },
-      { label: "Calibration", value: "Pending", sub: "Needs outcomes" },
-      { label: "Retraining", value: "Not ready", sub: "Need 100 labels" },
-    ],
-    recommendations: [
-      { priority: "High", area: "Model", recommendation: "Keep XGBoost disabled until training/evaluation/calibration/approval gates pass.", benefit: "Avoid fake model edge", action: "Keep blocked" },
-      { priority: "Medium", area: "Strategy", recommendation: "Track performance by time of day and regime before increasing scan frequency.", benefit: "Higher win rate", action: "Instrument" },
-      { priority: "Medium", area: "False Positives", recommendation: "Increase liquidity penalty for low-liquidity names.", benefit: "Better signals", action: "Review" },
-    ],
+    hero: "Latest strategy ranking, model selection, and performance drift records — no mock win rates.",
   },
   {
     key: "llm-cost-center",
@@ -153,21 +86,8 @@ export const ownerPages: OwnerPageConfig[] = [
     href: "/owner/llm-cost-center",
     group: "Performance Intelligence",
     icon: Zap,
-    purpose: "What are agents and LLMs costing me, and is it worth it?",
-    hero: "Monitor LLM cost, tokens, model routing, agent usage, latency, failures, and recommendation quality impact.",
-    cards: [
-      { label: "LLM Cost Today", value: "$0", sub: "Paid calls gated" },
-      { label: "Budget Remaining", value: "100%", sub: "No paid calls" },
-      { label: "Cost/Workflow", value: "Low", sub: "Deterministic first" },
-      { label: "Most Used", value: "None", sub: "Gateway pending" },
-      { label: "LangSmith", value: "Enabled", sub: "Tracing ready" },
-      { label: "Failed Calls", value: "0", sub: "Placeholder" },
-    ],
-    recommendations: [
-      { priority: "High", area: "LLM", recommendation: "Use deterministic-only mode for routine workflows below confidence threshold.", benefit: "Save cost", action: "Apply" },
-      { priority: "Medium", area: "Caching", recommendation: "Cache portfolio summaries and repeated strategy debate runs.", benefit: "Lower cost", action: "Build" },
-      { priority: "Medium", area: "Research", recommendation: "Run heavy LLM summaries after-hours only.", benefit: "Hot-path speed", action: "Schedule" },
-    ],
+    purpose: "What are agents and LLMs costing?",
+    hero: "LLM gateway costs/status plus AI ops LLM usage snapshot.",
   },
   {
     key: "data-source-intelligence",
@@ -175,21 +95,8 @@ export const ownerPages: OwnerPageConfig[] = [
     href: "/owner/data-source-intelligence",
     group: "Performance Intelligence",
     icon: DatabaseZap,
-    purpose: "Is my data reliable, affordable, and scalable?",
-    hero: "Owner view of provider availability, data freshness, missing fields, latency, reliability, cost, and migration priorities.",
-    cards: [
-      { label: "YFinance", value: "Degraded", sub: "No bid/ask", tone: "text-amber-300" },
-      { label: "Alpaca Keys", value: "Configured", sub: "Execution side" },
-      { label: "Polygon", value: "Pending", sub: "Critical/high" },
-      { label: "Options Data", value: "Missing", sub: "High priority", tone: "text-amber-300" },
-      { label: "Postgres", value: "Working", sub: "System of record" },
-      { label: "pgvector", value: "Working", sub: "Memory foundation" },
-    ],
-    recommendations: [
-      { priority: "High", area: "Data", recommendation: "Use yfinance for research only, not execution-grade spread checks.", benefit: "Data truth", action: "Keep policy" },
-      { priority: "High", area: "Provider", recommendation: "Add Alpaca latest quote and bars endpoints next.", benefit: "Execution readiness", action: "Build" },
-      { priority: "Medium", area: "Options", recommendation: "Add an options provider before enabling options workflows.", benefit: "Better quality", action: "Research" },
-    ],
+    purpose: "Is my data reliable and configured?",
+    hero: "Identical provider truth as /data-sources, pulled from /api/data-sources/status.",
   },
   {
     key: "agentops",
@@ -197,21 +104,8 @@ export const ownerPages: OwnerPageConfig[] = [
     href: "/owner/agentops",
     group: "Platform Operations",
     icon: Activity,
-    purpose: "Are agents healthy, useful, expensive, or failing?",
-    hero: "Management view of agent health, tool failures, latency, cost, quality, traces, and latest decisions.",
-    cards: [
-      { label: "Agent Health", value: "Stable", sub: "Foundation" },
-      { label: "Failed Agents", value: "0", sub: "Placeholder" },
-      { label: "Dry Run", value: "Enabled", sub: "Safe mode" },
-      { label: "LangSmith", value: "Enabled", sub: "Tracing" },
-      { label: "Tool Failures", value: "Watch", sub: "Needs deep UI" },
-      { label: "Workflow Status", value: "Partial", sub: "Data gated", tone: "text-amber-300" },
-    ],
-    recommendations: [
-      { priority: "Medium", area: "AgentOps", recommendation: "Add trace links per workflow and agent decision.", benefit: "Debug faster", action: "Build" },
-      { priority: "Medium", area: "Latency", recommendation: "Keep hot path deterministic/cached.", benefit: "Faster decisions", action: "Enforce" },
-      { priority: "Low", area: "Quality", recommendation: "Score each agent against follow-through outcomes.", benefit: "Better agents", action: "Queue" },
-    ],
+    purpose: "Are agents healthy and instrumented?",
+    hero: "Core agent registry, AI ops scorecards, tracing settings, and command-center agent rows.",
   },
   {
     key: "model-lab",
@@ -219,21 +113,8 @@ export const ownerPages: OwnerPageConfig[] = [
     href: "/owner/model-lab",
     group: "Platform Operations",
     icon: FlaskConical,
-    purpose: "Run manual simulations recommended by insights.",
-    hero: "Manual lab for feature rows, model plans, blocked models, simulation history, and research actions.",
-    cards: [
-      { label: "Recommended Sim", value: "Pullback", sub: "3x2 regime" },
-      { label: "Feature Row", value: "Pending", sub: "Provider data needed" },
-      { label: "Model Plan", value: "Weighted", sub: "Baseline" },
-      { label: "Blocked Models", value: "XGBoost", sub: "Not trained", tone: "text-amber-300" },
-      { label: "Simulation History", value: "Partial", sub: "Foundation" },
-      { label: "Next Action", value: "Backtest", sub: "Queue job" },
-    ],
-    recommendations: [
-      { priority: "High", area: "Backtest", recommendation: "Backtest VWAP reclaim after prior-day RVOL > 3 in semiconductor stocks.", benefit: "Strategy evidence", action: "Create job" },
-      { priority: "Medium", area: "Model", recommendation: "Do not run XGBoost active scoring until trained artifact exists.", benefit: "Safety", action: "Keep blocked" },
-      { priority: "Medium", area: "Research", recommendation: "Send high false-positive strategies to research queue.", benefit: "Improve quality", action: "Queue" },
-    ],
+    purpose: "What can we run or simulate next?",
+    hero: "Model registry payload, backtesting summary, latest model selection, and drift status.",
   },
   {
     key: "risk-capital-execution",
@@ -241,21 +122,8 @@ export const ownerPages: OwnerPageConfig[] = [
     href: "/owner/risk-capital-execution",
     group: "Execution & Learning",
     icon: WalletCards,
-    purpose: "Capital allocation, trade plans, paper trades, and execution safety.",
-    hero: "Management-focused execution page for buying power, capital at risk, best use of capital, stale capital, and paper trade lifecycle.",
-    cards: [
-      { label: "Buying Power", value: "$1,000", sub: "Paper/research" },
-      { label: "Capital at Risk", value: "$0", sub: "No live trades" },
-      { label: "Best Use", value: "Wait", sub: "Data degraded", tone: "text-emerald-300" },
-      { label: "Paper Trades", value: "Pending", sub: "Lifecycle next" },
-      { label: "Execution", value: "Dry-run", sub: "Broker gated" },
-      { label: "Kill Switch", value: "Ready", sub: "Policy foundation" },
-    ],
-    recommendations: [
-      { priority: "High", area: "Execution", recommendation: "Connect approved recommendations to TradeNow manual ticket before broker paper submission.", benefit: "Controlled flow", action: "Build" },
-      { priority: "High", area: "Capital", recommendation: "Preserve capital when R/R is below 2R or spread is unknown.", benefit: "Account protection", action: "Enforce" },
-      { priority: "Medium", area: "Paper", recommendation: "Add order lifecycle states before paper automation.", benefit: "Auditability", action: "Build" },
-    ],
+    purpose: "Capital allocation, paper broker, and execution flags.",
+    hero: "Latest capital allocation run, Alpaca paper snapshot, and auto-run controls.",
   },
   {
     key: "research-memory-journal",
@@ -263,21 +131,8 @@ export const ownerPages: OwnerPageConfig[] = [
     href: "/owner/research-memory-journal",
     group: "Execution & Learning",
     icon: BookOpen,
-    purpose: "The learning system for research, backtests, memory, journal, and outcome labels.",
-    hero: "Turn every recommendation, skipped setup, blocked trade, and paper trade into a private learning dataset.",
-    cards: [
-      { label: "Research Questions", value: "Open", sub: "Strategy queue" },
-      { label: "Backtests", value: "Pending", sub: "Engine next" },
-      { label: "Journal Lessons", value: "Active", sub: "Outcome labeling" },
-      { label: "Memory Hits", value: "pgvector", sub: "Foundation" },
-      { label: "Labels Needed", value: "100+", sub: "For XGBoost" },
-      { label: "Training Readiness", value: "Not ready", sub: "Need outcomes", tone: "text-amber-300" },
-    ],
-    recommendations: [
-      { priority: "High", area: "Journal", recommendation: "Label the last recommendations before training any model.", benefit: "Better ML", action: "Label" },
-      { priority: "Medium", area: "Memory", recommendation: "Compare current setups against similar past regimes.", benefit: "Personal edge", action: "Build search" },
-      { priority: "Medium", area: "Backtest", recommendation: "Review false positives from midday breakout strategy.", benefit: "Fewer bad trades", action: "Analyze" },
-    ],
+    purpose: "Learning loop status.",
+    hero: "Journal summary, research-priority tasks, vector memory fields from AI ops, and drift recommendations.",
   },
   {
     key: "settings",
@@ -285,21 +140,8 @@ export const ownerPages: OwnerPageConfig[] = [
     href: "/owner/settings",
     group: "Settings",
     icon: Settings,
-    purpose: "Safety controls, integrations, API keys, runtime config, budgets, strategy overrides, and agent config.",
-    hero: "Owner-facing controls for auto-run, pause all, paper trading, human approval, daily budgets, and strategy overrides.",
-    cards: [
-      { label: "Auto-run", value: "Off", sub: "Owner controlled" },
-      { label: "Pause All", value: "Available", sub: "Emergency stop" },
-      { label: "Paper Trading", value: "Gated", sub: "Approval required" },
-      { label: "Human Approval", value: "Required", sub: "Do not remove" },
-      { label: "Daily LLM Budget", value: "Set", sub: "Cost control" },
-      { label: "Allowed Strategies", value: "Governed", sub: "Research separated" },
-    ],
-    recommendations: [
-      { priority: "High", area: "Safety", recommendation: "Keep live trading disabled until full paper lifecycle is proven.", benefit: "Protect capital", action: "Keep disabled" },
-      { priority: "High", area: "Approval", recommendation: "Keep human approval required for all order paths.", benefit: "Safety", action: "Enforce" },
-      { priority: "Medium", area: "Budget", recommendation: "Set daily agent and LLM run limits before market-open scanning.", benefit: "Cost control", action: "Configure" },
-    ],
+    purpose: "Safety controls and budgets as stored server-side.",
+    hero: "Live view of /api/auto-run/status and /api/settings (read-only here).",
   },
 ];
 
@@ -313,23 +155,12 @@ function ownerGroups() {
   return Array.from(grouped.entries());
 }
 
-function Sparkline() {
-  return (
-    <svg viewBox="0 0 120 42" className="h-12 w-28 text-emerald-300" aria-hidden="true">
-      <path d="M4 32 C16 22, 24 28, 34 19 S55 13, 66 22 S84 34, 94 15 S108 7, 116 13" fill="none" stroke="currentColor" strokeWidth="2" strokeLinecap="round" />
-    </svg>
-  );
-}
-
-function MetricCard({ card }: { card: OwnerPageConfig["cards"][number] }) {
+function MetricCard({ card }: { card: DashboardCard }) {
   return (
     <div className="rounded-2xl border border-emerald-400/15 bg-black/35 p-4 shadow-[0_0_35px_rgba(0,0,0,0.25)] backdrop-blur">
       <div className="text-xs text-slate-500">{card.label}</div>
       <div className={`mt-3 text-2xl font-semibold tracking-tight ${card.tone ?? "text-white"}`}>{card.value}</div>
-      <div className="mt-2 flex items-center justify-between gap-2 text-xs text-slate-500">
-        <span>{card.sub}</span>
-        <Sparkline />
-      </div>
+      <div className="mt-2 text-xs text-slate-500">{card.sub}</div>
     </div>
   );
 }
@@ -378,6 +209,26 @@ export function OwnerPlatformShell({ children }: { children: React.ReactNode }) 
             </div>
           ))}
         </nav>
+
+        <div className="mt-auto border-t border-emerald-400/10 pt-6">
+          <div className="mb-2 px-2 text-[10px] font-semibold uppercase tracking-[0.28em] text-slate-500">Platform</div>
+          <div className="space-y-1.5">
+            <Link
+              href="/data-sources"
+              className="group flex items-center gap-3 rounded-xl px-2 py-2 text-sm font-medium text-slate-300 transition-all hover:bg-white/[0.04] hover:text-emerald-200"
+            >
+              <DatabaseZap className="h-4 w-4 text-emerald-400" />
+              <span className="flex-1">Data Sources</span>
+            </Link>
+            <Link
+              href="/command-center"
+              className="group flex items-center gap-3 rounded-xl px-2 py-2 text-sm font-medium text-slate-300 transition-all hover:bg-white/[0.04] hover:text-emerald-200"
+            >
+              <Terminal className="h-4 w-4 text-emerald-400" />
+              <span className="flex-1">Engineering Console</span>
+            </Link>
+          </div>
+        </div>
       </aside>
       <main className="relative min-h-screen flex-1 overflow-hidden">
         <div className="absolute inset-0 bg-[radial-gradient(circle_at_62%_0%,rgba(16,185,129,0.16),transparent_28%),radial-gradient(circle_at_0%_100%,rgba(20,184,166,0.08),transparent_28%)]" />
@@ -391,10 +242,14 @@ export function OwnerPlatformShell({ children }: { children: React.ReactNode }) 
 
 export function OwnerPageTemplate({ page }: { page: OwnerPageConfig }) {
   const Icon = page.icon;
+  const { bundle, loading, loadError, refetch } = useAdminDashboardBundle();
+  const cards = buildOwnerCards(page.key, bundle);
+  const recommendations = buildRecommendationRows("owner", page.key, bundle);
+  const insight = buildInsightTexts("owner", page.key, bundle);
 
   return (
     <OwnerPlatformShell>
-      <header className="mb-7 flex items-start justify-between gap-6">
+      <header className="mb-7 flex flex-wrap items-start justify-between gap-6">
         <div>
           <div className="mb-3 inline-flex items-center gap-2 rounded-xl border border-emerald-400/20 bg-emerald-400/[0.04] px-3 py-2 text-xs font-semibold text-emerald-300">
             <Icon className="h-4 w-4" />
@@ -403,10 +258,26 @@ export function OwnerPageTemplate({ page }: { page: OwnerPageConfig }) {
           <h1 className="text-4xl font-black tracking-[-0.04em] text-white">{page.title}</h1>
           <p className="mt-2 max-w-3xl text-sm text-slate-400">{page.purpose}</p>
         </div>
-        <Link href="/command-center" className="rounded-xl border border-white/10 bg-white/[0.03] px-4 py-2 text-sm text-slate-300 transition hover:border-emerald-400/30 hover:text-emerald-300">
-          Open Engineering Console
-        </Link>
+        <div className="flex flex-wrap gap-3">
+          <button
+            type="button"
+            onClick={() => void refetch()}
+            className="rounded-xl border border-emerald-400/30 bg-emerald-400/10 px-4 py-2 text-sm text-emerald-200 transition hover:bg-emerald-400/20"
+          >
+            Refresh data
+          </button>
+          <Link href="/command-center" className="rounded-xl border border-white/10 bg-white/[0.03] px-4 py-2 text-sm text-slate-300 transition hover:border-emerald-400/30 hover:text-emerald-300">
+            Engineering Console
+          </Link>
+          <Link href="/data-sources" className="rounded-xl border border-white/10 bg-white/[0.03] px-4 py-2 text-sm text-slate-300 transition hover:border-emerald-400/30 hover:text-emerald-300">
+            Data Sources
+          </Link>
+        </div>
       </header>
+
+      {loadError && (
+        <div className="mb-4 rounded-xl border border-rose-500/35 bg-rose-500/10 px-4 py-3 text-sm text-rose-200">{loadError}</div>
+      )}
 
       <section className="mb-4 rounded-2xl border border-emerald-400/15 bg-black/35 p-6 shadow-[0_0_40px_rgba(0,0,0,0.35)] backdrop-blur">
         <div className="flex items-center gap-5">
@@ -414,54 +285,74 @@ export function OwnerPageTemplate({ page }: { page: OwnerPageConfig }) {
             <Icon className="h-8 w-8" />
           </div>
           <div>
-            <div className="text-sm font-medium text-emerald-300">Owner-level answer</div>
+            <div className="text-sm font-medium text-emerald-300">API-backed owner view</div>
             <h2 className="mt-2 text-2xl font-semibold tracking-tight">{page.hero}</h2>
           </div>
         </div>
       </section>
 
-      <section className="mb-4 grid grid-cols-1 gap-3 md:grid-cols-2 xl:grid-cols-6">
-        {page.cards.map((card) => <MetricCard key={card.label} card={card} />)}
-      </section>
-
-      <section className="grid grid-cols-1 gap-4 xl:grid-cols-[1.05fr_1.25fr]">
-        <div className="rounded-2xl border border-emerald-400/15 bg-black/35 p-5 backdrop-blur">
-          <div className="mb-4 flex items-center gap-2 text-lg font-semibold"><Gauge className="h-5 w-5 text-emerald-300" /> Trend, forecast, and breakdown</div>
-          <div className="grid grid-cols-1 gap-3 md:grid-cols-2">
-            <div className="rounded-xl border border-white/10 bg-white/[0.025] p-4">
-              <div className="text-xs text-slate-500">Current state</div>
-              <div className="mt-3 text-xl font-semibold text-white">Source-backed / clearly labeled</div>
-              <p className="mt-3 text-sm leading-6 text-slate-400">This owner page follows the management pattern: current state, trend, forecast, insight, and action.</p>
-            </div>
-            <div className="rounded-xl border border-white/10 bg-white/[0.025] p-4">
-              <div className="text-xs text-slate-500">Forecast</div>
-              <div className="mt-3 text-xl font-semibold text-amber-300">Pending evidence</div>
-              <p className="mt-3 text-sm leading-6 text-slate-400">Forecasts remain placeholders until broker lifecycle, costs, and labeled outcomes are connected.</p>
-            </div>
-          </div>
-          <div className="mt-4 h-52 rounded-xl border border-white/10 bg-[linear-gradient(180deg,rgba(16,185,129,0.08),rgba(0,0,0,0.15))] p-5">
-            <div className="text-xs text-slate-500">Illustrative trend panel</div>
-            <svg viewBox="0 0 600 160" className="mt-6 h-36 w-full text-emerald-300" aria-hidden="true">
-              <path d="M8 130 C80 92, 122 112, 176 76 S278 58, 332 88 S430 132, 486 54 S560 34, 592 48" fill="none" stroke="currentColor" strokeWidth="3" strokeLinecap="round" />
-            </svg>
-          </div>
-        </div>
-
-        <div className="rounded-2xl border border-emerald-400/15 bg-black/35 p-5 backdrop-blur">
-          <div className="mb-4 flex items-center gap-2 text-lg font-semibold"><SlidersHorizontal className="h-5 w-5 text-emerald-300" /> Advisor recommendations</div>
-          <div className="space-y-2">
-            {page.recommendations.map((row) => (
-              <div key={`${row.priority}-${row.area}-${row.action}`} className="grid grid-cols-[74px_120px_1fr_150px_110px] items-center gap-3 rounded-xl border border-white/10 bg-white/[0.025] px-3 py-3 text-sm">
-                <div className="rounded-full border border-emerald-400/20 px-3 py-1 text-center text-xs text-emerald-300">{row.priority}</div>
-                <div className="text-slate-400">{row.area}</div>
-                <div className="text-slate-200">{row.recommendation}</div>
-                <div className="text-emerald-300">{row.benefit}</div>
-                <button className="rounded-lg border border-white/10 px-3 py-2 text-slate-200 transition hover:border-emerald-400/30 hover:text-emerald-300">{row.action}</button>
-              </div>
+      {loading ? (
+        <div className="py-16 text-center text-sm text-slate-400">Loading live platform endpoints…</div>
+      ) : (
+        <>
+          <section className="mb-4 grid grid-cols-1 gap-3 md:grid-cols-2 xl:grid-cols-6">
+            {cards.map((card) => (
+              <MetricCard key={`${page.key}-${card.label}`} card={card} />
             ))}
-          </div>
-        </div>
-      </section>
+          </section>
+
+          <section className="grid grid-cols-1 gap-4 xl:grid-cols-[1.05fr_1.25fr]">
+            <div className="rounded-2xl border border-emerald-400/15 bg-black/35 p-5 backdrop-blur">
+              <div className="mb-4 flex items-center gap-2 text-lg font-semibold">
+                <Gauge className="h-5 w-5 text-emerald-300" /> Live context
+              </div>
+              <div className="grid grid-cols-1 gap-3 md:grid-cols-2">
+                <div className="rounded-xl border border-white/10 bg-white/[0.025] p-4">
+                  <div className="text-xs text-slate-500">{insight.stateTitle}</div>
+                  <p className="mt-3 text-sm leading-6 text-slate-300">{insight.stateBody}</p>
+                </div>
+                <div className="rounded-xl border border-white/10 bg-white/[0.025] p-4">
+                  <div className="text-xs text-slate-500">{insight.forecastTitle}</div>
+                  <p className="mt-3 text-sm leading-6 text-slate-300">{insight.forecastBody}</p>
+                </div>
+              </div>
+              <div className="mt-4 rounded-xl border border-white/10 bg-white/[0.025] p-4">
+                <div className="text-xs text-slate-500">{insight.detailTitle}</div>
+                <p className="mt-3 text-sm leading-6 text-slate-300">{insight.detailBody || "—"}</p>
+              </div>
+            </div>
+
+            <div className="rounded-2xl border border-emerald-400/15 bg-black/35 p-5 backdrop-blur">
+              <div className="mb-4 flex items-center gap-2 text-lg font-semibold">
+                <SlidersHorizontal className="h-5 w-5 text-emerald-300" /> Advisor queue
+              </div>
+              <div className="space-y-2">
+                {recommendations.map((row) => (
+                  <div
+                    key={`${row.priority}-${row.area}-${row.recommendation.slice(0, 24)}`}
+                    className="grid grid-cols-1 items-center gap-3 rounded-xl border border-white/10 bg-white/[0.025] px-3 py-3 text-sm lg:grid-cols-[74px_100px_1fr_120px_100px]"
+                  >
+                    <div className="rounded-full border border-emerald-400/20 px-3 py-1 text-center text-xs text-emerald-300">{row.priority}</div>
+                    <div className="text-slate-400">{row.area}</div>
+                    <div className="text-slate-200">{row.recommendation}</div>
+                    <div className="text-emerald-300">{row.benefit}</div>
+                    {row.action.startsWith("/") ? (
+                      <Link
+                        href={row.action}
+                        className="rounded-lg border border-white/10 px-3 py-2 text-center text-slate-200 transition hover:border-emerald-400/30 hover:text-emerald-300"
+                      >
+                        Open
+                      </Link>
+                    ) : (
+                      <span className="rounded-lg border border-white/5 px-3 py-2 text-center text-slate-500">{row.action}</span>
+                    )}
+                  </div>
+                ))}
+              </div>
+            </div>
+          </section>
+        </>
+      )}
     </OwnerPlatformShell>
   );
 }
