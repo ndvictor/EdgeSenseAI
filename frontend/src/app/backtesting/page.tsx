@@ -13,6 +13,9 @@ import {
 } from "@/lib/api";
 import { PageHeader } from "@/components/Cards";
 
+const cardShell = "rounded-2xl border border-emerald-400/15 bg-black/35 p-4 shadow-[0_0_40px_rgba(0,0,0,0.25)] backdrop-blur";
+const innerShell = "rounded-xl border border-emerald-400/15 bg-black/25 p-3 backdrop-blur";
+
 const EXECUTION_CHECK_LABELS: Record<string, string> = {
   simulated_entry_fill: "Simulated entry fill",
   simulated_exit_fill: "Simulated exit fill",
@@ -43,15 +46,15 @@ function checkStatusStyles(status: BacktestExecutionCheckStatus): string {
     case "failed":
       return "border-rose-500/40 bg-rose-500/10 text-rose-200";
     case "running":
-      return "border-sky-500/40 bg-sky-500/10 text-sky-200";
+      return "border-emerald-400/40 bg-emerald-400/10 text-emerald-100";
     case "pending":
     case "ready":
-      return "border-amber-500/40 bg-amber-500/10 text-amber-200";
+      return "border-emerald-300/30 bg-emerald-300/10 text-emerald-100";
     case "blocked":
       return "border-orange-500/40 bg-orange-500/10 text-orange-200";
     case "not_configured":
     default:
-      return "border-slate-600 bg-slate-900 text-slate-400";
+      return "border-emerald-950/40 bg-black/20 text-slate-400";
   }
 }
 
@@ -189,45 +192,44 @@ export default function BacktestingPage() {
           description="Backtesting validates whether signals actually work for small accounts. The objective is not accuracy. It is expectancy, target-before-stop behavior, drawdown control, and account survivability."
         />
 
-        <div className="mb-4 rounded-xl border border-sky-500/30 bg-sky-950/40 px-4 py-3 text-sm leading-relaxed text-sky-100/95">
-          <strong className="text-sky-200">Simulated execution only.</strong> Backtesting uses simulated historical execution
-          only. Paper or live orders are handled in <span className="text-emerald-300">Paper Trading</span> and{" "}
-          <span className="text-emerald-300">TradeNow</span> after risk approval. No broker orders are submitted from this
-          page.
+        <div className={`${innerShell} mb-3 text-sm leading-relaxed text-slate-200/90`}>
+          <strong className="text-emerald-200">Simulated execution only.</strong> Backtesting uses simulated historical execution only.
+          Paper or live orders are handled in <span className="text-emerald-300">Paper Trading</span> and{" "}
+          <span className="text-emerald-300">TradeNow</span> after risk approval. No broker orders are submitted from this page.
         </div>
 
-        {error && <div className="rounded-xl border border-amber-500/30 bg-amber-500/10 px-4 py-3 text-sm text-amber-200">{error}</div>}
+        {error && <div className={`${innerShell} text-sm text-amber-200`}>{error}</div>}
 
         {!data ? (
           <div className="py-8 text-center text-sm text-slate-300">Loading backtesting plan...</div>
         ) : (
-          <div className="space-y-4">
-            <section className="rounded-xl border border-emerald-800 bg-slate-950 p-4 shadow-sm">
+          <div className="space-y-3">
+            <section className={cardShell}>
               <p className="text-xs uppercase tracking-wide text-emerald-500">Mode</p>
-              <h2 className="mt-2 text-3xl font-semibold text-white">{data.mode.replace(/_/g, " ")}</h2>
+              <h2 className="mt-2 text-2xl font-semibold text-white">{data.mode.replace(/_/g, " ")}</h2>
               <p className="mt-2 text-sm leading-relaxed text-slate-300">
                 Backtest profiles define how the platform will prove that recommendations are actionable and not just attractive-looking signals.
               </p>
             </section>
 
-            <section className="grid grid-cols-1 gap-4 xl:grid-cols-2">
+            <section className="grid grid-cols-1 gap-3 xl:grid-cols-2">
               {profiles.map((profile) => {
                 const checks = executionChecksByProfile[profile.profile_name] ?? defaultExecutionChecks();
                 const busy = loading[profile.profile_name] ?? {};
 
                 return (
-                  <article key={profile.profile_name} className="rounded-xl border border-slate-700 bg-slate-950 p-4 shadow-sm">
+                  <article key={profile.profile_name} className={cardShell}>
                     <div className="flex flex-col gap-3 md:flex-row md:items-start md:justify-between">
                       <div>
                         <p className="text-xs uppercase tracking-wide text-emerald-500">{profile.horizon}</p>
-                        <h2 className="mt-1 text-2xl font-semibold text-white">{profile.profile_name}</h2>
+                        <h2 className="mt-1 text-xl font-semibold text-white">{profile.profile_name}</h2>
                       </div>
-                      <span className="w-fit rounded-full border border-amber-500 bg-amber-500/10 px-3 py-1 text-xs font-semibold uppercase text-amber-300">
+                      <span className="w-fit rounded-full border border-emerald-500 bg-emerald-500/10 px-3 py-1 text-xs font-semibold uppercase text-emerald-200">
                         {profile.status.replace(/_/g, " ")}
                       </span>
                     </div>
 
-                    <div className="mt-3 rounded-lg border border-slate-800 bg-slate-900/80 px-3 py-2 text-xs text-slate-300">
+                    <div className={`${innerShell} mt-3 text-xs text-slate-200/80`}>
                       <span className="font-semibold uppercase tracking-wide text-slate-500">Promotion gate</span>
                       <p className="mt-1 font-mono text-sm text-emerald-300">{profile.promotion_gate ?? "contract_ready"}</p>
                       <p className="mt-1 text-[11px] text-slate-500">
@@ -240,15 +242,15 @@ export default function BacktestingPage() {
 
                     <div className="mt-4 grid grid-cols-1 gap-3 md:grid-cols-2">
                       {profile.metrics.map((metric) => (
-                        <div key={metric.name} className="rounded-lg border border-slate-800 bg-slate-900 p-3">
+                        <div key={metric.name} className={innerShell}>
                           <p className="text-xs uppercase tracking-wide text-slate-500">{metric.name}</p>
-                          <p className="mt-1 text-lg font-semibold text-white">{metric.value}</p>
+                          <p className="mt-1 text-base font-semibold text-white">{metric.value}</p>
                           <p className="mt-1 text-xs text-slate-400">{metric.status}</p>
                         </div>
                       ))}
                     </div>
 
-                    <div className="mt-4 rounded-lg border border-slate-800 bg-slate-900 p-3">
+                    <div className={`${innerShell} mt-4`}>
                       <h3 className="text-sm font-semibold text-emerald-500">Next Steps</h3>
                       <ul className="mt-2 space-y-2 text-sm leading-relaxed text-slate-300">
                         {profile.next_steps.map((step) => (
@@ -257,8 +259,8 @@ export default function BacktestingPage() {
                       </ul>
                     </div>
 
-                    <div className="mt-4 rounded-lg border border-sky-800/60 bg-slate-900/90 p-3">
-                      <h3 className="text-sm font-semibold text-sky-400">Execution Simulation</h3>
+                    <div className={`${innerShell} mt-4`}>
+                      <h3 className="text-sm font-semibold text-emerald-300">Execution Simulation</h3>
                       <p className="mt-1 text-xs text-slate-500">
                         Validates simulated fills, friction model, exit logic, and risk caps. Does not place orders.
                       </p>
@@ -301,7 +303,7 @@ export default function BacktestingPage() {
                       </button>
                     </div>
 
-                    <div className="mt-3 space-y-2 rounded-lg border border-slate-800 bg-slate-950/50 p-3 text-[11px] text-slate-400">
+                    <div className={`${innerShell} mt-3 space-y-2 text-[11px] text-slate-400`}>
                       {lastRun[profile.profile_name] ? (
                         <p>
                           <span className="text-slate-500">Run Backtest:</span> {lastRun[profile.profile_name]?.status} —{" "}
