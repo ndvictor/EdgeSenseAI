@@ -12,6 +12,24 @@ async function request<T>(path: string, options?: RequestInit): Promise<T> {
   return response.json();
 }
 
+/** POST with abort timeout — used for long-running integration checks (many provider hops). */
+async function postJsonWithTimeout<T>(path: string, body: unknown, timeoutMs: number): Promise<T> {
+  const controller = new AbortController();
+  const timer = setTimeout(() => controller.abort(), timeoutMs);
+  try {
+    const response = await fetch(`${API_BASE_URL}${path}`, {
+      method: "POST",
+      headers: { "Content-Type": "application/json" },
+      body: JSON.stringify(body),
+      signal: controller.signal,
+    });
+    if (!response.ok) throw new Error(`${path} failed with ${response.status}`);
+    return response.json();
+  } finally {
+    clearTimeout(timer);
+  }
+}
+
 export type DataSourceStatus = {
   name: string;
   key?: string | null;
@@ -1383,6 +1401,48 @@ export type PlatformReadinessResponse = {
   generated_at: string;
 };
 
+export type IntegrationCheckCatalogEntry = {
+  key: string;
+  label: string;
+  belongs_to: string;
+};
+
+export type IntegrationChecksCatalogResponse = {
+  checks: IntegrationCheckCatalogEntry[];
+  count: number;
+};
+
+export type IntegrationCheckResult = {
+  key: string;
+  label: string;
+  category: string;
+  belongs_to: string;
+  why_it_matters: string;
+  status: "pass" | "warn" | "fail" | "skip";
+  message: string;
+  details: Record<string, unknown>;
+  duration_ms: number;
+};
+
+export type PlatformIntegrationChecksResponse = {
+  run_id: string;
+  status: "pass" | "warn" | "fail";
+  checked_at: string;
+  symbols: string[];
+  source: string;
+  checks: IntegrationCheckResult[];
+  blockers: string[];
+  warnings: string[];
+};
+
+export type IntegrationChecksRunRequest = {
+  symbols?: string[];
+  source?: "auto" | "yfinance" | "alpaca" | "polygon" | "mock";
+  allow_mock?: boolean;
+  checks?: string[] | null;
+  submit_real_paper_order?: boolean;
+};
+
 export type TracingStatusResponse = {
   enabled: boolean;
   configured: boolean;
@@ -2664,6 +2724,15 @@ export const api = {
 
   // Platform Readiness APIs
   getPlatformReadiness: () => request<PlatformReadinessResponse>("/api/platform-readiness"),
+
+  /** Catalog of integration matrix checks (Alpaca, data stack, signals, risk, …). */
+  getIntegrationChecksCatalog: () => request<IntegrationChecksCatalogResponse>("/api/integration-checks/catalog"),
+  /**
+   * Run integration checks. Full matrix can take ~30–120s (many HTTP hops).
+   * Use `checks` array for a shorter quick run (~10–40s typical).
+   */
+  runIntegrationChecks: (payload: IntegrationChecksRunRequest, timeoutMs = 180_000) =>
+    postJsonWithTimeout<PlatformIntegrationChecksResponse>("/api/integration-checks/run", payload, timeoutMs),
 
   // Settings APIs
   getSettings: () => request<SettingsResponse>("/api/settings"),

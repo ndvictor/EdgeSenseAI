@@ -13,15 +13,28 @@ import {
   type PlatformFeaturesUpdate,
   type RateLimitSettingsUpdate,
   type RiskSettings,
-  type AlpacaPaperSnapshot
+  type AlpacaPaperSnapshot,
+  type PlatformIntegrationChecksResponse,
 } from "@/lib/api";
 import { PageHeader } from "@/components/Cards";
 import { 
   WalletCards, Zap, BookOpen, Globe, Brain, Radar, Target, Users, 
   BrainCircuit, Gauge, BellRing, Activity, FlaskConical, ShieldCheck, 
   DatabaseZap, TrendingUp, LineChart, Bitcoin, BarChart3, ClipboardList,
-  Settings as SettingsIcon, Activity as ActivityIcon
+  Settings as SettingsIcon, Activity as ActivityIcon, ClipboardCopy, Download, Loader2, Shield
 } from "lucide-react";
+
+/** Shorter run: core connectivity + a few pipelines (~10–40s typical). */
+const INTEGRATION_QUICK_CHECKS = [
+  "data_source_connectivity",
+  "data_freshness",
+  "market_snapshot",
+  "feature_pipeline",
+  "signal_scanner",
+  "risk_check",
+  "paper_order",
+  "alerts",
+];
 
 export const dynamic = "force-dynamic";
 
@@ -33,14 +46,21 @@ function SettingsPageInner() {
   const [error, setError] = useState<string | null>(null);
   const [loading, setLoading] = useState(false);
   const [message, setMessage] = useState<string | null>(null);
+  const [integrationMode, setIntegrationMode] = useState<"full" | "quick">("quick");
+  const [integrationSymbols, setIntegrationSymbols] = useState("SPY,AAPL");
+  const [integrationAllowMock, setIntegrationAllowMock] = useState(false);
+  const [integrationRunning, setIntegrationRunning] = useState(false);
+  const [integrationReport, setIntegrationReport] = useState<PlatformIntegrationChecksResponse | null>(null);
+  const [integrationRunMs, setIntegrationRunMs] = useState<number | null>(null);
+  const [integrationError, setIntegrationError] = useState<string | null>(null);
   const [activeTab, setActiveTab] = useState<
-    "overview" | "trading" | "risk" | "market" | "llm" | "news" | "platform" | "rate_limits"
+    "overview" | "trading" | "risk" | "market" | "llm" | "news" | "platform" | "readiness" | "rate_limits"
   >("overview");
 
   useEffect(() => {
     const tab = searchParams.get("tab");
     if (!tab) return;
-    if (tab === "trading" || tab === "risk" || tab === "market" || tab === "llm" || tab === "news" || tab === "platform" || tab === "rate_limits" || tab === "overview") {
+    if (tab === "trading" || tab === "risk" || tab === "market" || tab === "llm" || tab === "news" || tab === "platform" || tab === "readiness" || tab === "rate_limits" || tab === "overview") {
       setActiveTab(tab);
     }
   }, [searchParams]);
@@ -207,6 +227,50 @@ function SettingsPageInner() {
     }
   };
 
+  const runIntegrationMatrix = async () => {
+    setIntegrationRunning(true);
+    setIntegrationError(null);
+    setIntegrationReport(null);
+    setIntegrationRunMs(null);
+    const t0 = typeof performance !== "undefined" ? performance.now() : Date.now();
+    try {
+      const symbols = integrationSymbols.split(",").map((s) => s.trim()).filter(Boolean);
+      const payload = {
+        symbols: symbols.length ? symbols : ["SPY", "AAPL"],
+        source: "auto" as const,
+        allow_mock: integrationAllowMock,
+        ...(integrationMode === "quick" ? { checks: INTEGRATION_QUICK_CHECKS } : {}),
+        submit_real_paper_order: false,
+      };
+      const res = await api.runIntegrationChecks(payload);
+      setIntegrationReport(res);
+      const t1 = typeof performance !== "undefined" ? performance.now() : Date.now();
+      setIntegrationRunMs(Math.round(t1 - t0));
+      setMessage(`Integration matrix finished (${res.status}). Run ID ${res.run_id}`);
+    } catch (err) {
+      setIntegrationError(err instanceof Error ? err.message : "Integration run failed");
+    } finally {
+      setIntegrationRunning(false);
+    }
+  };
+
+  const downloadIntegrationReport = () => {
+    if (!integrationReport) return;
+    const blob = new Blob([JSON.stringify(integrationReport, null, 2)], { type: "application/json" });
+    const url = URL.createObjectURL(blob);
+    const a = document.createElement("a");
+    a.href = url;
+    a.download = `integration-checks-${integrationReport.run_id}.json`;
+    a.click();
+    URL.revokeObjectURL(url);
+  };
+
+  const copyIntegrationReport = async () => {
+    if (!integrationReport) return;
+    await navigator.clipboard.writeText(JSON.stringify(integrationReport, null, 2));
+    setMessage("Report copied to clipboard");
+  };
+
   const ToggleSwitch = ({ 
     label, 
     description, 
@@ -370,6 +434,7 @@ function SettingsPageInner() {
                 ["llm", "LLM"],
                 ["news", "News"],
                 ["platform", "Platform"],
+                ["readiness", "Readiness"],
                 ["rate_limits", "Rate limits"],
               ] as const
             ).map(([id, label]) => (
@@ -804,6 +869,199 @@ function SettingsPageInner() {
                   max={60}
                 />
               </div>
+            </section>
+            )}
+
+            {/* Integration readiness matrix (Alpaca + stack QA) */}
+            {activeTab === "readiness" && settings && (
+            <section className="rounded-2xl border border-emerald-400/15 bg-black/35 p-6 backdrop-blur shadow-[0_0_40px_rgba(0,0,0,0.25)]">
+              <div className="mb-4 flex flex-wrap items-start gap-3">
+                <Shield className="mt-1 h-6 w-6 shrink-0 text-emerald-400" />
+                <div className="min-w-0 flex-1">
+                  <h2 className="text-xl font-semibold text-emerald-400">Integration readiness matrix</h2>
+                  <p className="mt-2 text-sm text-slate-400">
+                    Runs backend checks against your configured keys (Alpaca paper, Polygon, Finnhub, FRED, etc.), then walks
+                    freshness, universe, scanner, risk, and paper dry-run order flow.{" "}
+                    <span className="text-slate-300">
+                      Cursor&apos;s Alpaca MCP only helps agents inside the IDE; it does not replace this report. The platform
+                      always tests through the EdgeSenseAI API using the same environment variables as the backend.
+                    </span>
+                  </p>
+                  <p className="mt-2 text-sm text-slate-500">
+                    Typical duration: <span className="text-slate-300">quick preset ~15–45s</span>,{" "}
+                    <span className="text-slate-300">full matrix ~45–120s</span> (network and provider rate limits dominate).
+                    Request timeout is 3 minutes.
+                  </p>
+                </div>
+              </div>
+
+              <div className="mb-4 grid grid-cols-1 gap-4 md:grid-cols-2">
+                <div className="rounded-xl border border-emerald-400/15 bg-black/35 p-4">
+                  <h3 className="font-semibold text-white">Run scope</h3>
+                  <p className="mt-1 text-sm text-slate-400">Quick runs fewer checks; full runs the entire catalog (~18 checks).</p>
+                  <div className="mt-3 flex flex-wrap gap-2">
+                    <button
+                      type="button"
+                      onClick={() => setIntegrationMode("quick")}
+                      className={`rounded-lg px-3 py-1.5 text-sm font-medium ${
+                        integrationMode === "quick"
+                          ? "border border-emerald-400/50 bg-emerald-500/15 text-emerald-200"
+                          : "border border-white/10 text-slate-400 hover:bg-white/[0.04]"
+                      }`}
+                    >
+                      Quick
+                    </button>
+                    <button
+                      type="button"
+                      onClick={() => setIntegrationMode("full")}
+                      className={`rounded-lg px-3 py-1.5 text-sm font-medium ${
+                        integrationMode === "full"
+                          ? "border border-emerald-400/50 bg-emerald-500/15 text-emerald-200"
+                          : "border border-white/10 text-slate-400 hover:bg-white/[0.04]"
+                      }`}
+                    >
+                      Full matrix
+                    </button>
+                  </div>
+                </div>
+                <div className="rounded-xl border border-emerald-400/15 bg-black/35 p-4">
+                  <h3 className="font-semibold text-white">Symbols</h3>
+                  <p className="mt-1 text-sm text-slate-400">Comma-separated tickers for snapshots, scanner, and universe probes.</p>
+                  <input
+                    type="text"
+                    value={integrationSymbols}
+                    onChange={(e) => setIntegrationSymbols(e.target.value)}
+                    disabled={integrationRunning}
+                    placeholder="SPY,AAPL"
+                    className="mt-2 w-full rounded-lg border border-emerald-400/20 bg-black/40 px-3 py-2 text-sm text-white"
+                  />
+                  <label className="mt-3 flex cursor-pointer items-center gap-2 text-sm text-slate-300">
+                    <input
+                      type="checkbox"
+                      checked={integrationAllowMock}
+                      onChange={(e) => setIntegrationAllowMock(e.target.checked)}
+                      disabled={integrationRunning}
+                      className="rounded border-emerald-400/40"
+                    />
+                    Allow mock provider (CI / offline demos only)
+                  </label>
+                </div>
+              </div>
+
+              <div className="flex flex-wrap items-center gap-3">
+                <button
+                  type="button"
+                  onClick={runIntegrationMatrix}
+                  disabled={integrationRunning}
+                  className="inline-flex items-center gap-2 rounded-xl border border-emerald-400/40 bg-emerald-500/15 px-5 py-2.5 text-sm font-bold uppercase tracking-wide text-emerald-200 hover:bg-emerald-500/25 disabled:opacity-50"
+                >
+                  {integrationRunning ? (
+                    <>
+                      <Loader2 className="h-4 w-4 animate-spin" /> Running…
+                    </>
+                  ) : (
+                    "Run integration checks"
+                  )}
+                </button>
+                {integrationRunMs !== null && (
+                  <span className="text-sm text-slate-400">Wall time: {(integrationRunMs / 1000).toFixed(1)}s</span>
+                )}
+              </div>
+
+              {integrationError && (
+                <div className="mt-4 rounded-xl border border-red-500/30 bg-red-500/10 px-4 py-3 text-sm text-red-200">
+                  {integrationError}
+                </div>
+              )}
+
+              {integrationReport && (
+                <div className="mt-6 space-y-4">
+                  <div className="flex flex-wrap items-center gap-2">
+                    <span
+                      className={`rounded-full px-3 py-1 text-xs font-semibold uppercase ${
+                        integrationReport.status === "pass"
+                          ? "bg-emerald-500/20 text-emerald-300"
+                          : integrationReport.status === "warn"
+                            ? "bg-amber-500/20 text-amber-200"
+                            : "bg-red-500/20 text-red-200"
+                      }`}
+                    >
+                      Overall: {integrationReport.status}
+                    </span>
+                    <span className="text-xs text-slate-500">run_id {integrationReport.run_id}</span>
+                    <button
+                      type="button"
+                      onClick={copyIntegrationReport}
+                      className="inline-flex items-center gap-1 rounded-lg border border-white/10 px-3 py-1 text-xs text-slate-300 hover:bg-white/[0.06]"
+                    >
+                      <ClipboardCopy className="h-3.5 w-3.5" /> Copy JSON
+                    </button>
+                    <button
+                      type="button"
+                      onClick={downloadIntegrationReport}
+                      className="inline-flex items-center gap-1 rounded-lg border border-white/10 px-3 py-1 text-xs text-slate-300 hover:bg-white/[0.06]"
+                    >
+                      <Download className="h-3.5 w-3.5" /> Download
+                    </button>
+                  </div>
+
+                  {(integrationReport.blockers.length > 0 || integrationReport.warnings.length > 0) && (
+                    <div className="rounded-xl border border-amber-500/20 bg-amber-500/5 p-4 text-sm">
+                      {integrationReport.blockers.length > 0 && (
+                        <p className="text-red-200">
+                          <span className="font-semibold">Blockers:</span> {integrationReport.blockers.join(" · ")}
+                        </p>
+                      )}
+                      {integrationReport.warnings.length > 0 && (
+                        <p className={integrationReport.blockers.length ? "mt-2 text-amber-100" : "text-amber-100"}>
+                          <span className="font-semibold">Warnings:</span> {integrationReport.warnings.join(" · ")}
+                        </p>
+                      )}
+                    </div>
+                  )}
+
+                  <div className="overflow-x-auto rounded-xl border border-emerald-400/10">
+                    <table className="min-w-full text-left text-sm">
+                      <thead className="border-b border-emerald-400/15 bg-black/40 text-slate-400">
+                        <tr>
+                          <th className="px-3 py-2 font-medium">Check</th>
+                          <th className="px-3 py-2 font-medium">Where</th>
+                          <th className="px-3 py-2 font-medium">Status</th>
+                          <th className="px-3 py-2 font-medium">Message</th>
+                          <th className="px-3 py-2 font-medium">Time</th>
+                        </tr>
+                      </thead>
+                      <tbody>
+                        {integrationReport.checks.map((row) => (
+                          <tr key={row.key} className="border-b border-white/[0.06] hover:bg-white/[0.02]">
+                            <td className="px-3 py-2 align-top text-white">{row.label}</td>
+                            <td className="px-3 py-2 align-top text-slate-400">{row.belongs_to}</td>
+                            <td className="px-3 py-2 align-top">
+                              <span
+                                className={`rounded px-2 py-0.5 text-xs font-semibold uppercase ${
+                                  row.status === "pass"
+                                    ? "bg-emerald-500/15 text-emerald-300"
+                                    : row.status === "warn"
+                                      ? "bg-amber-500/15 text-amber-200"
+                                      : row.status === "fail"
+                                        ? "bg-red-500/15 text-red-200"
+                                        : "bg-slate-600/30 text-slate-300"
+                                }`}
+                              >
+                                {row.status}
+                              </span>
+                            </td>
+                            <td className="max-w-md px-3 py-2 align-top text-slate-300">{row.message}</td>
+                            <td className="whitespace-nowrap px-3 py-2 align-top text-slate-500">
+                              {row.duration_ms ? `${Math.round(row.duration_ms)} ms` : "—"}
+                            </td>
+                          </tr>
+                        ))}
+                      </tbody>
+                    </table>
+                  </div>
+                </div>
+              )}
             </section>
             )}
 

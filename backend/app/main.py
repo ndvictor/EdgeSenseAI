@@ -14,6 +14,7 @@ from app.api.routes.candidate_universe import router as candidate_universe_route
 from app.api.routes.capital_allocation import router as capital_allocation_router
 from app.api.routes.journal_outcomes import router as journal_outcomes_router
 from app.api.routes.platform_readiness import router as platform_readiness_router
+from app.api.routes.integration_checks import router as integration_checks_router
 from app.api.routes.settings import router as settings_router
 from app.api.routes.tracing import router as tracing_router
 from app.api.routes.data_freshness import router as data_freshness_router
@@ -178,6 +179,7 @@ app.include_router(research_priority_router, prefix="/api")
 app.include_router(model_strategy_update_router, prefix="/api")
 app.include_router(memory_update_router, prefix="/api")
 app.include_router(platform_readiness_router, prefix="/api")
+app.include_router(integration_checks_router, prefix="/api")
 app.include_router(settings_router, prefix="/api")
 app.include_router(tracing_router, prefix="/api")
 app.include_router(tradenow_router, prefix="/api")

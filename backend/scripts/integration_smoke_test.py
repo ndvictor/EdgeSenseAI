@@ -140,6 +140,26 @@ def test_workflow_flow(base_url: str, verbose: bool = False) -> tuple[bool, list
     results.append(msg)
     if not ok:
         return False, results
+
+    # Test 3b: Integration checks catalog + minimal deterministic run (Alpaca readiness matrix)
+    ok, msg = test_api_endpoint(base_url, "/api/integration-checks/catalog")
+    results.append(msg)
+    if not ok:
+        return False, results
+    ok, msg = test_api_endpoint(
+        base_url,
+        "/api/integration-checks/run",
+        method="POST",
+        payload={
+            "symbols": ["SPY"],
+            "source": "mock",
+            "allow_mock": True,
+            "checks": ["ranking_model", "risk_check", "alerts", "post_trade_analytics", "strategy_decay"],
+        },
+    )
+    results.append(msg)
+    if not ok:
+        return False, results
     
     # Test 4: Runtime phase
     ok, msg = test_api_endpoint(base_url, "/api/runtime/phase")
