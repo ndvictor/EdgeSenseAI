@@ -786,3 +786,36 @@ def test_upper_workflow_provider_failure_returns_degraded_response(monkeypatch):
     history = client.get("/api/upper-workflow/history")
     assert history.status_code == 200
     assert any(run["run_id"] == payload["run_id"] for run in history.json()["runs"])
+
+
+def test_backtesting_summary_contract():
+    r = client.get("/api/backtesting/summary")
+    assert r.status_code == 200
+    payload = r.json()
+    assert payload["mode"] == "prototype_contract"
+    assert len(payload["profiles"]) >= 1
+    for p in payload["profiles"]:
+        assert p["profile_name"]
+        assert "promotion_gate" in p
+
+
+def test_backtesting_action_stubs_not_configured():
+    body = {"profile_name": "Small Account Momentum v1"}
+    for path in (
+        "/api/backtesting/run",
+        "/api/backtesting/simulate-execution",
+        "/api/backtesting/validate-risk",
+        "/api/backtesting/promote-to-paper",
+    ):
+        resp = client.post(path, json=body)
+        assert resp.status_code == 200
+        data = resp.json()
+        assert data["status"] == "not_configured"
+        assert (
+            "not implemented" in data["message"].lower()
+            or "not available" in data["message"].lower()
+            or "no historical run" in data["message"].lower()
+        )
+    sim = client.post("/api/backtesting/simulate-execution", json=body).json()
+    assert len(sim["checks"]) == 10
+    assert all(c["status"] == "not_configured" for c in sim["checks"])

@@ -635,6 +635,7 @@ export type BacktestProfile = {
   objective: string;
   horizon: string;
   status: string;
+  promotion_gate?: string;
   metrics: BacktestMetric[];
   next_steps: string[];
 };
@@ -642,6 +643,48 @@ export type BacktestProfile = {
 export type BacktestingResponse = {
   mode: string;
   profiles: BacktestProfile[];
+};
+
+export type BacktestExecutionCheckStatus =
+  | "not_configured"
+  | "pending"
+  | "ready"
+  | "running"
+  | "passed"
+  | "failed"
+  | "blocked";
+
+export type BacktestExecutionCheck = {
+  name: string;
+  status: BacktestExecutionCheckStatus;
+  message?: string | null;
+};
+
+export type BacktestProfileActionBody = {
+  profile_name: string;
+};
+
+export type BacktestActionStubResponse = {
+  status: string;
+  message: string;
+  profile_name?: string | null;
+};
+
+export type BacktestRunActionResponse = BacktestActionStubResponse & {
+  job_id?: string | null;
+};
+
+export type BacktestSimulateExecutionResponse = BacktestActionStubResponse & {
+  checks: BacktestExecutionCheck[];
+  promotion_gate?: string;
+};
+
+export type BacktestRiskValidationResponse = BacktestActionStubResponse & {
+  checks: BacktestExecutionCheck[];
+};
+
+export type BacktestPromoteToPaperResponse = BacktestActionStubResponse & {
+  blocked_reasons?: string[];
 };
 
 export type JournalEntry = {
@@ -2612,6 +2655,23 @@ export const api = {
   getRiskCheck: (symbol: string) => request<RiskCheckResult>(`/api/risk-check/${symbol}`),
   getMarketRegime: () => request<MarketRegimeResponse>("/api/market-regime"),
   getBacktestingSummary: () => request<BacktestingResponse>("/api/backtesting/summary"),
+  postBacktestingRun: (payload: BacktestProfileActionBody) =>
+    request<BacktestRunActionResponse>("/api/backtesting/run", { method: "POST", body: JSON.stringify(payload) }),
+  postBacktestingSimulateExecution: (payload: BacktestProfileActionBody) =>
+    request<BacktestSimulateExecutionResponse>("/api/backtesting/simulate-execution", {
+      method: "POST",
+      body: JSON.stringify(payload),
+    }),
+  postBacktestingValidateRisk: (payload: BacktestProfileActionBody) =>
+    request<BacktestRiskValidationResponse>("/api/backtesting/validate-risk", {
+      method: "POST",
+      body: JSON.stringify(payload),
+    }),
+  postBacktestingPromoteToPaper: (payload: BacktestProfileActionBody) =>
+    request<BacktestPromoteToPaperResponse>("/api/backtesting/promote-to-paper", {
+      method: "POST",
+      body: JSON.stringify(payload),
+    }),
   // Re-export for compatibility
   getJournalSummaryLegacy: () => request<JournalOutcomeSummary>("/api/journal/outcomes/summary"),
   runModelLab: (payload: ModelLabRunRequest) => request<ModelLabRunResponse>("/api/model-lab/run", { method: "POST", body: JSON.stringify(payload) }),
