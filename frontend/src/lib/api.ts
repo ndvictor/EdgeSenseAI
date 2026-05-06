@@ -1,5 +1,17 @@
 const API_BASE_URL = process.env.NEXT_PUBLIC_API_URL || "http://localhost:8900";
 
+async function parseJsonResponse<T>(response: Response, path: string): Promise<T> {
+  const text = await response.text();
+  if (!text.trim()) {
+    throw new Error(`${path} returned empty response (API not connected yet).`);
+  }
+  try {
+    return JSON.parse(text) as T;
+  } catch {
+    throw new Error(`${path} returned invalid JSON (API not connected yet).`);
+  }
+}
+
 async function request<T>(path: string, options?: RequestInit): Promise<T> {
   const response = await fetch(`${API_BASE_URL}${path}`, {
     ...options,
@@ -9,7 +21,7 @@ async function request<T>(path: string, options?: RequestInit): Promise<T> {
     },
   });
   if (!response.ok) throw new Error(`${path} failed with ${response.status}`);
-  return response.json();
+  return parseJsonResponse<T>(response, path);
 }
 
 /** POST with abort timeout — used for long-running integration checks (many provider hops). */
@@ -24,7 +36,7 @@ async function postJsonWithTimeout<T>(path: string, body: unknown, timeoutMs: nu
       signal: controller.signal,
     });
     if (!response.ok) throw new Error(`${path} failed with ${response.status}`);
-    return response.json();
+    return parseJsonResponse<T>(response, path);
   } finally {
     clearTimeout(timer);
   }

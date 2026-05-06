@@ -25,13 +25,11 @@ import {
 } from "lucide-react";
 
 const items = [
-  { label: "Account Risk Center", href: "/account-risk", icon: WalletCards },
-  { label: "Command Center", href: "/command-center", icon: Gauge },
+  { label: "Ops Center", href: "/ops-center", icon: SlidersHorizontal },
   { label: "Market Regime", href: "/market-regime", icon: BarChart3 },
   { label: "Data Sources", href: "/data-sources", icon: DatabaseZap },
   { label: "Data Quality", href: "/data-quality", icon: Activity },
   { label: "Signals Engine", href: "/signal-engine", icon: Radar },
-  { label: "Edge Signals", href: "/edge-signals", icon: Activity },
   { label: "Candidates Engine", href: "/candidate-engine", icon: Users },
   { label: "Model", href: "/model", icon: FlaskConical },
   { label: "LLM Gateway", href: "/llm-gateway", icon: Gauge },
@@ -44,7 +42,6 @@ const items = [
   { label: "Position Monitoring", href: "/live-watchlist", icon: Crosshair },
   { label: "Journal", href: "/journal", icon: BookOpen },
   { label: "Learning Loop", href: "/learning-loop", icon: RefreshCw },
-  { label: "Agent Ops Center", href: "/ai-ops", icon: BrainCircuit },
   { label: "Platform Readiness", href: "/platform-readiness", icon: ShieldCheck },
   { label: "Settings", href: "/settings", icon: Settings },
 ];
@@ -53,9 +50,9 @@ export function Sidebar() {
   const pathname = usePathname();
 
   return (
-    <aside className="flex min-h-screen w-68 shrink-0 flex-col border-r border-emerald-400/10 bg-[#05080d] px-3 py-5 shadow-[18px_0_60px_rgba(0,0,0,0.45)]">
-      <Link href="/command-center" className="mb-8 flex items-center gap-3 px-1">
-        <div className="flex h-11 w-11 items-center justify-center rounded-2xl border border-emerald-400/50 bg-emerald-400/10 text-xl font-black tracking-tight text-emerald-300 shadow-[0_0_28px_rgba(16,185,129,0.25)]">
+    <aside className="flex min-h-screen w-68 shrink-0 flex-col border-r border-emerald-400/10 bg-[#05080d] px-3 py-5">
+      <Link href="/ops-center" className="mb-8 flex items-center gap-3 px-1">
+        <div className="flex h-11 w-11 items-center justify-center rounded-2xl border border-emerald-400/50 bg-emerald-400/10 text-xl font-black tracking-tight text-emerald-300">
           E
         </div>
         <div>
@@ -79,8 +76,8 @@ export function Sidebar() {
               className={`group flex items-center gap-3 rounded-xl px-2 py-2 text-sm font-medium transition-all ${
                 active
                   ? isAiOps
-                    ? "border border-emerald-400/45 bg-emerald-400/12 text-emerald-100 shadow-[0_0_28px_rgba(16,185,129,0.16)]"
-                    : "border border-emerald-400/40 bg-emerald-400/10 text-white shadow-[0_0_28px_rgba(16,185,129,0.12)]"
+                    ? "border border-emerald-400/45 bg-emerald-400/12 text-emerald-100"
+                    : "border border-emerald-400/40 bg-emerald-400/10 text-white"
                   : "text-slate-300 hover:bg-white/[0.04] hover:text-emerald-200"
               }`}
             >

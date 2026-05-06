@@ -7,6 +7,10 @@ import { api, type AlpacaPaperSnapshot, type ExecutionOrderListItem, type Execut
 import { MetricCard, PageHeader } from "@/components/Cards";
 
 export default function AccountRiskPage() {
+  return <AccountRiskPanel />;
+}
+
+export function AccountRiskPanel() {
   const [alpaca, setAlpaca] = useState<AlpacaPaperSnapshot | null>(null);
   const [settings, setSettings] = useState<SettingsResponse | null>(null);
   const [error, setError] = useState<string | null>(null);

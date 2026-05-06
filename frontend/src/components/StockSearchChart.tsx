@@ -36,6 +36,12 @@ type StockSearchChartProps = {
   pageDescription: string;
   /** Smaller embedded variant (e.g., inside TradeNow ticket). */
   variant?: "full" | "embedded";
+  /** Optional initial state for dashboards like Ops Center. */
+  initialSymbol?: string;
+  initialPeriod?: string;
+  initialInterval?: string;
+  initialChartMode?: "line" | "candles";
+  autoLoadInitial?: boolean;
 };
 
 function toCandleData(response: PriceHistory): CandlePoint[] {
@@ -69,17 +75,28 @@ function formatPercent(value?: number | null) {
   return `${value.toFixed(2)}%`;
 }
 
-export function StockSearchChart({ onSelectionChange, pageEyebrow, pageTitle, pageDescription, variant = "full" }: StockSearchChartProps) {
+export function StockSearchChart({
+  onSelectionChange,
+  pageEyebrow,
+  pageTitle,
+  pageDescription,
+  variant = "full",
+  initialSymbol,
+  initialPeriod,
+  initialInterval,
+  initialChartMode,
+  autoLoadInitial = true,
+}: StockSearchChartProps) {
   const containerRef = useRef<HTMLDivElement | null>(null);
   const chartRef = useRef<IChartApi | null>(null);
   const candleSeriesRef = useRef<ISeriesApi<"Candlestick"> | null>(null);
   const lineSeriesRef = useRef<ISeriesApi<"Line"> | null>(null);
 
-  const [symbol, setSymbol] = useState("");
+  const [symbol, setSymbol] = useState((initialSymbol ?? "").trim().toUpperCase());
   const [dataSource, setDataSource] = useState<MarketDataSource>("auto");
-  const [chartMode, setChartMode] = useState<ChartMode>("line");
-  const [period, setPeriod] = useState("1mo");
-  const [interval, setIntervalValue] = useState("1d");
+  const [chartMode, setChartMode] = useState<ChartMode>((initialChartMode ?? "line") as ChartMode);
+  const [period, setPeriod] = useState((initialPeriod ?? "1mo").trim());
+  const [interval, setIntervalValue] = useState((initialInterval ?? "1d").trim());
   const [snapshot, setSnapshot] = useState<MarketDataSnapshot | null>(null);
   const [history, setHistory] = useState<PriceHistory | null>(null);
   const [loading, setLoading] = useState(false);
@@ -195,6 +212,15 @@ export function StockSearchChart({ onSelectionChange, pageEyebrow, pageTitle, pa
     load(symbol);
     // eslint-disable-next-line react-hooks/exhaustive-deps
   }, [dataSource, period, interval]);
+
+  useEffect(() => {
+    if (!autoLoadInitial) return;
+    const init = (initialSymbol ?? "").trim().toUpperCase();
+    if (!init) return;
+    // Initial load happens once on mount.
+    load(init);
+    // eslint-disable-next-line react-hooks/exhaustive-deps
+  }, []);
 
   return (
     <section className="rounded-2xl border border-emerald-400/15 bg-black/35 p-4 shadow-[0_0_40px_rgba(0,0,0,0.25)] backdrop-blur">

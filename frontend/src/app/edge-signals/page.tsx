@@ -30,6 +30,10 @@ function EmptyState({ label }: { label: string }) {
 }
 
 export default function EdgeSignalsPage() {
+  return <EdgeSignalsPanel />;
+}
+
+export function EdgeSignalsPanel() {
   const [signals, setSignals] = useState<EdgeSignal[]>([]);
   const [lastUpdated, setLastUpdated] = useState<string>("");
   const [error, setError] = useState<string | null>(null);
