@@ -1,7 +1,8 @@
 from datetime import datetime
 
-from app.core.effective_runtime import effective_bool
+from app.core.effective_runtime import effective_bool, effective_str
 from app.core.settings import settings
+from app.services.market_data_service import market_data_provider_priority_from_runtime
 from app.services.embedding_service import get_embedding_status
 from app.services.persistence_service import get_persistence_status
 from app.services.vector_memory_service import get_vector_memory_status
@@ -21,8 +22,8 @@ def get_health_snapshot() -> dict:
         "embedding_provider": get_embedding_status()["provider"],
         "vector_memory_status": memory["vector_memory_status"],
         "redis_configured": bool(settings.redis_url),
-        "market_data_provider": settings.market_data_provider,
-        "market_data_provider_priority": settings.market_data_provider_priority,
+        "market_data_provider": (effective_str("MARKET_DATA_PROVIDER") or settings.market_data_provider).lower().strip(),
+        "market_data_provider_priority": market_data_provider_priority_from_runtime(),
         "live_trading_enabled": effective_bool("LIVE_TRADING_ENABLED"),
         "paper_trading_enabled": effective_bool("PAPER_TRADING_ENABLED"),
         "execution_agent_enabled": effective_bool("EXECUTION_AGENT_ENABLED"),

@@ -61,6 +61,7 @@ from app.api.routes.universe_discovery import router as universe_discovery_route
 from app.api.routes.universe_selection import router as universe_selection_router
 from app.api.routes.upper_workflow import router as upper_workflow_router
 from app.api.routes.watchlists import router as watchlists_router
+from app.core.effective_runtime import effective_str
 from app.core.settings import settings
 from app.data_providers.base import MarketCandlesResponse, MarketSnapshot
 from app.data_providers.provider_factory import get_market_data_provider
@@ -443,16 +444,27 @@ def get_market_snapshots():
     return get_market_data_provider().get_watchlist_snapshots()
 
 
+def _resolved_market_provider(provider: str | None) -> str:
+    """Explicit query param wins; ``auto`` or omitted uses human primary from runtime."""
+    if provider and provider.strip():
+        p = provider.strip().lower()
+        if p != "auto":
+            return p
+    return (effective_str("MARKET_DATA_PROVIDER") or "mock").lower().strip()
+
+
 @app.get("/api/market/{symbol}/snapshot", response_model=MarketSnapshot)
-def get_market_snapshot(symbol: str, provider: str = "mock"):
+def get_market_snapshot(symbol: str, provider: str | None = None):
     asset_class = "crypto" if "-USD" in symbol.upper() else "stock"
-    return get_market_data_provider(provider).get_snapshot(symbol.upper(), asset_class=asset_class)
+    return get_market_data_provider(_resolved_market_provider(provider)).get_snapshot(symbol.upper(), asset_class=asset_class)
 
 
 @app.get("/api/market/{symbol}/candles", response_model=MarketCandlesResponse)
-def get_market_candles(symbol: str, period: str = "1mo", interval: str = "1d", provider: str = "mock"):
+def get_market_candles(symbol: str, period: str = "1mo", interval: str = "1d", provider: str | None = None):
     asset_class = "crypto" if "-USD" in symbol.upper() else "stock"
-    return get_market_data_provider(provider).get_candles(symbol.upper(), period=period, interval=interval, asset_class=asset_class)
+    return get_market_data_provider(_resolved_market_provider(provider)).get_candles(
+        symbol.upper(), period=period, interval=interval, asset_class=asset_class
+    )
 
 
 @app.get("/api/features/{symbol}", response_model=EngineeredFeatures)

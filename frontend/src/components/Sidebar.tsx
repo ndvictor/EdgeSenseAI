@@ -5,24 +5,19 @@ import { usePathname } from "next/navigation";
 import {
   Activity,
   BarChart3,
-  BellRing,
-  Bitcoin,
   BookOpen,
-  Brain,
   BrainCircuit,
   ClipboardList,
+  Crosshair,
   DatabaseZap,
   FlaskConical,
   Gauge,
-  Globe,
-  LineChart,
   Radar,
   RefreshCw,
   Rocket,
   Settings,
   ShieldCheck,
   Target,
-  TrendingUp,
   Users,
   WalletCards,
   Zap,
@@ -31,31 +26,24 @@ import {
 const items = [
   { label: "Account Risk Center", href: "/account-risk", icon: WalletCards },
   { label: "Command Center", href: "/command-center", icon: Gauge },
-  { label: "TradeNow", href: "/tradenow", icon: Zap },
-  { label: "Strategies", href: "/strategies", icon: Rocket },
-  { label: "Universe", href: "/universe", icon: Globe },
-  { label: "Strategy Lab", href: "/strategy-lab", icon: Brain },
-  { label: "Signal Engine", href: "/signal-engine", icon: Radar },
-  { label: "Candidate Engine", href: "/candidate-engine", icon: Users },
-  { label: "Signals", href: "/signals", icon: Radar },
-  { label: "Recommendations", href: "/recommendations", icon: Target },
-  { label: "Candidates", href: "/candidates", icon: Users },
-  { label: "Agent Ops Center", href: "/ai-ops", icon: BrainCircuit },
-  { label: "LLM Gateway", href: "/llm-gateway", icon: Gauge },
-  { label: "Edge Signals", href: "/edge-signals", icon: Activity },
-  { label: "Model Lab", href: "/model-lab", icon: FlaskConical },
-  { label: "Model Registry", href: "/model-registry", icon: ShieldCheck },
+  { label: "Market Regime", href: "/market-regime", icon: BarChart3 },
   { label: "Data Sources", href: "/data-sources", icon: DatabaseZap },
   { label: "Data Quality", href: "/data-quality", icon: Activity },
-  { label: "Platform Readiness", href: "/platform-readiness", icon: ShieldCheck },
-  { label: "Stocks", href: "/stocks", icon: TrendingUp },
-  { label: "Options", href: "/options", icon: LineChart },
-  { label: "Bitcoin / Crypto", href: "/crypto", icon: Bitcoin },
-  { label: "Market Regime", href: "/market-regime", icon: BarChart3 },
+  { label: "Signals Engine", href: "/signal-engine", icon: Radar },
+  { label: "Edge Signals", href: "/edge-signals", icon: Activity },
+  { label: "Candidates Engine", href: "/candidate-engine", icon: Users },
+  { label: "Model", href: "/model", icon: FlaskConical },
+  { label: "LLM Gateway", href: "/llm-gateway", icon: Gauge },
+  { label: "Strategies", href: "/strategies", icon: Rocket },
   { label: "Backtesting", href: "/backtesting", icon: ClipboardList },
+  { label: "Recommendations", href: "/recommendations", icon: Target },
   { label: "Paper Trading", href: "/paper-trading", icon: BrainCircuit },
-  { label: "Learning Loop", href: "/learning-loop", icon: RefreshCw },
+  { label: "TradeNow", href: "/tradenow", icon: Zap },
+  { label: "Position Monitoring", href: "/live-watchlist", icon: Crosshair },
   { label: "Journal", href: "/journal", icon: BookOpen },
+  { label: "Learning Loop", href: "/learning-loop", icon: RefreshCw },
+  { label: "Agent Ops Center", href: "/ai-ops", icon: BrainCircuit },
+  { label: "Platform Readiness", href: "/platform-readiness", icon: ShieldCheck },
   { label: "Settings", href: "/settings", icon: Settings },
 ];
 
@@ -79,8 +67,8 @@ export function Sidebar() {
       <nav className="space-y-1.5 overflow-y-auto pr-1">
         {items.map((item) => {
           const Icon = item.icon;
-          const active = pathname === item.href || pathname.startsWith(`${item.href}/`);
           const isAiOps = item.href === "/ai-ops";
+          const active = pathname === item.href || pathname.startsWith(`${item.href}/`);
 
           return (
             <Link

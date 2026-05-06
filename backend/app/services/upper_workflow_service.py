@@ -86,6 +86,7 @@ from app.services.recommendation_pipeline_service import (
     RecommendationPipelineResponse,
     run_recommendation_pipeline,
 )
+from app.core.effective_runtime import effective_bool
 from app.services.persistence_service import (
     get_latest_upper_workflow_run,
     list_upper_workflow_runs,
@@ -187,13 +188,18 @@ def _safe_trace_event(*args, **kwargs) -> None:
         logger.warning("Upper workflow trace event failed but workflow will continue: %s", exc)
 
 
+def _persist_upper_workflow_to_db() -> bool:
+    return effective_bool("PERSIST_UPPER_WORKFLOW_RUNS")
+
+
 def _save_upper_workflow_run(response: UpperWorkflowResponse) -> UpperWorkflowResponse:
     global _LATEST_UPPER_WORKFLOW
     _LATEST_UPPER_WORKFLOW = response
     _UPPER_WORKFLOW_HISTORY.append(response)
     if len(_UPPER_WORKFLOW_HISTORY) > 100:
         del _UPPER_WORKFLOW_HISTORY[:-100]
-    save_upper_workflow_run(response)
+    if _persist_upper_workflow_to_db():
+        save_upper_workflow_run(response)
     return response
 
 
@@ -844,6 +850,8 @@ def run_upper_workflow(request: UpperWorkflowRequest) -> UpperWorkflowResponse:
 
 def get_latest_upper_workflow() -> UpperWorkflowResponse | None:
     """Get the most recent upper workflow run."""
+    if not _persist_upper_workflow_to_db():
+        return _LATEST_UPPER_WORKFLOW
     row = get_latest_upper_workflow_run()
     if row:
         restored = _upper_workflow_from_record(row)
@@ -854,6 +862,8 @@ def get_latest_upper_workflow() -> UpperWorkflowResponse | None:
 
 def list_upper_workflow_history(limit: int = 20) -> list[UpperWorkflowResponse]:
     """List recent upper workflow runs."""
+    if not _persist_upper_workflow_to_db():
+        return _UPPER_WORKFLOW_HISTORY[-limit:]
     rows = list_upper_workflow_runs(limit)
     restored = [_upper_workflow_from_record(row) for row in rows]
     db_runs = [run for run in restored if run is not None]

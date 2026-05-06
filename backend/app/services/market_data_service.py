@@ -3,10 +3,19 @@ from typing import Any, Dict, Optional
 import requests
 import yfinance as yf
 
+from app.core.effective_runtime import effective_str
 from app.core.settings import settings
 from app.services.market_data_providers.alpaca_provider import AlpacaMarketDataProvider
 from app.services.market_data_providers.mock_provider import MockMarketDataProvider
+from app.services.market_data_providers.polygon_provider import PolygonMarketDataProvider
 from app.services.market_data_providers.yfinance_provider import YFinanceMarketDataProvider
+
+
+def market_data_provider_priority_from_runtime() -> list[str]:
+    raw = effective_str("MARKET_DATA_PROVIDER_PRIORITY")
+    if raw and raw.strip():
+        return [p.strip().lower() for p in raw.split(",") if p.strip()]
+    return settings.market_data_provider_priority
 
 
 class MarketDataService:
@@ -15,20 +24,44 @@ class MarketDataService:
     Important product rule:
     - source=mock is allowed for explicit UI/testing workflows.
     - source=auto must never silently fall back to mock, because that can make fake data look real.
+    - Explicit workflow/UI ``source`` (yfinance, polygon, alpaca, mock) always wins over defaults.
+    - For ``auto``, MARKET_DATA_PROVIDER (human primary in Settings/runtime) is attempted first, then
+      MARKET_DATA_PROVIDER_PRIORITY entries (mock last unless primary is mock).
     """
 
     def __init__(self, provider_priority: Optional[list[str]] = None, providers: Optional[Dict[str, Any]] = None):
-        self.provider_priority = provider_priority or settings.market_data_provider_priority
+        self.provider_priority = provider_priority or market_data_provider_priority_from_runtime()
         self.providers = providers or {
             "alpaca": AlpacaMarketDataProvider(),
             "yfinance": YFinanceMarketDataProvider(),
+            "polygon": PolygonMarketDataProvider(),
             "mock": MockMarketDataProvider(),
         }
 
     def _priority_for_source(self, source: str | None = None) -> list[str]:
-        if not source or source == "auto":
-            return [provider for provider in self.provider_priority if provider != "mock"]
-        return [source.lower().strip()]
+        if source and source.strip() and source.lower().strip() != "auto":
+            return [source.lower().strip()]
+
+        primary = (effective_str("MARKET_DATA_PROVIDER") or "").lower().strip()
+        tail = list(self.provider_priority)
+        ordered: list[str] = []
+        seen: set[str] = set()
+
+        if primary:
+            ordered.append(primary)
+            seen.add(primary)
+
+        for name in tail:
+            if name in seen:
+                continue
+            if name == "mock" and primary != "mock":
+                continue
+            ordered.append(name)
+            seen.add(name)
+
+        if not ordered:
+            ordered = [p for p in tail if p != "mock"]
+        return ordered or ["yfinance"]
 
     def get_quote(self, symbol: str, source: str | None = None) -> Dict[str, Any]:
         snapshot = self.get_market_snapshot(symbol, source=source)

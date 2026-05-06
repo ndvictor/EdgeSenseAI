@@ -16,6 +16,8 @@ class YFinanceProvider:
 
         ticker = yf.Ticker(symbol)
         hist = ticker.history(period="5d", interval="1d")
+        if hist.empty:
+            hist = ticker.history(period="1mo", interval="1d")
         fast = ticker.fast_info
 
         if hist.empty:

@@ -15,6 +15,7 @@ from uuid import uuid4
 
 from pydantic import BaseModel, ConfigDict, Field
 
+from app.core.effective_runtime import effective_str
 from app.services.candidate_universe_service import add_candidate
 from app.services.data_freshness_gate_service import (
     DataFreshnessCheckRequest,
@@ -145,10 +146,9 @@ def _weighted_universe_ranker_v1(
     data_quality: Literal["excellent", "good", "fair", "poor", "unavailable"] = "fair"
     provider = "unknown"
 
-    # Simulate provider selection based on source
+    # Label reflects human/runtime primary when source is auto; explicit source wins otherwise.
     if source == "auto":
-        # Try real providers first, fallback to mock only if allowed
-        provider = "yfinance"  # Simplified - real implementation would try multiple
+        provider = (effective_str("MARKET_DATA_PROVIDER") or "yfinance").lower().strip()
     elif source == "mock":
         if not include_mock:
             blockers.append("Mock source selected but include_mock=false")

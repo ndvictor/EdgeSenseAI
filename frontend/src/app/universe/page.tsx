@@ -1,6 +1,6 @@
 "use client";
 
-import { useEffect, useState } from "react";
+import { useState } from "react";
 import { PageHeader, MetricCard } from "@/components/Cards";
 import { api, type UpperWorkflowResponse, type UniverseDiscoverResponse, type UniverseDiscoveryCandidate, type UniverseSelectionCandidate, type CadencePlan, type TriggerRule } from "@/lib/api";
 import { Play, Globe, Target, ListFilter, TrendingUp, AlertTriangle, CheckCircle, XCircle, Clock, ArrowRight, Radar, Activity, Zap } from "lucide-react";
@@ -93,23 +93,6 @@ export default function UniversePage() {
     earnings_news_drift_group: false,
     low_float_breakout_group: false,
   });
-
-  const loadLatestRun = async () => {
-    try {
-      const response = await api.getLatestUpperWorkflow();
-      if ("status" in response && response.status === "not_found") {
-        setLatestRun(null);
-      } else {
-        setLatestRun(response as UpperWorkflowResponse);
-      }
-    } catch {
-      setLatestRun(null);
-    }
-  };
-
-  useEffect(() => {
-    loadLatestRun();
-  }, []);
 
   const handleRunSelection = async () => {
     setIsRunning(true);

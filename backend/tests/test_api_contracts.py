@@ -1,8 +1,18 @@
+import pytest
 from fastapi.testclient import TestClient
 
 from app.main import app
 
 client = TestClient(app)
+
+
+def _patch_market_routes_use_mock(monkeypatch: pytest.MonkeyPatch) -> None:
+    """These routes call ``get_market_data_provider()`` with no query override; tests must not depend on workspace runtime_settings.json (e.g. Polygon)."""
+    from app.data_providers.mock_provider import MockMarketDataProvider
+
+    import app.main as main_mod
+
+    monkeypatch.setattr(main_mod, "get_market_data_provider", lambda provider=None: MockMarketDataProvider())
 
 
 def test_health_contract():
@@ -263,7 +273,8 @@ def test_candidates_status_contract():
     assert pos["downstream_stage"] == "risk"
 
 
-def test_market_snapshots_contract():
+def test_market_snapshots_contract(monkeypatch: pytest.MonkeyPatch):
+    _patch_market_routes_use_mock(monkeypatch)
     response = client.get("/api/market/snapshots")
     assert response.status_code == 200
     payload = response.json()
@@ -272,7 +283,8 @@ def test_market_snapshots_contract():
     assert payload[0]["data_mode"] == "synthetic_prototype"
 
 
-def test_features_contract():
+def test_features_contract(monkeypatch: pytest.MonkeyPatch):
+    _patch_market_routes_use_mock(monkeypatch)
     response = client.get("/api/features/AMD")
     assert response.status_code == 200
     payload = response.json()
@@ -281,7 +293,8 @@ def test_features_contract():
     assert payload["notes"]
 
 
-def test_model_pipeline_contract():
+def test_model_pipeline_contract(monkeypatch: pytest.MonkeyPatch):
+    _patch_market_routes_use_mock(monkeypatch)
     response = client.get("/api/model-pipeline/AMD")
     assert response.status_code == 200
     payload = response.json()
@@ -313,7 +326,8 @@ def test_model_lab_workflow_contract():
     assert payload["ranker_result"]["rows_scored"] == 3
 
 
-def test_account_feasibility_contract():
+def test_account_feasibility_contract(monkeypatch: pytest.MonkeyPatch):
+    _patch_market_routes_use_mock(monkeypatch)
     response = client.get("/api/account-feasibility/AMD")
     assert response.status_code == 200
     payload = response.json()
@@ -323,7 +337,8 @@ def test_account_feasibility_contract():
     assert payload["suggested_expression"]
 
 
-def test_risk_check_contract():
+def test_risk_check_contract(monkeypatch: pytest.MonkeyPatch):
+    _patch_market_routes_use_mock(monkeypatch)
     response = client.get("/api/risk-check/AMD")
     assert response.status_code == 200
     payload = response.json()

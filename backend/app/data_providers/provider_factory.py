@@ -1,5 +1,6 @@
 from app.core.effective_runtime import effective_str
 from app.data_providers.mock_provider import MockMarketDataProvider
+from app.data_providers.polygon_provider import PolygonProvider
 from app.data_providers.yfinance_provider import YFinanceProvider
 
 
@@ -7,17 +8,26 @@ def get_market_data_provider(provider_name: str | None = None):
     """Return the active provider.
 
     Resolution order:
-    1. Explicit provider_name passed by workflow/UI
-    2. MARKET_DATA_PROVIDER from runtime_settings.json / env / defaults
+    1. Explicit provider_name passed by workflow/UI (including mock/yfinance/polygon); never overridden by runtime.
+    2. provider_name omitted or ``auto`` → MARKET_DATA_PROVIDER from runtime_settings.json / env / defaults
     3. mock provider fallback
 
     Supported values:
     - mock: deterministic prototype data
     - yfinance: research-grade market data via yfinance
+    - polygon: Polygon.io (requires POLYGON_API_KEY)
     """
-    provider = (provider_name or effective_str("MARKET_DATA_PROVIDER") or "mock").lower().strip()
+    explicit = provider_name.strip().lower() if isinstance(provider_name, str) and provider_name.strip() else ""
+    if explicit and explicit != "auto":
+        provider = explicit
+    else:
+        provider = (effective_str("MARKET_DATA_PROVIDER") or "mock").lower().strip()
+    if provider == "auto":
+        provider = (effective_str("MARKET_DATA_PROVIDER") or "mock").lower().strip()
 
     if provider == "yfinance":
         return YFinanceProvider()
+    if provider == "polygon":
+        return PolygonProvider()
 
     return MockMarketDataProvider()

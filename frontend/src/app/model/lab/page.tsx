@@ -1,6 +1,6 @@
 "use client";
 
-import { useEffect, useMemo, useState } from "react";
+import { useEffect, useLayoutEffect, useMemo, useRef, useState } from "react";
 import {
   api,
   type BlockedOrPlaceholderModel,
@@ -18,6 +18,20 @@ import {
 import { MetricCard, PageHeader } from "@/components/Cards";
 
 type PipelineAction = "quality" | "feature" | "plan" | "run" | "registry" | null;
+
+const MODEL_LAB_SECTIONS = [
+  { id: "model-lab-workflow", label: "Run Model Lab Workflow" },
+  { id: "model-lab-data-quality", label: "Run Data Quality Check" },
+  { id: "model-lab-feature-pipeline", label: "Run Feature Pipeline" },
+  { id: "model-lab-model-run", label: "Run Model Run & Run Model Pipeline" },
+] as const;
+
+type ModelLabSectionId = (typeof MODEL_LAB_SECTIONS)[number]["id"];
+
+function modelLabHashToSectionId(hash: string): ModelLabSectionId | null {
+  const id = hash.replace(/^#/, "");
+  return MODEL_LAB_SECTIONS.some((s) => s.id === id) ? (id as ModelLabSectionId) : null;
+}
 
 function statusClass(status?: string | null) {
   const value = (status || "unknown").toLowerCase();
@@ -37,12 +51,21 @@ function Badge({ value }: { value?: string | null }) {
   return <span className={`rounded-full border px-3 py-1 text-xs font-bold uppercase ${statusClass(value)}`}>{(value || "unknown").replace(/_/g, " ")}</span>;
 }
 
-function Panel({ title, children }: { title: string; children: React.ReactNode }) {
+function Panel({ title, children, className }: { title: string; children: React.ReactNode; className?: string }) {
   return (
-    <section className="rounded-xl border border-slate-700 bg-slate-950 p-4 shadow-sm">
+    <section className={`rounded-xl border border-slate-700 bg-slate-950 p-4 shadow-sm ${className ?? ""}`}>
       <h2 className="mb-3 text-lg font-semibold text-emerald-500">{title}</h2>
       {children}
     </section>
+  );
+}
+
+function SubBlock({ kicker, children }: { kicker: string; children: React.ReactNode }) {
+  return (
+    <div className="border-t border-slate-800 pt-5 first:border-t-0 first:pt-0">
+      <h3 className="mb-3 text-xs font-semibold uppercase tracking-wide text-slate-500">{kicker}</h3>
+      {children}
+    </div>
   );
 }
 
@@ -125,9 +148,9 @@ function nextAction(quality?: DataQualityReport | null, row?: FeatureStoreRow | 
   return "Run model plan or model pipeline after the feature row is available.";
 }
 
-function PipelineButton({ label, loading, onClick }: { label: string; loading: boolean; onClick: () => void }) {
+function PipelineButton({ label, loading, disabled, onClick }: { label: string; loading: boolean; disabled?: boolean; onClick: () => void }) {
   return (
-    <button onClick={onClick} disabled={loading} className="rounded-lg border border-emerald-500 bg-emerald-500/10 px-4 py-3 text-sm font-bold text-emerald-300 disabled:cursor-not-allowed disabled:opacity-60">
+    <button onClick={onClick} disabled={loading || disabled} className="rounded-lg border border-emerald-500 bg-emerald-500/10 px-4 py-3 text-sm font-bold text-emerald-300 disabled:cursor-not-allowed disabled:opacity-60">
       {loading ? "Working..." : label}
     </button>
   );
@@ -343,7 +366,7 @@ function BlockedModelsPanel({ run, plan }: { run: ModelRunResponse | null; plan:
 export default function ModelLabPage() {
   const [dataSource, setDataSource] = useState<ModelLabRunRequest["data_source"]>("mock");
   const [model, setModel] = useState<ModelLabRunRequest["model"]>("xgboost_ranker");
-  const [symbols, setSymbols] = useState("AMD,NVDA,BTC-USD");
+  const [symbols, setSymbols] = useState("");
   const [trainSplit, setTrainSplit] = useState(70);
   const [assetClass, setAssetClass] = useState("stock");
   const [horizon, setHorizon] = useState("swing");
@@ -358,10 +381,23 @@ export default function ModelLabPage() {
   const [registry, setRegistry] = useState<ModelRegistryResponse | null>(null);
   const [plan, setPlan] = useState<ModelRunPlanResponse | null>(null);
   const [modelRun, setModelRun] = useState<ModelRunResponse | null>(null);
+  const [activeSectionId, setActiveSectionId] = useState<ModelLabSectionId>(MODEL_LAB_SECTIONS[0].id);
+  const sectionNavRef = useRef<HTMLDivElement>(null);
+  const sectionTabRefs = useRef<Partial<Record<ModelLabSectionId, HTMLAnchorElement>>>({});
+  const [sectionIndicator, setSectionIndicator] = useState({ left: 0, width: 0 });
+
+  const assignSectionTabRef = (id: ModelLabSectionId) => (node: HTMLAnchorElement | null) => {
+    if (node) sectionTabRefs.current[id] = node;
+    else delete sectionTabRefs.current[id];
+  };
 
   const selectedSymbols = useMemo(() => symbolList(symbols), [symbols]);
-  const pipelineSymbol = selectedSymbols[0] || "AMD";
-  const latestFeatureRow = featureRun?.row ?? latestRows.find((row) => row.ticker === pipelineSymbol.toUpperCase()) ?? latestRows[0] ?? null;
+  const pipelineSymbol = selectedSymbols[0] ?? null;
+  const latestFeatureRow =
+    featureRun?.row ??
+    (pipelineSymbol ? latestRows.find((row) => row.ticker === pipelineSymbol.toUpperCase()) : undefined) ??
+    latestRows[0] ??
+    null;
 
   useEffect(() => {
     setPipelineAction("registry");
@@ -373,6 +409,38 @@ export default function ModelLabPage() {
       .catch((err) => setPipelineError(err instanceof Error ? err.message : "Pipeline metadata failed"))
       .finally(() => setPipelineAction(null));
   }, []);
+
+  useEffect(() => {
+    const syncFromHash = () => {
+      const id = modelLabHashToSectionId(window.location.hash);
+      if (id) setActiveSectionId(id);
+    };
+    syncFromHash();
+    window.addEventListener("hashchange", syncFromHash);
+    return () => window.removeEventListener("hashchange", syncFromHash);
+  }, []);
+
+  useLayoutEffect(() => {
+    const updateIndicator = () => {
+      const nav = sectionNavRef.current;
+      const tab = sectionTabRefs.current[activeSectionId];
+      if (!nav || !tab) return;
+      const navRect = nav.getBoundingClientRect();
+      const tabRect = tab.getBoundingClientRect();
+      setSectionIndicator({
+        left: tabRect.left - navRect.left + nav.scrollLeft,
+        width: tabRect.width,
+      });
+    };
+    updateIndicator();
+    window.addEventListener("resize", updateIndicator);
+    const ro = typeof ResizeObserver !== "undefined" ? new ResizeObserver(updateIndicator) : null;
+    if (ro && sectionNavRef.current) ro.observe(sectionNavRef.current);
+    return () => {
+      window.removeEventListener("resize", updateIndicator);
+      ro?.disconnect();
+    };
+  }, [activeSectionId]);
 
   async function runWorkflow() {
     setRunning(true);
@@ -396,6 +464,10 @@ export default function ModelLabPage() {
   }
 
   async function runDataQuality() {
+    if (!pipelineSymbol) {
+      setPipelineError("Enter at least one symbol in Symbols before running pipeline steps.");
+      return;
+    }
     setPipelineAction("quality");
     setPipelineError(null);
     try {
@@ -408,6 +480,10 @@ export default function ModelLabPage() {
   }
 
   async function runFeaturePipeline() {
+    if (!pipelineSymbol) {
+      setPipelineError("Enter at least one symbol in Symbols before running pipeline steps.");
+      return;
+    }
     setPipelineAction("feature");
     setPipelineError(null);
     try {
@@ -423,6 +499,10 @@ export default function ModelLabPage() {
   }
 
   async function planModelRun() {
+    if (!pipelineSymbol) {
+      setPipelineError("Enter at least one symbol in Symbols before running pipeline steps.");
+      return;
+    }
     setPipelineAction("plan");
     setPipelineError(null);
     try {
@@ -435,6 +515,10 @@ export default function ModelLabPage() {
   }
 
   async function runModelPipeline() {
+    if (!pipelineSymbol) {
+      setPipelineError("Enter at least one symbol in Symbols before running pipeline steps.");
+      return;
+    }
     setPipelineAction("run");
     setPipelineError(null);
     try {
@@ -458,180 +542,237 @@ export default function ModelLabPage() {
           description="Model Lab now combines experiment runs with pipeline visibility: data quality, normalization, feature-store rows, model planning, and paper/research model outputs."
         />
 
-        {error && <div className="mb-4"><ErrorState message={error} /></div>}
+        <div ref={sectionNavRef} className="relative mb-4">
+          <nav aria-label="Model Lab sections" className="flex flex-wrap gap-2 pb-3">
+            {MODEL_LAB_SECTIONS.map((item) => {
+              const selected = activeSectionId === item.id;
+              return (
+                <a
+                  key={item.id}
+                  ref={assignSectionTabRef(item.id)}
+                  href={`#${item.id}`}
+                  aria-current={selected ? "true" : undefined}
+                  onClick={(event) => {
+                    event.preventDefault();
+                    setActiveSectionId(item.id);
+                    window.history.replaceState(null, "", `#${item.id}`);
+                  }}
+                  className={`shrink-0 rounded-xl px-3 py-2 text-left text-sm font-semibold transition-colors duration-200 sm:px-4 ${
+                    selected ? "text-emerald-300" : "border border-transparent text-slate-400 hover:border-white/10 hover:bg-white/[0.04] hover:text-slate-200"
+                  }`}
+                >
+                  {item.label}
+                </a>
+              );
+            })}
+          </nav>
+          <div className="relative h-px w-full bg-slate-700/80">
+            <div
+              className="absolute -top-[2px] h-[3px] rounded-full bg-emerald-400 shadow-[0_0_16px_2px_rgba(52,211,153,0.65)] transition-[left,width] duration-300 ease-out"
+              style={{ left: sectionIndicator.left, width: Math.max(sectionIndicator.width, 8) }}
+            />
+          </div>
+        </div>
 
-        <div className="space-y-4">
-          <section className="rounded-xl border border-emerald-800 bg-slate-950 p-4 shadow-sm">
-            <h2 className="mb-3 text-lg font-semibold text-emerald-500">Workflow Controls</h2>
-            <div className="grid grid-cols-1 gap-4 lg:grid-cols-7">
-              <label className="block">
-                <span className="text-sm font-semibold text-slate-300">Data Source</span>
-                <select value={dataSource} onChange={(event) => setDataSource(event.target.value as ModelLabRunRequest["data_source"])} className="mt-2 w-full rounded-lg border border-emerald-900 bg-slate-900 px-4 py-3 text-white">
-                  <option value="mock">Mock prototype</option>
-                  <option value="yfinance">YFinance research</option>
-                </select>
-              </label>
+        <section className="rounded-xl border border-slate-700 bg-slate-950 p-4 shadow-sm ring-1 ring-emerald-500/15 lg:p-6">
+          <div className="space-y-6">
+            {error ? (
+              <div>
+                <ErrorState message={error} />
+              </div>
+            ) : null}
 
-              <label className="block">
-                <span className="text-sm font-semibold text-slate-300">Model</span>
-                <select value={model} onChange={(event) => setModel(event.target.value as ModelLabRunRequest["model"])} className="mt-2 w-full rounded-lg border border-emerald-900 bg-slate-900 px-4 py-3 text-white">
-                  <option value="xgboost_ranker">XGBoost ranker</option>
-                  <option value="weighted_ranker">Weighted fallback ranker</option>
-                </select>
-              </label>
+            {pipelineError ? <div><ErrorState message={pipelineError} /></div> : null}
+            {pipelineAction === "registry" ? <div><LoadingNote label="Loading model registry and latest feature rows..." /></div> : null}
 
-              <label className="block lg:col-span-2">
-                <span className="text-sm font-semibold text-slate-300">Symbols</span>
-                <input value={symbols} onChange={(event) => setSymbols(event.target.value)} className="mt-2 w-full rounded-lg border border-emerald-900 bg-slate-900 px-4 py-3 text-white" />
-              </label>
+            <div id={MODEL_LAB_SECTIONS[0].id} className="scroll-mt-6 space-y-6 border-b border-slate-700/80 pb-6">
+              <h2 className="text-lg font-semibold text-emerald-500">{MODEL_LAB_SECTIONS[0].label}</h2>
+              <div className="rounded-lg border border-slate-800 bg-slate-900/40 p-4">
+                <h3 className="mb-4 text-sm font-semibold text-slate-200">Workflow controls</h3>
+                <div className="grid grid-cols-1 gap-4 sm:grid-cols-2 xl:grid-cols-4">
+                  <label className="block">
+                    <span className="text-sm font-semibold text-slate-300">Data Source</span>
+                    <select value={dataSource} onChange={(event) => setDataSource(event.target.value as ModelLabRunRequest["data_source"])} className="mt-2 w-full rounded-lg border border-emerald-900 bg-slate-900 px-4 py-3 text-white">
+                      <option value="mock">Mock prototype</option>
+                      <option value="yfinance">YFinance research</option>
+                    </select>
+                  </label>
 
-              <label className="block">
-                <span className="text-sm font-semibold text-slate-300">Asset Class</span>
-                <select value={assetClass} onChange={(event) => setAssetClass(event.target.value)} className="mt-2 w-full rounded-lg border border-emerald-900 bg-slate-900 px-4 py-3 text-white">
-                  <option value="stock">Stock</option>
-                  <option value="crypto">Crypto</option>
-                  <option value="option">Option</option>
-                </select>
-              </label>
+                  <label className="block">
+                    <span className="text-sm font-semibold text-slate-300">Model</span>
+                    <select value={model} onChange={(event) => setModel(event.target.value as ModelLabRunRequest["model"])} className="mt-2 w-full rounded-lg border border-emerald-900 bg-slate-900 px-4 py-3 text-white">
+                      <option value="xgboost_ranker">XGBoost ranker</option>
+                      <option value="weighted_ranker">Weighted fallback ranker</option>
+                    </select>
+                  </label>
 
-              <label className="block">
-                <span className="text-sm font-semibold text-slate-300">Horizon</span>
-                <select value={horizon} onChange={(event) => setHorizon(event.target.value)} className="mt-2 w-full rounded-lg border border-emerald-900 bg-slate-900 px-4 py-3 text-white">
-                  <option value="intraday">Intraday</option>
-                  <option value="day_trade">Day trade</option>
-                  <option value="swing">Swing</option>
-                  <option value="one_month">One month</option>
-                </select>
-              </label>
+                  <label className="block">
+                    <span className="text-sm font-semibold text-slate-300">Asset Class</span>
+                    <select value={assetClass} onChange={(event) => setAssetClass(event.target.value)} className="mt-2 w-full rounded-lg border border-emerald-900 bg-slate-900 px-4 py-3 text-white">
+                      <option value="stock">Stock</option>
+                      <option value="crypto">Crypto</option>
+                      <option value="option">Option</option>
+                    </select>
+                  </label>
 
-              <label className="block">
-                <span className="text-sm font-semibold text-slate-300">Train Split</span>
-                <input type="number" min={50} max={90} value={trainSplit} onChange={(event) => setTrainSplit(Number(event.target.value))} className="mt-2 w-full rounded-lg border border-emerald-900 bg-slate-900 px-4 py-3 text-white" />
-              </label>
+                  <label className="block">
+                    <span className="text-sm font-semibold text-slate-300">Horizon</span>
+                    <select value={horizon} onChange={(event) => setHorizon(event.target.value)} className="mt-2 w-full rounded-lg border border-emerald-900 bg-slate-900 px-4 py-3 text-white">
+                      <option value="intraday">Intraday</option>
+                      <option value="day_trade">Day trade</option>
+                      <option value="swing">Swing</option>
+                      <option value="one_month">One month</option>
+                    </select>
+                  </label>
+
+                  <label className="block sm:col-span-2 xl:col-span-3">
+                    <span className="text-sm font-semibold text-slate-300">Symbols</span>
+                    <input value={symbols} onChange={(event) => setSymbols(event.target.value)} className="mt-2 w-full rounded-lg border border-emerald-900 bg-slate-900 px-4 py-3 text-white" />
+                  </label>
+
+                  <label className="block">
+                    <span className="text-sm font-semibold text-slate-300">Train Split</span>
+                    <input type="number" min={50} max={90} value={trainSplit} onChange={(event) => setTrainSplit(Number(event.target.value))} className="mt-2 w-full rounded-lg border border-emerald-900 bg-slate-900 px-4 py-3 text-white" />
+                  </label>
+                </div>
+
+                <div className="mt-4 flex flex-wrap gap-2 sm:gap-3">
+                  <button type="button" onClick={runWorkflow} disabled={running} className="rounded-lg bg-emerald-600 px-5 py-3 text-sm font-bold text-slate-950 disabled:cursor-not-allowed disabled:opacity-60">
+                    {running ? "Running workflow..." : "Run Model Lab Workflow"}
+                  </button>
+                  <PipelineButton label="Run Data Quality Check" loading={pipelineAction === "quality"} disabled={!pipelineSymbol} onClick={runDataQuality} />
+                  <PipelineButton label="Run Feature Pipeline" loading={pipelineAction === "feature"} disabled={!pipelineSymbol} onClick={runFeaturePipeline} />
+                  <PipelineButton label="Plan Model Run" loading={pipelineAction === "plan"} disabled={!pipelineSymbol} onClick={planModelRun} />
+                  <PipelineButton label="Run Model Pipeline" loading={pipelineAction === "run"} disabled={!pipelineSymbol} onClick={runModelPipeline} />
+                </div>
+                <p className="mt-3 text-sm text-slate-400">
+                  Pipeline visibility runs one symbol at a time:{" "}
+                  <span className="font-semibold text-emerald-300">{pipelineSymbol ?? "— (enter a symbol)"}</span>. Outputs are research/paper-only, not live trade instructions.
+                </p>
+              </div>
+
+              <div className="grid grid-cols-1 gap-4 lg:grid-cols-2 lg:items-start">
+                <Panel title="Next Action" className="h-fit min-w-0 p-4">
+                  <p className="text-sm leading-relaxed text-slate-300">{nextAction(quality, latestFeatureRow, plan, modelRun)}</p>
+                  <p className="mt-3 rounded-md border border-amber-500/30 bg-amber-500/10 px-3 py-2 text-xs leading-snug text-amber-200">
+                    Research/paper-only: review data quality, model status, and risk filters before treating any output as actionable.
+                  </p>
+                </Panel>
+                <div className="min-w-0">
+                  {result ? (
+                    <Panel title="Model Experiment Results" className="min-w-0">
+                      <div className="space-y-0">
+                        <SubBlock kicker="Run summary">
+                          <div className="grid grid-cols-2 gap-3 sm:grid-cols-3 md:grid-cols-5">
+                            <MetricCard label="Status" value={result.workflow_status} accent />
+                            <MetricCard label="Data Source" value={result.data_source} />
+                            <MetricCard label="Model" value={result.model} />
+                            <MetricCard label="Train Rows" value={result.split.train_rows} />
+                            <MetricCard label="Test Rows" value={result.split.test_rows} />
+                          </div>
+                        </SubBlock>
+
+                        <SubBlock kicker="Feature-agent output">
+                          <div className="overflow-x-auto rounded-lg border border-slate-800">
+                            <table className="w-full min-w-[1100px] text-left text-sm">
+                              <thead className="bg-slate-900 text-xs uppercase tracking-wide text-slate-400">
+                                <tr>
+                                  <th className="px-4 py-3">Symbol</th>
+                                  <th className="px-4 py-3">Price</th>
+                                  <th className="px-4 py-3">Feature</th>
+                                  <th className="px-4 py-3">Momentum</th>
+                                  <th className="px-4 py-3">RVOL</th>
+                                  <th className="px-4 py-3">Spread Quality</th>
+                                  <th className="px-4 py-3">Trend/VWAP</th>
+                                  <th className="px-4 py-3">Volatility</th>
+                                </tr>
+                              </thead>
+                              <tbody className="divide-y divide-slate-800 bg-slate-950">
+                                {result.features.map((row) => (
+                                  <tr key={row.symbol} className="hover:bg-slate-900">
+                                    <td className="px-4 py-3 font-bold text-cyan-300">{row.symbol}</td>
+                                    <td className="px-4 py-3 text-slate-300">${row.current_price.toLocaleString()}</td>
+                                    <td className="px-4 py-3 font-bold text-emerald-300">{row.feature_score}</td>
+                                    <td className="px-4 py-3 text-slate-300">{row.momentum_score}</td>
+                                    <td className="px-4 py-3 text-slate-300">{row.rvol_score}</td>
+                                    <td className="px-4 py-3 text-slate-300">{row.spread_quality_score}</td>
+                                    <td className="px-4 py-3 text-slate-300">{row.trend_vs_vwap_score}</td>
+                                    <td className="px-4 py-3 text-slate-300">{row.volatility_score}</td>
+                                  </tr>
+                                ))}
+                              </tbody>
+                            </table>
+                          </div>
+                        </SubBlock>
+
+                        <SubBlock kicker="Ranker output">
+                          <div className="mb-3 flex flex-col gap-2 sm:flex-row sm:items-center sm:justify-between">
+                            <span className="w-fit rounded-full border border-cyan-500 bg-cyan-500/10 px-3 py-1 text-xs font-bold uppercase text-cyan-300">
+                              {result.ranker_result.model_available ? "XGBoost available" : "Fallback ranker used"}
+                            </span>
+                          </div>
+                          <div className="grid grid-cols-1 gap-3 sm:grid-cols-2 2xl:grid-cols-3">
+                            {result.ranker_result.scores.map((score) => (
+                              <article key={score.symbol} className="rounded-lg border border-slate-800 bg-slate-900/80 p-3">
+                                <p className="text-xs uppercase tracking-wide text-slate-500">Rank #{score.rank}</p>
+                                <h4 className="mt-1 text-xl font-bold text-white">{score.symbol}</h4>
+                                <p className="mt-2 text-lg font-bold text-emerald-400">{score.score}</p>
+                                <p className="mt-1 text-xs uppercase tracking-wide text-cyan-300">{score.model_used}</p>
+                                <p className="mt-2 text-sm leading-relaxed text-slate-400">{score.explanation}</p>
+                              </article>
+                            ))}
+                          </div>
+                          <div className="mt-4 space-y-2">
+                            {result.ranker_result.notes.map((note) => (
+                              <p key={note} className="rounded-lg border border-slate-800 bg-slate-900/60 px-3 py-2 text-sm leading-relaxed text-slate-300">{note}</p>
+                            ))}
+                          </div>
+                        </SubBlock>
+
+                        <SubBlock kicker="Next steps">
+                          <ul className="space-y-2">
+                            {result.next_steps.map((step) => (
+                              <li key={step} className="rounded-lg border border-slate-800 bg-slate-900/60 px-3 py-2 text-sm leading-relaxed text-slate-300">{step}</li>
+                            ))}
+                          </ul>
+                        </SubBlock>
+                      </div>
+                    </Panel>
+                  ) : (
+                    <Panel title="Model Experiment Results">
+                      <EmptyState message="Run Model Lab Workflow to view existing XGBoost or weighted ranker experiment results." />
+                    </Panel>
+                  )}
+                </div>
+              </div>
             </div>
 
-            <div className="mt-4 flex flex-wrap gap-3">
-              <button onClick={runWorkflow} disabled={running} className="rounded-lg bg-emerald-600 px-5 py-3 text-sm font-bold text-slate-950 disabled:cursor-not-allowed disabled:opacity-60">
-                {running ? "Running workflow..." : "Run Model Lab Workflow"}
-              </button>
-              <PipelineButton label="Run Data Quality Check" loading={pipelineAction === "quality"} onClick={runDataQuality} />
-              <PipelineButton label="Run Feature Pipeline" loading={pipelineAction === "feature"} onClick={runFeaturePipeline} />
-              <PipelineButton label="Plan Model Run" loading={pipelineAction === "plan"} onClick={planModelRun} />
-              <PipelineButton label="Run Model Pipeline" loading={pipelineAction === "run"} onClick={runModelPipeline} />
-            </div>
-            <p className="mt-3 text-sm text-slate-400">Pipeline visibility currently runs one selected symbol at a time: <span className="font-bold text-emerald-300">{pipelineSymbol}</span>. Model outputs are research/paper-only and are not live trade instructions.</p>
-          </section>
-
-          <Panel title="Pipeline Visibility">
-            {pipelineError && <div className="mb-4"><ErrorState message={pipelineError} /></div>}
-            {pipelineAction === "registry" && <div className="mb-4"><LoadingNote label="Loading model registry and latest feature rows..." /></div>}
-            <div className="grid grid-cols-1 gap-4 xl:grid-cols-2">
+            <div id={MODEL_LAB_SECTIONS[1].id} className="scroll-mt-6 space-y-4 border-b border-slate-700/80 pb-6">
+              <h2 className="text-lg font-semibold text-emerald-500">{MODEL_LAB_SECTIONS[1].label}</h2>
               <div className="space-y-4">
                 <Panel title="Data Quality Result"><DataQualityPanel report={quality} loading={pipelineAction === "quality"} /></Panel>
                 <Panel title="Normalized Snapshot"><NormalizedSnapshotPanel snapshot={featureRun?.normalized_snapshot} /></Panel>
-                <Panel title="Latest Feature Row"><FeatureRowPanel row={latestFeatureRow} /></Panel>
-              </div>
-              <div className="space-y-4">
-                <Panel title="Model Run Plan"><ModelPlanPanel plan={plan} registry={registry} row={latestFeatureRow} quality={quality} loading={pipelineAction === "plan"} /></Panel>
-                <Panel title="Model Outputs"><ModelOutputsPanel run={modelRun} loading={pipelineAction === "run"} /></Panel>
-                <Panel title="Blocked / Placeholder Models"><BlockedModelsPanel run={modelRun} plan={plan} /></Panel>
-                <Panel title="Next Action">
-                  <p className="text-sm leading-relaxed text-slate-300">{nextAction(quality, latestFeatureRow, plan, modelRun)}</p>
-                  <p className="mt-3 rounded-lg border border-amber-500/30 bg-amber-500/10 px-4 py-3 text-sm text-amber-200">Research/paper-only safety reminder: review data quality, model status, and risk filters before treating any output as actionable.</p>
-                </Panel>
               </div>
             </div>
-          </Panel>
 
-          {result ? (
-            <Panel title="Model Experiment Results">
-              <div className="space-y-4">
-                <section className="rounded-xl border border-emerald-800 bg-slate-950 p-4 shadow-sm">
-                  <h2 className="mb-3 text-lg font-semibold text-emerald-500">Run Summary</h2>
-                  <div className="grid grid-cols-2 gap-4 md:grid-cols-5">
-                    <MetricCard label="Status" value={result.workflow_status} accent />
-                    <MetricCard label="Data Source" value={result.data_source} />
-                    <MetricCard label="Model" value={result.model} />
-                    <MetricCard label="Train Rows" value={result.split.train_rows} />
-                    <MetricCard label="Test Rows" value={result.split.test_rows} />
-                  </div>
-                </section>
+            <div id={MODEL_LAB_SECTIONS[2].id} className="scroll-mt-6 space-y-4 border-b border-slate-700/80 pb-6">
+              <h2 className="text-lg font-semibold text-emerald-500">{MODEL_LAB_SECTIONS[2].label}</h2>
+              <Panel title="Pipeline Visibility">
+                <p className="mb-4 text-sm leading-relaxed text-slate-400">
+                  Full-width view of the most recent feature-store row for the pipeline symbol. Use the table below for a quick scan of every field.
+                </p>
+                <FeatureRowPanel row={latestFeatureRow} />
+              </Panel>
+            </div>
 
-                <section className="rounded-xl border border-slate-700 bg-slate-950 p-4 shadow-sm">
-                  <h2 className="mb-3 text-lg font-semibold text-emerald-500">Feature-Agent Output</h2>
-                  <div className="overflow-x-auto rounded-xl border border-slate-800">
-                    <table className="w-full min-w-[1100px] text-left text-sm">
-                      <thead className="bg-slate-900 text-xs uppercase tracking-wide text-slate-400">
-                        <tr>
-                          <th className="px-4 py-3">Symbol</th>
-                          <th className="px-4 py-3">Price</th>
-                          <th className="px-4 py-3">Feature</th>
-                          <th className="px-4 py-3">Momentum</th>
-                          <th className="px-4 py-3">RVOL</th>
-                          <th className="px-4 py-3">Spread Quality</th>
-                          <th className="px-4 py-3">Trend/VWAP</th>
-                          <th className="px-4 py-3">Volatility</th>
-                        </tr>
-                      </thead>
-                      <tbody className="divide-y divide-slate-800 bg-slate-950">
-                        {result.features.map((row) => (
-                          <tr key={row.symbol} className="hover:bg-slate-900">
-                            <td className="px-4 py-3 font-bold text-cyan-300">{row.symbol}</td>
-                            <td className="px-4 py-3 text-slate-300">${row.current_price.toLocaleString()}</td>
-                            <td className="px-4 py-3 font-bold text-emerald-300">{row.feature_score}</td>
-                            <td className="px-4 py-3 text-slate-300">{row.momentum_score}</td>
-                            <td className="px-4 py-3 text-slate-300">{row.rvol_score}</td>
-                            <td className="px-4 py-3 text-slate-300">{row.spread_quality_score}</td>
-                            <td className="px-4 py-3 text-slate-300">{row.trend_vs_vwap_score}</td>
-                            <td className="px-4 py-3 text-slate-300">{row.volatility_score}</td>
-                          </tr>
-                        ))}
-                      </tbody>
-                    </table>
-                  </div>
-                </section>
-
-                <section className="rounded-xl border border-slate-700 bg-slate-950 p-4 shadow-sm">
-                  <div className="mb-3 flex flex-col gap-2 md:flex-row md:items-center md:justify-between">
-                    <h2 className="text-lg font-semibold text-emerald-500">XGBoost Ranker Output</h2>
-                    <span className="w-fit rounded-full border border-cyan-500 bg-cyan-500/10 px-3 py-1 text-xs font-bold uppercase text-cyan-300">
-                      {result.ranker_result.model_available ? "XGBoost available" : "Fallback ranker used"}
-                    </span>
-                  </div>
-                  <div className="grid grid-cols-1 gap-4 xl:grid-cols-3">
-                    {result.ranker_result.scores.map((score) => (
-                      <article key={score.symbol} className="rounded-xl border border-slate-800 bg-slate-900 p-4">
-                        <p className="text-xs uppercase tracking-wide text-slate-500">Rank #{score.rank}</p>
-                        <h3 className="mt-1 text-3xl font-black text-white">{score.symbol}</h3>
-                        <p className="mt-2 text-2xl font-black text-emerald-400">{score.score}</p>
-                        <p className="mt-2 text-xs uppercase tracking-wide text-cyan-300">{score.model_used}</p>
-                        <p className="mt-2 text-sm leading-relaxed text-slate-400">{score.explanation}</p>
-                      </article>
-                    ))}
-                  </div>
-                  <div className="mt-4 grid grid-cols-1 gap-3 md:grid-cols-2">
-                    {result.ranker_result.notes.map((note) => (
-                      <p key={note} className="rounded-lg border border-slate-800 bg-slate-900 px-4 py-3 text-sm leading-relaxed text-slate-300">{note}</p>
-                    ))}
-                  </div>
-                </section>
-
-                <section className="rounded-xl border border-slate-700 bg-slate-950 p-4 shadow-sm">
-                  <h2 className="mb-3 text-lg font-semibold text-emerald-500">Next Steps</h2>
-                  <div className="grid grid-cols-1 gap-3 md:grid-cols-2">
-                    {result.next_steps.map((step) => (
-                      <p key={step} className="rounded-lg border border-slate-800 bg-slate-900 px-4 py-3 text-sm leading-relaxed text-slate-300">{step}</p>
-                    ))}
-                  </div>
-                </section>
-              </div>
-            </Panel>
-          ) : (
-            <Panel title="Model Experiment Results">
-              <EmptyState message="Run Model Lab Workflow to view existing XGBoost or weighted ranker experiment results." />
-            </Panel>
-          )}
-        </div>
+            <div id={MODEL_LAB_SECTIONS[3].id} className="scroll-mt-6 space-y-4">
+              <h2 className="text-lg font-semibold text-emerald-500">{MODEL_LAB_SECTIONS[3].label}</h2>
+              <Panel title="Model Run Plan"><ModelPlanPanel plan={plan} registry={registry} row={latestFeatureRow} quality={quality} loading={pipelineAction === "plan"} /></Panel>
+              <Panel title="Model Outputs"><ModelOutputsPanel run={modelRun} loading={pipelineAction === "run"} /></Panel>
+              <Panel title="Blocked / Placeholder Models"><BlockedModelsPanel run={modelRun} plan={plan} /></Panel>
+            </div>
+          </div>
+        </section>
       </div>
     </div>
   );

@@ -32,9 +32,11 @@ DEFAULT_RUNTIME_SETTINGS: dict[str, Any] = {
     "EMBEDDINGS_ENABLE_PAID_CALLS": False,
     # Market Data Settings
     "MARKET_DATA_PROVIDER": "mock",
-    "MARKET_DATA_PROVIDER_PRIORITY": "alpaca,yfinance,mock",
+    "MARKET_DATA_PROVIDER_PRIORITY": "polygon,alpaca,yfinance,mock",
     "MARKET_DATA_PROVIDER_TIMEOUT_SECONDS": 10,
     "ALPACA_MARKET_DATA_ENABLED": False,
+    # When false, upper workflow results (market phase, universe selection, etc.) are kept in-process only — not written to Postgres and /latest skips DB.
+    "PERSIST_UPPER_WORKFLOW_RUNS": True,
     # News Settings
     "NEWS_PROVIDER_ENABLED": False,
     "NEWS_PROVIDER_PRIMARY": "none",

@@ -3,6 +3,9 @@
 import { useEffect, useMemo, useState } from "react";
 import { api, type CandidateSourceStatus, type CandidatesStatusResponse } from "@/lib/api";
 import { MetricCard, PageHeader } from "@/components/Cards";
+import UniversePage from "@/app/universe/page";
+import CandidatesPage from "@/app/candidates/page";
+import SignalsPage from "@/app/signals/page";
 
 const cardShell = "rounded-2xl border border-emerald-400/15 bg-black/35 p-4 shadow-[0_0_40px_rgba(0,0,0,0.25)] backdrop-blur";
 
@@ -43,6 +46,7 @@ function safeList(value: unknown): string[] {
 export default function CandidateEnginePage() {
   const [data, setData] = useState<CandidatesStatusResponse | null>(null);
   const [error, setError] = useState<string | null>(null);
+  const [tab, setTab] = useState<"candidate_engine" | "universe" | "candidates" | "signals">("candidate_engine");
 
   useEffect(() => {
     api
@@ -81,11 +85,39 @@ export default function CandidateEnginePage() {
           ) : null}
         </div>
 
+        <div className="flex flex-nowrap gap-2 overflow-x-auto whitespace-nowrap pr-2 [-ms-overflow-style:none] [scrollbar-width:none] [&::-webkit-scrollbar]:hidden">
+          {[
+            ["candidate_engine", "Candidate Engine"],
+            ["universe", "Universe"],
+            ["candidates", "Candidates"],
+            ["signals", "Signals"],
+          ].map(([key, label]) => (
+            <button
+              key={key}
+              type="button"
+              onClick={() => setTab(key as typeof tab)}
+              className={`shrink-0 rounded-xl px-4 py-2 text-sm font-semibold transition ${
+                tab === key
+                  ? "border border-emerald-400/40 bg-emerald-500/15 text-emerald-200 shadow-[0_0_20px_rgba(16,185,129,0.12)]"
+                  : "border border-transparent text-slate-400 hover:border-white/10 hover:bg-white/[0.04] hover:text-slate-200"
+              }`}
+            >
+              {label}
+            </button>
+          ))}
+        </div>
+
         {error ? (
           <div className="rounded-xl border border-rose-500/30 bg-rose-500/10 px-4 py-3 text-sm text-rose-200">{error}</div>
         ) : null}
 
-        {!data ? (
+        {tab === "universe" ? (
+          <UniversePage />
+        ) : tab === "candidates" ? (
+          <CandidatesPage />
+        ) : tab === "signals" ? (
+          <SignalsPage />
+        ) : !data ? (
           <div className="py-10 text-center text-sm text-slate-400">Loading candidate engine status...</div>
         ) : (
           <>
@@ -132,8 +164,8 @@ export default function CandidateEnginePage() {
                 </thead>
                 <tbody className="divide-y divide-emerald-950/40">
                   {sources.length ? (
-                    sources.map((s) => (
-                      <tr key={s.candidate_source} className="align-top hover:bg-white/[0.03]">
+                    sources.map((s, index) => (
+                      <tr key={`${s.candidate_source}-${index}`} className="align-top hover:bg-white/[0.03]">
                         <td className="px-4 py-3">
                           <div className="font-semibold text-white">{s.candidate_source}</div>
                         </td>

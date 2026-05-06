@@ -350,7 +350,7 @@ function AutoRunPanel({ state, onToggle, loading, error }: { state: AutoRunContr
 }
 
 function EdgeRadarPanel() {
-  const [symbols, setSymbols] = useState("AMD,NVDA,AAPL,MSFT,BTC-USD");
+  const [symbols, setSymbols] = useState("");
   const [horizon, setHorizon] = useState("swing");
   const [dataSource, setDataSource] = useState("auto");
   const [accountSize, setAccountSize] = useState(5000);

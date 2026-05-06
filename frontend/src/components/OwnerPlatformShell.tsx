@@ -23,6 +23,7 @@ import {
 } from "lucide-react";
 import { useAdminDashboardBundle } from "@/hooks/useAdminDashboardBundle";
 import { buildInsightTexts, buildOwnerCards, buildRecommendationRows, type DashboardCard } from "@/lib/adminDashboardDerived";
+import { OwnerRuntimeSettingsPanel } from "@/components/OwnerRuntimeSettingsPanel";
 
 type OwnerPageConfig = {
   key: string;
@@ -141,7 +142,7 @@ export const ownerPages: OwnerPageConfig[] = [
     group: "Settings",
     icon: Settings,
     purpose: "Safety controls and budgets as stored server-side.",
-    hero: "Live view of /api/auto-run/status and /api/settings (read-only here).",
+    hero: "Live switches POST to /api/settings (runtime_settings.json); metrics refresh after save.",
   },
 ];
 
@@ -288,6 +289,10 @@ export function OwnerPageTemplate({ page }: { page: OwnerPageConfig }) {
 
       {loadError && (
         <div className="mb-4 rounded-xl border border-rose-500/35 bg-rose-500/10 px-4 py-3 text-sm text-rose-200">{loadError}</div>
+      )}
+
+      {page.key === "settings" && (
+        <OwnerRuntimeSettingsPanel settings={bundle.settings} bundleLoading={loading} onAfterSave={() => void refetch()} />
       )}
 
       <section className="mb-4 rounded-2xl border border-emerald-400/15 bg-black/35 p-6 shadow-[0_0_40px_rgba(0,0,0,0.35)] backdrop-blur">

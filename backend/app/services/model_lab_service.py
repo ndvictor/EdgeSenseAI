@@ -3,6 +3,7 @@ from __future__ import annotations
 from typing import Literal
 from pydantic import BaseModel, Field
 
+from app.data_providers.mock_provider import MockMarketDataProvider
 from app.data_providers.provider_factory import get_market_data_provider
 from app.services.feature_engineering_service import build_features
 from app.services.xgboost_ranker_service import RankerInputRow, RankerRunResult, run_xgboost_ranker
@@ -50,12 +51,22 @@ class ModelLabRunResponse(BaseModel):
 
 def run_model_lab_workflow(request: ModelLabRunRequest) -> ModelLabRunResponse:
     provider = get_market_data_provider(request.data_source)
+    mock_provider = MockMarketDataProvider()
     feature_rows: list[FeatureRow] = []
     ranker_rows: list[RankerInputRow] = []
+    fallback_notes: list[str] = []
 
     for symbol in request.symbols:
         asset_class = "crypto" if "-USD" in symbol else "stock"
-        snapshot = provider.get_snapshot(symbol, asset_class=asset_class)
+        try:
+            snapshot = provider.get_snapshot(symbol, asset_class=asset_class)
+        except Exception as exc:
+            if request.data_source == "mock":
+                raise
+            snapshot = mock_provider.get_snapshot(symbol, asset_class=asset_class)
+            fallback_notes.append(
+                f"{symbol}: {request.data_source} snapshot failed ({exc}); used mock prototype row so the lab run can finish."
+            )
         features = build_features(snapshot)
         feature_rows.append(
             FeatureRow(
@@ -87,8 +98,19 @@ def run_model_lab_workflow(request: ModelLabRunRequest) -> ModelLabRunResponse:
     test_rows = total_rows - train_rows
     ranker_result = run_xgboost_ranker(ranker_rows)
 
+    status = "completed_with_fallback" if fallback_notes else "completed"
+    next_steps = (
+        fallback_notes
+        + [
+            "Persist feature rows and labels for repeatable training runs.",
+            "Replace weak prototype labels with target-before-stop outcomes.",
+            "Add train/test date windows rather than row-count split only.",
+            "Persist trained XGBoost model artifacts and load them for inference.",
+        ]
+    )
+
     return ModelLabRunResponse(
-        workflow_status="completed",
+        workflow_status=status,
         data_source=request.data_source,
         model=request.model,
         feature_set=request.feature_set,
@@ -101,10 +123,5 @@ def run_model_lab_workflow(request: ModelLabRunRequest) -> ModelLabRunResponse:
         ),
         features=feature_rows,
         ranker_result=ranker_result,
-        next_steps=[
-            "Persist feature rows and labels for repeatable training runs.",
-            "Replace weak prototype labels with target-before-stop outcomes.",
-            "Add train/test date windows rather than row-count split only.",
-            "Persist trained XGBoost model artifacts and load them for inference.",
-        ],
+        next_steps=next_steps,
     )

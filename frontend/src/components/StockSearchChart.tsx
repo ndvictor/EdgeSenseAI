@@ -4,7 +4,7 @@ import { useEffect, useMemo, useRef, useState } from "react";
 import { createChart, ColorType, type IChartApi, type ISeriesApi, type UTCTimestamp, CandlestickSeries, LineSeries } from "lightweight-charts";
 import { api, type MarketDataSnapshot, type MarketDataSource, type PriceHistory } from "@/lib/api";
 
-const QUICK_SYMBOLS = ["AMD", "NVDA", "AAPL", "MSFT", "TSLA", "META", "GOOGL", "BTC-USD"];
+const QUICK_SYMBOLS: string[] = [];
 
 type ChartMode = "line" | "candles";
 
@@ -75,7 +75,7 @@ export function StockSearchChart({ onSelectionChange, pageEyebrow, pageTitle, pa
   const candleSeriesRef = useRef<ISeriesApi<"Candlestick"> | null>(null);
   const lineSeriesRef = useRef<ISeriesApi<"Line"> | null>(null);
 
-  const [symbol, setSymbol] = useState("AMD");
+  const [symbol, setSymbol] = useState("");
   const [dataSource, setDataSource] = useState<MarketDataSource>("auto");
   const [chartMode, setChartMode] = useState<ChartMode>("line");
   const [period, setPeriod] = useState("1mo");

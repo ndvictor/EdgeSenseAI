@@ -38,7 +38,7 @@ export default function EdgeSignalsPage() {
   const [scannerError, setScannerError] = useState<string | null>(null);
   const [scannerLoading, setScannerLoading] = useState(false);
   const [strategyKey, setStrategyKey] = useState("stock_day_trading");
-  const [scannerSymbols, setScannerSymbols] = useState("AMD,NVDA,AAPL,MSFT,BTC-USD");
+  const [scannerSymbols, setScannerSymbols] = useState("");
   const [scannerSource, setScannerSource] = useState("auto");
   const [accountSize, setAccountSize] = useState(5000);
   const [maxRisk, setMaxRisk] = useState(0.01);

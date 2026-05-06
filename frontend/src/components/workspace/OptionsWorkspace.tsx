@@ -11,21 +11,46 @@ export function OptionsWorkspace() {
   const [feasibility, setFeasibility] = useState<AccountFeasibilityResult | null>(null);
   const [risk, setRisk] = useState<RiskCheckResult | null>(null);
   const [error, setError] = useState<string | null>(null);
+  const [loading, setLoading] = useState(true);
 
   useEffect(() => {
-    Promise.all([
-      api.getMarketSnapshots(),
-      api.getModelPipeline("AMD"),
-      api.getAccountFeasibility("AMD"),
-      api.getRiskCheck("AMD"),
-    ])
-      .then(([snapshots, pipelineResult, feasibilityResult, riskResult]) => {
-        setSnapshot(snapshots.find((item) => item.symbol === "AMD") ?? snapshots[0]);
+    let cancelled = false;
+    setError(null);
+    setLoading(true);
+
+    (async () => {
+      try {
+        const snapshots = await api.getMarketSnapshots();
+        if (cancelled) return;
+        const primary = snapshots[0];
+        if (!primary?.symbol?.trim()) {
+          setSnapshot(null);
+          setPipeline(null);
+          setFeasibility(null);
+          setRisk(null);
+          return;
+        }
+        const sym = primary.symbol.trim();
+        const [pipelineResult, feasibilityResult, riskResult] = await Promise.all([
+          api.getModelPipeline(sym),
+          api.getAccountFeasibility(sym),
+          api.getRiskCheck(sym),
+        ]);
+        if (cancelled) return;
+        setSnapshot(primary);
         setPipeline(pipelineResult);
         setFeasibility(feasibilityResult);
         setRisk(riskResult);
-      })
-      .catch((err) => setError(err.message));
+      } catch (err) {
+        if (!cancelled) setError(err instanceof Error ? err.message : String(err));
+      } finally {
+        if (!cancelled) setLoading(false);
+      }
+    })();
+
+    return () => {
+      cancelled = true;
+    };
   }, []);
 
   return (
@@ -36,9 +61,16 @@ export function OptionsWorkspace() {
         description="Options are only promoted when the underlying, IV context, spread quality, account feasibility, and defined-risk structure align. The platform should avoid naked speculation and wide-spread contracts."
       />
       {error && <div className="rounded-xl border border-amber-500/30 bg-amber-500/10 px-4 py-3 text-sm text-amber-200">{error}</div>}
-      {!snapshot || !pipeline || !feasibility || !risk ? (
+      {loading && !error ? (
         <div className="py-8 text-center text-sm text-slate-400">Loading options workflow...</div>
-      ) : (
+      ) : null}
+      {!loading && !error && (!snapshot || !pipeline || !feasibility || !risk) ? (
+        <div className="rounded-xl border border-slate-700 bg-slate-900/50 px-4 py-8 text-center text-sm text-slate-400">
+          No market snapshot with a symbol yet. Model pipeline, account feasibility, and risk checks are not called until{" "}
+          <code className="text-slate-300">/api/market/snapshots</code> returns at least one snapshot.
+        </div>
+      ) : null}
+      {!loading && !error && snapshot && pipeline && feasibility && risk ? (
         <div className="space-y-4">
           <section className={wsSection}>
             <h2 className="mb-3 text-lg font-semibold text-emerald-300">Underlying readiness: {snapshot.symbol}</h2>
@@ -87,7 +119,7 @@ export function OptionsWorkspace() {
             </p>
           </section>
         </div>
-      )}
+      ) : null}
     </div>
   );
 }
