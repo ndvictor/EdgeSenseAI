@@ -407,20 +407,22 @@ def get_live_watchlist():
     candidates = build_live_candidates()
     alert_count = len([candidate for candidate in candidates if candidate.notify_status in {"alert_queued", "pending_alert"}])
     high_conviction = len([candidate for candidate in candidates if candidate.priority_score >= 85])
+    avg_priority = int(sum(c.priority_score for c in candidates) / len(candidates)) if candidates else 0
+    strongest_trigger = candidates[0].trigger if candidates else "none"
     return LiveWatchlistResponse(
-        mode="prototype_candidates_not_live_signals",
+        mode="no_candidates" if not candidates else "candidate_universe_watch_only",
         live_trading_enabled=False,
         execution_enabled=False,
         summary=LiveWatchlistSummary(
             triggered_now=len(candidates),
             high_conviction=high_conviction,
             alerts_sent_today=alert_count,
-            average_priority_score=int(sum(c.priority_score for c in candidates) / len(candidates)),
-            strongest_trigger=candidates[0].trigger,
+            average_priority_score=avg_priority,
+            strongest_trigger=strongest_trigger,
         ),
         agents=agents(),
         candidates=candidates,
-        disclaimer="Prototype candidates only. Not live market-triggered alerts.",
+        disclaimer="Watchlist-only. Rows are sourced from Candidate Universe until live signal engine is connected.",
     )
 
 

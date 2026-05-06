@@ -1,63 +1,41 @@
+"""Live watchlist candidates.
+
+This service must NOT return hardcoded demo tickers as if they were real signals.
+If no signal engine is connected, we surface candidate-universe entries as
+"watch_only / not_configured" rows so the UI can render user-owned symbols
+without fake triggers/fills.
+"""
+
 from app.schemas import LiveWatchlistCandidate
+from app.services.candidate_universe_service import CandidateStatus, list_candidates
 
 
 def build_live_candidates() -> list[LiveWatchlistCandidate]:
-    return [
-        LiveWatchlistCandidate(
-            symbol="NVDA",
-            asset="Stock",
-            asset_class="stock",
-            horizon="day_trade",
-            trigger="RVOL Breakout",
-            trigger_type="rvol_breakout",
-            priority_score=91,
-            trigger_strength=94,
-            account_fit="needs_smaller_expression",
-            account_fit_label="Needs smaller expression",
-            suggested_expression="Defined-risk spread or alert-only watch",
-            agent_status="agents_reviewing",
-            notify_status="pending_alert",
-            notify_label="Pending alert",
-            data_quality="prototype",
-            reason="Signal requires actionable price plan, spread, liquidity, and account validation before recommendation.",
-            risk_factors=["fast decay", "slippage", "account size mismatch"],
-        ),
-        LiveWatchlistCandidate(
-            symbol="AMD",
-            asset="Option / Stock",
-            asset_class="option",
-            horizon="swing",
-            trigger="Options Flow",
-            trigger_type="unusual_options_flow",
-            priority_score=84,
-            trigger_strength=86,
-            account_fit="feasible_defined_risk",
-            account_fit_label="Feasible defined-risk",
-            suggested_expression="Debit spread if IV and spread pass",
-            agent_status="confirmed",
-            notify_status="alert_queued",
-            notify_label="Alert queued",
-            data_quality="prototype",
-            reason="Options flow and underlying momentum align, pending deeper options scanner.",
-            risk_factors=["IV risk", "wide spread risk"],
-        ),
-        LiveWatchlistCandidate(
-            symbol="BTC-USD",
-            asset="Bitcoin",
-            asset_class="crypto",
-            horizon="intraday",
-            trigger="Volatility Burst",
-            trigger_type="crypto_volatility_burst",
-            priority_score=82,
-            trigger_strength=84,
-            account_fit="risk_review",
-            account_fit_label="Risk review",
-            suggested_expression="Fractional spot or watch-only",
-            agent_status="monitoring",
-            notify_status="watch_only",
-            notify_label="Watch only",
-            data_quality="prototype",
-            reason="Crypto volatility is elevated; risk agent is monitoring before alert escalation.",
-            risk_factors=["high volatility", "liquidation risk"],
-        ),
-    ]
+    rows: list[LiveWatchlistCandidate] = []
+    for c in list_candidates(status=CandidateStatus.ACTIVE):
+        asset_class = (c.asset_class or "stock").lower().strip()
+        if asset_class not in {"stock", "option", "crypto"}:
+            asset_class = "stock"
+        prio = int(max(0, min(100, round(float(c.priority_score or 50.0)))))
+        rows.append(
+            LiveWatchlistCandidate(
+                symbol=c.symbol,
+                asset=asset_class.upper(),
+                asset_class=asset_class,  # type: ignore[arg-type]
+                horizon=c.horizon or "swing",
+                trigger="not_configured",
+                trigger_type="not_configured",
+                priority_score=prio,
+                trigger_strength=prio,
+                account_fit="not_configured",
+                account_fit_label="Not evaluated",
+                suggested_expression="Watch-only until signal + risk gates are connected",
+                agent_status="not_configured",
+                notify_status="watch_only",
+                notify_label="Watch only",
+                data_quality="not_configured",
+                reason="Live watchlist is currently sourced from Candidate Universe (no live signal engine connected).",
+                risk_factors=[],
+            )
+        )
+    return rows
