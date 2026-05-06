@@ -71,7 +71,7 @@ export default function BacktestingPage() {
     api
       .getBacktestingSummary()
       .then(setData)
-      .catch((err) => setError(err.message));
+      .catch(() => setError("Backtesting endpoint not connected yet."));
   }, []);
 
   useEffect(() => {
