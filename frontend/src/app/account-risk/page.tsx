@@ -3,7 +3,7 @@
 import { useEffect, useState } from "react";
 import Link from "next/link";
 import { Settings, AlertCircle, CheckCircle2, XCircle, Activity } from "lucide-react";
-import { api, type AlpacaPaperSnapshot, type SettingsResponse } from "@/lib/api";
+import { api, type AlpacaPaperSnapshot, type ExecutionOrderListItem, type ExecutionSummaryResponse, type SettingsResponse } from "@/lib/api";
 import { MetricCard, PageHeader } from "@/components/Cards";
 
 export default function AccountRiskPage() {
@@ -11,6 +11,10 @@ export default function AccountRiskPage() {
   const [settings, setSettings] = useState<SettingsResponse | null>(null);
   const [error, setError] = useState<string | null>(null);
   const [activeTab, setActiveTab] = useState<"risk" | "portfolio" | "settings">("risk");
+  const [execSummary, setExecSummary] = useState<ExecutionSummaryResponse | null>(null);
+  const [execSummaryErr, setExecSummaryErr] = useState<string | null>(null);
+  const [execOrders, setExecOrders] = useState<ExecutionOrderListItem[]>([]);
+  const [execOrdersErr, setExecOrdersErr] = useState<string | null>(null);
 
   useEffect(() => {
     api.getAlpacaPaperSnapshot()
@@ -19,6 +23,17 @@ export default function AccountRiskPage() {
     api.getSettings()
       .then(setSettings)
       .catch((err) => setError(err instanceof Error ? err.message : "Failed to load settings"));
+  }, []);
+
+  useEffect(() => {
+    api
+      .getExecutionSummary()
+      .then(setExecSummary)
+      .catch((e) => setExecSummaryErr(e instanceof Error ? e.message : "not_configured"));
+    api
+      .getExecutionOrders(40)
+      .then((r) => setExecOrders(r.orders))
+      .catch((e) => setExecOrdersErr(e instanceof Error ? e.message : "not_configured"));
   }, []);
 
   if (error) {
@@ -115,6 +130,54 @@ export default function AccountRiskPage() {
             Risk controls are not loaded yet. If this persists, open Settings → Account risk and save values.
           </section>
         ))}
+
+        {activeTab === "risk" && (
+          <section className="mt-4 rounded-2xl border border-emerald-400/15 bg-black/30 p-4 backdrop-blur">
+            <div className="mb-3 flex items-center justify-between">
+              <h3 className="text-sm font-semibold text-emerald-400">Execution risk (EdgeSense)</h3>
+              <Link href="/tradenow" className="text-xs text-slate-400 hover:text-emerald-400">
+                TradeNow →
+              </Link>
+            </div>
+            {execSummaryErr ? (
+              <p className="text-sm text-amber-200">{execSummaryErr.includes("404") ? "missing_backend_endpoint /api/execution/summary" : `not_configured ${execSummaryErr}`}</p>
+            ) : execSummary ? (
+              <div className="grid grid-cols-2 gap-4 md:grid-cols-4">
+                <MetricCard label="Daily loss used (session)" value={`${execSummary.risk_state.daily_loss_pct_used.toFixed(2)}%`} accent />
+                <MetricCard label="Daily loss cap" value={`${execSummary.edgesense.max_daily_loss_pct}%`} />
+                <MetricCard label="Max trade risk" value={`${execSummary.edgesense.max_trade_risk_pct}%`} />
+                <MetricCard label="Open positions cap" value={String(execSummary.edgesense.max_open_positions)} />
+                <MetricCard label="Max symbol exposure" value={`${execSummary.edgesense.max_symbol_exposure_pct}%`} />
+                <MetricCard label="Risk lockout" value={execSummary.risk_state.risk_lockout_active ? "active" : "clear"} />
+                <MetricCard label="Execution mode" value={execSummary.edgesense.execution_mode} />
+                <MetricCard label="Live trading (env)" value={execSummary.edgesense.live_trading_enabled ? "true" : "false"} />
+              </div>
+            ) : (
+              <p className="text-sm text-slate-400">Loading execution summary…</p>
+            )}
+            <p className="mt-3 text-xs text-slate-500">Risk usage is tracked in-process for execution tests; it is not a broker ledger.</p>
+            {execOrdersErr ? (
+              <p className="mt-4 text-sm text-amber-200">{execOrdersErr.includes("404") ? "missing_backend_endpoint /api/execution/orders" : `not_configured ${execOrdersErr}`}</p>
+            ) : execOrders.length ? (
+              <div className="mt-4">
+                <h4 className="mb-2 text-xs font-semibold uppercase tracking-wide text-slate-500">Recent execution attempts (audit)</h4>
+                <div className="max-h-48 space-y-2 overflow-y-auto text-xs">
+                  {execOrders.slice(0, 12).map((o) => (
+                    <div key={o.audit_id} className="rounded-lg border border-slate-800 bg-black/30 px-3 py-2 text-slate-300">
+                      <span className="font-mono text-emerald-300">{o.audit_id}</span> · {String(o.request_summary?.symbol ?? "—")} ·{" "}
+                      <span className="text-slate-400">{o.final_status}</span>
+                      {o.blockers?.length ? (
+                        <p className="mt-1 text-rose-300">Blockers: {o.blockers.join("; ")}</p>
+                      ) : null}
+                    </div>
+                  ))}
+                </div>
+              </div>
+            ) : (
+              <p className="mt-4 text-xs text-slate-500">No execution audit rows yet.</p>
+            )}
+          </section>
+        )}
 
         {activeTab === "portfolio" && (
         <div className="mt-4 rounded-2xl border border-emerald-400/15 bg-black/30 p-4 backdrop-blur">

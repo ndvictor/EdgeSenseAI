@@ -1,9 +1,17 @@
 "use client";
 
-import { useEffect, useState } from "react";
+import { useCallback, useEffect, useState } from "react";
 import Link from "next/link";
 import { Settings } from "lucide-react";
-import { api, type AlpacaPaperSnapshot, type CommandCenterResponse, type PaperOrderRequest, type PaperOrderResponse, type SettingsResponse } from "@/lib/api";
+import {
+  api,
+  type AlpacaPaperSnapshot,
+  type CommandCenterResponse,
+  type ExecutionOrderListItem,
+  type PaperOrderRequest,
+  type PaperOrderResponse,
+  type SettingsResponse,
+} from "@/lib/api";
 import { MetricCard, PageHeader } from "@/components/Cards";
 
 function money(value: number) {
@@ -71,12 +79,27 @@ export default function PaperTradingPage() {
   const [orderResult, setOrderResult] = useState<PaperOrderResponse | null>(null);
   const [orderLoading, setOrderLoading] = useState(false);
   const [orderError, setOrderError] = useState<string | null>(null);
+  const [execOrders, setExecOrders] = useState<ExecutionOrderListItem[]>([]);
+  const [execOrdersErr, setExecOrdersErr] = useState<string | null>(null);
+  const [execSyncLoading, setExecSyncLoading] = useState<string | null>(null);
 
   useEffect(() => {
     api.getCommandCenter().then(setData).catch((err) => setError(err.message));
     api.getAlpacaPaperSnapshot().then(setAlpaca).catch((err) => setAlpacaError(err.message));
     api.getSettings().then(setSettings).catch((err) => setError(err.message));
   }, []);
+
+  const refreshExecutionOrders = useCallback(() => {
+    setExecOrdersErr(null);
+    api
+      .getExecutionOrders(50)
+      .then((r) => setExecOrders(r.orders))
+      .catch((e) => setExecOrdersErr(e instanceof Error ? e.message : "not_configured"));
+  }, []);
+
+  useEffect(() => {
+    refreshExecutionOrders();
+  }, [orderResult, refreshExecutionOrders]);
 
   const handleSubmitOrder = async () => {
     if (!orderForm.symbol || orderForm.qty <= 0) {
@@ -153,7 +176,7 @@ export default function PaperTradingPage() {
                 type="text"
                 value={orderForm.symbol}
                 onChange={(e) => setOrderForm({ ...orderForm, symbol: e.target.value.toUpperCase() })}
-                placeholder="AAPL"
+                placeholder="Enter symbol"
                 className="w-full rounded-lg border border-slate-700 bg-slate-950 px-3 py-2 text-sm text-white focus:border-emerald-500 focus:outline-none"
               />
             </div>
@@ -371,6 +394,84 @@ export default function PaperTradingPage() {
                   </pre>
                 </div>
               )}
+            </div>
+          )}
+        </section>
+
+        <section className="mb-4 rounded-xl border border-slate-700 bg-slate-900 p-4 shadow-sm">
+          <div className="mb-3 flex flex-wrap items-center justify-between gap-2">
+            <h2 className="text-xl font-semibold text-emerald-400">EdgeSense paper execution log</h2>
+            <button
+              type="button"
+              onClick={refreshExecutionOrders}
+              className="rounded-lg border border-slate-600 bg-slate-800 px-3 py-1.5 text-xs text-slate-200 hover:bg-slate-700"
+            >
+              Refresh
+            </button>
+          </div>
+          <p className="mb-3 text-sm text-slate-400">
+            Backend audit trail from <span className="font-mono text-slate-300">/api/execution/orders</span>. Rejected, canceled, and blocked rows include blockers from prechecks and broker responses.
+          </p>
+          {execOrdersErr ? (
+            <p className="text-sm text-amber-200">
+              {execOrdersErr.includes("404") ? "missing_backend_endpoint /api/execution/orders" : `not_configured ${execOrdersErr}`}
+            </p>
+          ) : execOrders.length === 0 ? (
+            <p className="text-sm text-slate-500">No execution audits yet.</p>
+          ) : (
+            <div className="overflow-x-auto rounded-lg border border-slate-800">
+              <table className="w-full min-w-[720px] text-left text-sm">
+                <thead className="bg-slate-950 text-xs uppercase tracking-wide text-slate-400">
+                  <tr>
+                    <th className="px-3 py-2">Audit</th>
+                    <th className="px-3 py-2">Symbol</th>
+                    <th className="px-3 py-2">Status</th>
+                    <th className="px-3 py-2">Broker order</th>
+                    <th className="px-3 py-2">When</th>
+                    <th className="px-3 py-2">Sync</th>
+                  </tr>
+                </thead>
+                <tbody className="divide-y divide-slate-800">
+                  {execOrders.map((o) => (
+                    <tr key={o.audit_id}>
+                      <td className="px-3 py-2 font-mono text-xs text-emerald-300">{o.audit_id}</td>
+                      <td className="px-3 py-2 font-semibold text-white">{String(o.request_summary?.symbol ?? "—")}</td>
+                      <td className="px-3 py-2">
+                        <StatusBadge value={o.final_status} />
+                        {o.blockers?.length ? (
+                          <p className="mt-1 text-xs text-amber-200">{o.blockers.slice(0, 2).join("; ")}</p>
+                        ) : null}
+                      </td>
+                      <td className="px-3 py-2 font-mono text-xs text-slate-400">{o.broker_order_id ?? "—"}</td>
+                      <td className="px-3 py-2 text-slate-400">{new Date(o.created_at).toLocaleString()}</td>
+                      <td className="px-3 py-2">
+                        {o.broker_order_id ? (
+                          <button
+                            type="button"
+                            disabled={execSyncLoading === o.broker_order_id}
+                            onClick={async () => {
+                              setExecSyncLoading(o.broker_order_id);
+                              try {
+                                await api.postExecutionOrderSync(o.broker_order_id!);
+                                refreshExecutionOrders();
+                              } catch {
+                                /* surfaced via refresh / Alpaca */
+                              } finally {
+                                setExecSyncLoading(null);
+                              }
+                            }}
+                            className="rounded border border-slate-600 px-2 py-1 text-xs text-slate-200 hover:bg-slate-800 disabled:opacity-50"
+                          >
+                            {execSyncLoading === o.broker_order_id ? "…" : "Sync"}
+                          </button>
+                        ) : (
+                          <span className="text-slate-600">—</span>
+                        )}
+                      </td>
+                    </tr>
+                  ))}
+                </tbody>
+              </table>
             </div>
           )}
         </section>

@@ -12,6 +12,7 @@ class BacktestProfile(BaseModel):
     objective: str
     horizon: str
     status: str
+    promotion_gate: str = "contract_ready"
     metrics: list[BacktestMetric]
     next_steps: list[str]
 
@@ -29,6 +30,7 @@ def build_backtesting_summary() -> BacktestingResponse:
                 objective="Rank RVOL, breakout, and trend-pullback candidates for $1K-$10K accounts.",
                 horizon="day_trade_to_swing",
                 status="contract_ready",
+                promotion_gate="contract_ready",
                 metrics=[
                     BacktestMetric(name="Win Rate", value="pending", status="needs historical labels"),
                     BacktestMetric(name="Expectancy", value="pending", status="needs target-before-stop labels"),
@@ -46,6 +48,7 @@ def build_backtesting_summary() -> BacktestingResponse:
                 objective="Validate options-flow candidates after IV, OI, spread, and underlying confirmation.",
                 horizon="swing_to_earnings",
                 status="contract_ready",
+                promotion_gate="contract_ready",
                 metrics=[
                     BacktestMetric(name="Average R", value="pending", status="needs options spread outcomes"),
                     BacktestMetric(name="IV Crush Loss", value="pending", status="needs IV history"),

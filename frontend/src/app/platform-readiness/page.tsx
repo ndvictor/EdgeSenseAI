@@ -1,7 +1,7 @@
 "use client";
 
 import React, { useEffect, useState } from "react";
-import { api, PlatformReadinessResponse, TracingStatusResponse } from "@/lib/api";
+import { api, PlatformReadinessResponse, TracingStatusResponse, type ExecutionSummaryResponse } from "@/lib/api";
 
 const statusColors = {
   pass: "bg-green-500",
@@ -17,6 +17,8 @@ const statusColors = {
 export default function PlatformReadinessPage() {
   const [readiness, setReadiness] = useState<PlatformReadinessResponse | null>(null);
   const [tracing, setTracing] = useState<TracingStatusResponse | null>(null);
+  const [execution, setExecution] = useState<ExecutionSummaryResponse | null>(null);
+  const [executionErr, setExecutionErr] = useState<string | null>(null);
   const [loading, setLoading] = useState(true);
   const [error, setError] = useState<string | null>(null);
   const [refreshKey, setRefreshKey] = useState(0);
@@ -32,6 +34,13 @@ export default function PlatformReadinessPage() {
         ]);
         setReadiness(readinessData);
         setTracing(tracingData);
+        setExecutionErr(null);
+        try {
+          setExecution(await api.getExecutionSummary());
+        } catch (e) {
+          setExecution(null);
+          setExecutionErr(e instanceof Error ? e.message : "not_configured");
+        }
       } catch (err) {
         setError(err instanceof Error ? err.message : "Failed to fetch readiness data");
       } finally {
@@ -110,6 +119,38 @@ export default function PlatformReadinessPage() {
           </svg>
           Refresh
         </button>
+      </div>
+
+      {/* EdgeSense execution (backend env) */}
+      <div className="mb-8 rounded-lg border border-slate-700 bg-slate-900 p-6 shadow">
+        <h3 className="mb-3 text-lg font-semibold text-white">Execution &amp; Alpaca (EdgeSense)</h3>
+        {executionErr ? (
+          <p className="text-sm text-amber-300">
+            {executionErr.includes("404") ? "missing_backend_endpoint /api/execution/summary" : `not_configured — ${executionErr}`}
+          </p>
+        ) : execution ? (
+          <div className="grid grid-cols-1 gap-3 text-sm md:grid-cols-2">
+            <div className="rounded border border-slate-800 bg-slate-800/50 p-3">
+              <p className="text-slate-400">Alpaca / data stack</p>
+              <p className="mt-1 text-slate-200">
+                Use Platform checks below for connection. Paper keys are backend-only; this card reflects{" "}
+                <span className="font-mono text-emerald-300">EDGESENSE_*</span> execution gates.
+              </p>
+            </div>
+            <div className="rounded border border-slate-800 bg-slate-800/50 p-3">
+              <p className="text-slate-400">Order router status</p>
+              <ul className="mt-2 list-inside list-disc space-y-1 text-slate-300">
+                <li>Execution mode: {execution.edgesense.execution_mode}</li>
+                <li>Live trading enabled (env): {execution.edgesense.live_trading_enabled ? "true" : "false"}</li>
+                <li>Human approval required: {execution.edgesense.require_human_approval ? "true" : "false"}</li>
+                <li>Default order type: {execution.edgesense.default_order_type}</li>
+                <li>Risk state: daily loss used {execution.risk_state.daily_loss_pct_used.toFixed(2)}% · lockout {execution.risk_state.risk_lockout_active ? "yes" : "no"}</li>
+              </ul>
+            </div>
+          </div>
+        ) : (
+          <p className="text-sm text-slate-500">Loading execution summary…</p>
+        )}
       </div>
 
       {/* Overall Status */}

@@ -7,7 +7,17 @@ import { MetricCard, PageHeader } from "@/components/Cards";
 import { TradeNowWorkspacePanel } from "@/components/workspace/TradeNowWorkspacePanel";
 import { StockSearchChart, type StockChartSelection } from "@/components/StockSearchChart";
 import { PortfolioHistoryChart } from "@/components/PortfolioHistoryChart";
-import { api, type AccountRiskProfile, type AlpacaPaperPosition, type AlpacaPaperSnapshot, type AlpacaPaperPortfolioHistory, type SettingsResponse } from "@/lib/api";
+import {
+  api,
+  type AccountRiskProfile,
+  type AlpacaPaperPosition,
+  type AlpacaPaperSnapshot,
+  type AlpacaPaperPortfolioHistory,
+  type ExecutionResponse,
+  type ExecutionSummaryResponse,
+  type RecommendationLifecycleRecord,
+  type SettingsResponse,
+} from "@/lib/api";
 
 const API_BASE_URL = process.env.NEXT_PUBLIC_API_URL || "http://localhost:8900";
 
@@ -20,21 +30,79 @@ const TAB_TO_ASSET: Record<Exclude<TradeTab, "execution" | "portfolio">, "stock"
   crypto: "crypto",
 };
 
-const ETF_SYMBOLS = new Set([
-  "SPY", "QQQ", "IWM", "DIA", "VOO", "VTI", "EFA", "EEM", "GLD", "SLV", "TLT", "HYG", "XLF", "XLE", "SMH", "ARKK", "SCHD", "VGT", "IVV", "IJH",
-]);
+function loadEtfSymbolSet(): Set<string> {
+  const raw = process.env.NEXT_PUBLIC_EDGESENSE_ETF_SYMBOLS?.trim();
+  if (!raw) return new Set();
+  return new Set(raw.split(",").map((s) => s.trim().toUpperCase()).filter(Boolean));
+}
+
+const ETF_SYMBOLS = loadEtfSymbolSet();
 
 function defaultSymbolForTab(tab: Exclude<TradeTab, "execution" | "portfolio">): string {
   switch (tab) {
     case "crypto":
-      return "BTC/USD";
+      return (process.env.NEXT_PUBLIC_EDGESENSE_DEFAULT_CRYPTO_SYMBOL ?? "").trim();
     case "options":
-      return "AAPL260116C00200000";
+      return (process.env.NEXT_PUBLIC_EDGESENSE_DEFAULT_OPTION_OSISYMBOL ?? "").trim();
     case "etf":
-      return "SPY";
+      return (process.env.NEXT_PUBLIC_EDGESENSE_DEFAULT_ETF_SYMBOL ?? "").trim();
     default:
-      return "AAPL";
+      return (process.env.NEXT_PUBLIC_EDGESENSE_DEFAULT_STOCK_SYMBOL ?? "").trim();
   }
+}
+
+function buildEdgesenseExecutionRequest(
+  form: {
+    symbol: string;
+    asset_class: "stock" | "etf" | "crypto" | "option";
+    side: string;
+    qty: string;
+    limit_price: string;
+    stop_price: string;
+    type: string;
+    time_in_force: string;
+    human_approval_confirmed: boolean;
+  },
+  selectedRec: import("@/lib/api").RecommendationLifecycleRecord | null,
+): import("@/lib/api").ExecutionRequest {
+  const qty = parseFloat(String(form.qty));
+  const lim = form.limit_price ? parseFloat(String(form.limit_price)) : undefined;
+  const stop = form.stop_price ? parseFloat(String(form.stop_price)) : undefined;
+  const side = form.side === "sell" ? "sell" : "buy";
+  const orderType = form.type as import("@/lib/api").ExecutionRequest["order_type"];
+  const exemptStop = orderType === "market" && (stop === undefined || Number.isNaN(stop));
+  return {
+    org_slug: "default",
+    recommendation_id: selectedRec?.id,
+    symbol: form.symbol.trim().toUpperCase(),
+    asset_class: form.asset_class,
+    side,
+    quantity: Number.isFinite(qty) && qty > 0 ? qty : 1,
+    order_type: orderType,
+    limit_price: lim,
+    stop_price: stop,
+    time_in_force: form.time_in_force as import("@/lib/api").ExecutionRequest["time_in_force"],
+    source: selectedRec ? "recommendation" : "manual",
+    reason: selectedRec?.reason?.slice(0, 500) ?? "tradenow_edgesense_execution",
+    human_approval_confirmed: form.human_approval_confirmed,
+    stop_loss_price:
+      stop !== undefined && Number.isFinite(stop)
+        ? stop
+        : side === "buy" && lim !== undefined && lim > 0
+          ? Math.round(lim * 0.97 * 1e4) / 1e4
+          : undefined,
+    metadata: {
+      ...(exemptStop ? { exempt_stop_loss: true } : {}),
+    },
+    confidence_score: selectedRec?.confidence,
+  };
+}
+
+function apiEndpointErrorLabel(err: unknown, path: string): string {
+  const msg = err instanceof Error ? err.message : String(err);
+  if (msg.includes("404")) return `missing_backend_endpoint ${path}`;
+  if (msg.toLowerCase().includes("failed to fetch") || msg.includes("NetworkError")) return `not_configured ${path}`;
+  return msg;
 }
 
 /** Route Alpaca position rows into the same buckets as the trade tabs (best-effort without asset_class on position). */
@@ -238,7 +306,7 @@ export default function TradeNowPage() {
   const [activeTab, setActiveTab] = useState<TradeTab>("stocks");
 
   const [form, setForm] = useState({
-    symbol: "AAPL",
+    symbol: (process.env.NEXT_PUBLIC_EDGESENSE_DEFAULT_STOCK_SYMBOL ?? "").trim(),
     asset_class: "stock" as "stock" | "etf" | "crypto" | "option",
     side: "buy",
     qty: "1",
@@ -251,12 +319,25 @@ export default function TradeNowPage() {
   });
 
   const [optionBuilder, setOptionBuilder] = useState({
-    root: "AAPL",
-    expiryIso: "2026-01-16",
+    root: (process.env.NEXT_PUBLIC_EDGESENSE_DEFAULT_OPTION_ROOT ?? "").trim(),
+    expiryIso: "",
     right: "C" as "C" | "P",
-    strike: "200",
+    strike: "",
   });
   const [ticketStockSelection, setTicketStockSelection] = useState<StockChartSelection | null>(null);
+
+  const [executionSummary, setExecutionSummary] = useState<ExecutionSummaryResponse | null>(null);
+  const [executionSummaryError, setExecutionSummaryError] = useState<string | null>(null);
+  const [edgesenseResult, setEdgesenseResult] = useState<ExecutionResponse | null>(null);
+  const [edgesenseLoading, setEdgesenseLoading] = useState<"precheck" | "submit" | "approve" | null>(null);
+  const [edgesenseError, setEdgesenseError] = useState<string | null>(null);
+  const [recommendations, setRecommendations] = useState<RecommendationLifecycleRecord[]>([]);
+  const [selectedRecommendationId, setSelectedRecommendationId] = useState<string>("");
+
+  const selectedRecommendation = useMemo(
+    () => recommendations.find((r) => r.id === selectedRecommendationId) ?? null,
+    [recommendations, selectedRecommendationId],
+  );
 
   const onTicketChartSelection = useCallback(
     (sel: StockChartSelection) => {
@@ -314,6 +395,22 @@ export default function TradeNowPage() {
     loadPortfolioHistory();
   }, [loadAlpaca, loadRisk, loadPortfolioHistory]);
 
+  useEffect(() => {
+    if (activeTab !== "execution") return;
+    setExecutionSummaryError(null);
+    api
+      .getExecutionSummary()
+      .then(setExecutionSummary)
+      .catch((e) => {
+        setExecutionSummary(null);
+        setExecutionSummaryError(apiEndpointErrorLabel(e, "/api/execution/summary"));
+      });
+    api
+      .getRecommendationLifecycleList(undefined, undefined, 20)
+      .then(setRecommendations)
+      .catch(() => setRecommendations([]));
+  }, [activeTab]);
+
   const setTab = (tab: TradeTab) => {
     setActiveTab(tab);
     if (tab === "execution" || tab === "portfolio") return;
@@ -337,6 +434,55 @@ export default function TradeNowPage() {
           strike: parsed.strike,
         });
       }
+    }
+  };
+
+  const runEdgesensePrecheck = async () => {
+    if (!form.symbol.trim()) {
+      setEdgesenseError("Enter a symbol in the order ticket (use Stocks/Options/… tabs or type a ticker).");
+      return;
+    }
+    setEdgesenseLoading("precheck");
+    setEdgesenseError(null);
+    try {
+      const body = buildEdgesenseExecutionRequest(form, selectedRecommendation);
+      setEdgesenseResult(await api.postExecutionPrecheck(body));
+    } catch (e) {
+      setEdgesenseError(apiEndpointErrorLabel(e, "/api/execution/precheck"));
+      setEdgesenseResult(null);
+    } finally {
+      setEdgesenseLoading(null);
+    }
+  };
+
+  const submitEdgesensePaper = async () => {
+    if (!form.symbol.trim()) {
+      setEdgesenseError("Enter a symbol in the order ticket.");
+      return;
+    }
+    setEdgesenseLoading("submit");
+    setEdgesenseError(null);
+    try {
+      const body = buildEdgesenseExecutionRequest(form, selectedRecommendation);
+      setEdgesenseResult(await api.postExecutionSubmit(body));
+    } catch (e) {
+      setEdgesenseError(apiEndpointErrorLabel(e, "/api/execution/submit"));
+      setEdgesenseResult(null);
+    } finally {
+      setEdgesenseLoading(null);
+    }
+  };
+
+  const approveEdgesensePending = async () => {
+    if (!edgesenseResult?.audit_id || edgesenseResult.status !== "pending_approval") return;
+    setEdgesenseLoading("approve");
+    setEdgesenseError(null);
+    try {
+      setEdgesenseResult(await api.postExecutionApprove({ audit_id: edgesenseResult.audit_id, org_slug: "default" }));
+    } catch (e) {
+      setEdgesenseError(apiEndpointErrorLabel(e, "/api/execution/approve"));
+    } finally {
+      setEdgesenseLoading(null);
     }
   };
 
@@ -603,6 +749,163 @@ export default function TradeNowPage() {
                 </div>
               </div>
             </section>
+
+            <section className={cardShell}>
+              <h3 className="mb-2 text-xs font-bold uppercase tracking-[0.2em] text-slate-500">EdgeSense execution workflow (backend)</h3>
+              <p className="mb-3 text-[11px] leading-relaxed text-slate-500">
+                Paper-first prechecks and broker routing via <span className="font-mono text-slate-400">/api/execution/*</span>. Symbol and ticket fields follow the asset-class tabs—switch to Stocks/Options/ETF/Crypto to edit the ticket, then return here.
+              </p>
+              {executionSummaryError ? (
+                <p className="mb-3 rounded-lg border border-amber-500/25 bg-amber-500/10 px-2 py-2 text-[11px] text-amber-200">{executionSummaryError}</p>
+              ) : null}
+              <div className="mb-3 flex flex-wrap gap-2">
+                <StatusBadge value={executionSummary?.edgesense.execution_mode ?? "not_configured"} />
+                <StatusBadge value={String(executionSummary?.edgesense.live_trading_enabled ?? "unknown")} />
+                <StatusBadge value={executionSummary?.edgesense.require_human_approval ? "human_approval_on" : "human_approval_off"} />
+              </div>
+              <div className="mb-3 grid grid-cols-1 gap-2 text-[11px] text-slate-400 md:grid-cols-2">
+                <div className="rounded-lg border border-white/10 bg-black/25 px-2 py-2">
+                  <span className="text-slate-500">Risk summary (EdgeSense env caps)</span>
+                  <p className="mt-1 text-slate-200">
+                    Max daily loss {executionSummary?.edgesense.max_daily_loss_pct ?? "—"}% · Max trade risk {executionSummary?.edgesense.max_trade_risk_pct ?? "—"}% · Max
+                    positions {executionSummary?.edgesense.max_open_positions ?? "—"} · Daily loss used {executionSummary?.risk_state.daily_loss_pct_used ?? "—"}%
+                    {executionSummary?.risk_state.risk_lockout_active ? " · lockout" : ""}
+                  </p>
+                </div>
+                <div className="rounded-lg border border-white/10 bg-black/25 px-2 py-2">
+                  <span className="text-slate-500">Portfolio / exposure (configured caps)</span>
+                  <p className="mt-1 text-slate-200">
+                    Max symbol exposure {executionSummary?.edgesense.max_symbol_exposure_pct ?? "—"}% · Allowed:{" "}
+                    {(executionSummary?.edgesense.allowed_asset_classes ?? []).join(", ") || "—"} · Spread cap {executionSummary?.edgesense.max_spread_pct ?? "—"}% · Slippage cap{" "}
+                    {executionSummary?.edgesense.max_slippage_pct ?? "—"}%
+                  </p>
+                </div>
+              </div>
+              <div className="mb-3 rounded-lg border border-white/10 bg-black/25 p-2 text-[11px] text-slate-300">
+                <label className="block text-slate-500">Selected recommendation (optional)</label>
+                <select
+                  className="mt-1 w-full rounded-lg border border-emerald-400/20 bg-black/40 px-2 py-1.5 text-white"
+                  value={selectedRecommendationId}
+                  onChange={(e) => {
+                    const id = e.target.value;
+                    setSelectedRecommendationId(id);
+                    const rec = recommendations.find((r) => r.id === id);
+                    if (rec) {
+                      const acRaw = (rec.asset_class || "stock").toLowerCase();
+                      const ac =
+                        acRaw === "option" ? "option" : acRaw === "crypto" ? "crypto" : acRaw === "etf" ? "etf" : "stock";
+                      setForm((f) => ({
+                        ...f,
+                        symbol: rec.symbol.toUpperCase(),
+                        asset_class: ac,
+                      }));
+                    }
+                  }}
+                >
+                  <option value="">— None (manual / ticket only) —</option>
+                  {recommendations.map((r) => (
+                    <option key={r.id} value={r.id}>
+                      {r.symbol} · {r.status} · {r.action_label}
+                    </option>
+                  ))}
+                </select>
+                {selectedRecommendation ? (
+                  <p className="mt-2 text-slate-400">
+                    <span className="text-emerald-300">{selectedRecommendation.symbol}</span> · score {selectedRecommendation.score.toFixed(2)} · {selectedRecommendation.status}
+                  </p>
+                ) : null}
+              </div>
+              <div className="flex flex-wrap gap-2">
+                <button
+                  type="button"
+                  onClick={runEdgesensePrecheck}
+                  disabled={!!edgesenseLoading}
+                  className="rounded-xl border border-cyan-500/40 bg-cyan-500/10 px-3 py-2 text-[11px] font-bold uppercase text-cyan-200 disabled:opacity-50"
+                >
+                  {edgesenseLoading === "precheck" ? "Precheck…" : "Run precheck"}
+                </button>
+                <button
+                  type="button"
+                  onClick={submitEdgesensePaper}
+                  disabled={!!edgesenseLoading}
+                  className="rounded-xl border border-emerald-500/40 bg-emerald-500/15 px-3 py-2 text-[11px] font-bold uppercase text-emerald-200 disabled:opacity-50"
+                >
+                  {edgesenseLoading === "submit" ? "Submit…" : "Submit paper order (EdgeSense)"}
+                </button>
+                {edgesenseResult?.status === "pending_approval" ? (
+                  <button
+                    type="button"
+                    onClick={approveEdgesensePending}
+                    disabled={!!edgesenseLoading}
+                    className="rounded-xl border border-amber-500/40 bg-amber-500/15 px-3 py-2 text-[11px] font-bold uppercase text-amber-100 disabled:opacity-50"
+                  >
+                    {edgesenseLoading === "approve" ? "…" : "Approve pending (paper)"}
+                  </button>
+                ) : null}
+              </div>
+              {edgesenseError ? <p className="mt-3 text-[11px] text-rose-300">{edgesenseError}</p> : null}
+              {edgesenseResult ? (
+                <div className="mt-3 space-y-2 rounded-xl border border-emerald-500/20 bg-black/30 p-3 text-[11px]">
+                  <div className="flex flex-wrap gap-2">
+                    <StatusBadge value={edgesenseResult.status} />
+                    <StatusBadge value={edgesenseResult.execution_mode} />
+                    <span className="rounded border border-white/10 px-2 py-0.5 font-mono text-[10px] text-slate-400">audit {edgesenseResult.audit_id}</span>
+                  </div>
+                  <p className="text-slate-400">{edgesenseResult.message}</p>
+                  {edgesenseResult.order_id || edgesenseResult.broker_order_id ? (
+                    <p className="font-mono text-[10px] text-slate-500">
+                      order {edgesenseResult.order_id ?? "—"} · broker {edgesenseResult.broker_order_id ?? "—"}
+                    </p>
+                  ) : null}
+                  <div className="grid grid-cols-1 gap-2 md:grid-cols-2">
+                    <div>
+                      <p className="text-[10px] font-semibold uppercase text-slate-500">Precheck</p>
+                      <p className={edgesenseResult.precheck_summary.passed ? "text-emerald-300" : "text-amber-300"}>
+                        {edgesenseResult.precheck_summary.passed ? "passed" : "failed"} · {edgesenseResult.precheck_summary.steps.length} steps
+                      </p>
+                      <ul className="mt-1 max-h-28 space-y-1 overflow-y-auto text-slate-400">
+                        {edgesenseResult.precheck_summary.steps.map((s) => (
+                          <li key={s.name}>
+                            {s.passed ? "✓" : "✗"} {s.name}
+                          </li>
+                        ))}
+                      </ul>
+                    </div>
+                    <div>
+                      <p className="text-[10px] font-semibold uppercase text-slate-500">Post-check</p>
+                      {edgesenseResult.postcheck_summary ? (
+                        <ul className="space-y-1 text-slate-400">
+                          {edgesenseResult.postcheck_summary.warnings?.length ? (
+                            <li>Warnings: {edgesenseResult.postcheck_summary.warnings.join("; ")}</li>
+                          ) : (
+                            <li>No warnings</li>
+                          )}
+                          {edgesenseResult.postcheck_summary.slippage_pct != null ? (
+                            <li>Slippage %: {edgesenseResult.postcheck_summary.slippage_pct}</li>
+                          ) : null}
+                        </ul>
+                      ) : (
+                        <p className="text-slate-500">—</p>
+                      )}
+                    </div>
+                  </div>
+                  {edgesenseResult.blockers.length ? (
+                    <ul className="text-rose-300">
+                      {edgesenseResult.blockers.map((b) => (
+                        <li key={b}>{b}</li>
+                      ))}
+                    </ul>
+                  ) : null}
+                  {edgesenseResult.warnings.length ? (
+                    <ul className="text-amber-200/90">
+                      {edgesenseResult.warnings.map((w) => (
+                        <li key={w}>{w}</li>
+                      ))}
+                    </ul>
+                  ) : null}
+                </div>
+              ) : null}
+            </section>
           </>
         )}
 
@@ -689,7 +992,7 @@ export default function TradeNowPage() {
                 <div className="rounded-xl border border-cyan-500/25 bg-cyan-500/5 p-3 text-xs leading-relaxed text-slate-200">
                   <p className="mb-2 font-bold uppercase tracking-wide text-cyan-300">Alpaca option contract (quick reference)</p>
                   <ul className="list-inside list-disc space-y-1 text-slate-300">
-                    <li>Symbol is OCC format: underlying + YYMMDD + C or P + strike (strike × 1000, 8 digits). Example: AAPL260116C00200000.</li>
+                    <li>Symbol is OCC format: underlying + YYMMDD + C or P + strike (strike × 1000, 8 digits). Example: SYMBOL260116C00200000.</li>
                     <li>Qty is number of contracts; standard U.S. equity multiplier is 100 shares per contract.</li>
                     <li>U.S. equity options are American-style (early exercise rules depend on the clearing/venue).</li>
                     <li>Common order types: market and limit; time-in-force often day or GTC. Paper vs live and complex orders depend on account and API support.</li>

@@ -9,6 +9,7 @@ from app.api.routes.agent_scorecards import router as agent_scorecards_router
 from app.api.routes.agent_validation import router as agent_validation_router
 from app.api.routes.ai_ops import router as ai_ops_router
 from app.api.routes.auto_run import router as auto_run_router
+from app.api.routes.backtesting import router as backtesting_router
 from app.api.routes.candidates_status import router as candidates_status_router
 from app.api.routes.candidate_universe import router as candidate_universe_router
 from app.api.routes.capital_allocation import router as capital_allocation_router
@@ -57,6 +58,7 @@ from app.api.routes.strategy_ranking import router as strategy_ranking_router
 from app.api.routes.strategy_workflows import router as strategy_workflows_router
 from app.api.routes.trade_quality import router as trade_quality_router
 from app.api.routes.tradenow import router as tradenow_router
+from app.api.routes.execution import router as execution_router
 from app.api.routes.trigger_rules import router as trigger_rules_router
 from app.api.routes.universe_discovery import router as universe_discovery_router
 from app.api.routes.universe_selection import router as universe_selection_router
@@ -78,7 +80,6 @@ from app.schemas import (
     SourceDataStatus,
 )
 from app.services.account_feasibility_service import AccountFeasibilityResult, evaluate_account_feasibility
-from app.services.backtesting_service import BacktestingResponse, build_backtesting_summary
 from app.services.candidate_universe_service import get_candidate_symbols
 from app.services.decision_workflow_service import DecisionWorkflowRunRequest, get_latest_decision_workflow_run, run_decision_workflow
 from app.services.edge_signal_service import build_edge_signals
@@ -126,6 +127,7 @@ async def prometheus_middleware(request, call_next):
         REQUEST_COUNT.labels(request.method, endpoint, str(status_code)).inc()
 
 
+app.include_router(backtesting_router, prefix="/api")
 app.include_router(market_data_router, prefix="/api")
 app.include_router(data_sources_router, prefix="/api")
 app.include_router(data_ingestion_router, prefix="/api")
@@ -183,6 +185,7 @@ app.include_router(integration_checks_router, prefix="/api")
 app.include_router(settings_router, prefix="/api")
 app.include_router(tracing_router, prefix="/api")
 app.include_router(tradenow_router, prefix="/api")
+app.include_router(execution_router, prefix="/api")
 
 _ACCOUNT_PROFILE = AccountRiskProfile()
 
@@ -504,11 +507,6 @@ def get_risk_check(symbol: str):
 @app.get("/api/market-regime", response_model=MarketRegimeResponse)
 def get_market_regime():
     return build_market_regime()
-
-
-@app.get("/api/backtesting/summary", response_model=BacktestingResponse)
-def get_backtesting_summary():
-    return build_backtesting_summary()
 
 
 @app.get("/api/journal/summary", response_model=JournalSummary)

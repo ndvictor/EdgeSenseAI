@@ -304,6 +304,28 @@ def _check_candidate_strategies() -> ReadinessCheck:
     )
 
 
+def _check_edgesense_execution() -> ReadinessCheck:
+    from app.execution.edgesense_execution_config import load_edgesense_execution_config
+
+    c = load_edgesense_execution_config()
+    if c.live_trading_enabled:
+        return ReadinessCheck(
+            key="edgesense_live_flag",
+            label="EdgeSense live trading flag",
+            status="warn",
+            message="EDGESENSE_LIVE_TRADING_ENABLED is true — confirm policy before production",
+            required_for="execution",
+        )
+    msg = f"mode={c.execution_mode} human_approval={c.require_human_approval} max_daily_loss_pct={c.max_daily_loss_pct}"
+    return ReadinessCheck(
+        key="edgesense_execution",
+        label="EdgeSense execution config",
+        status="pass",
+        message=msg,
+        required_for="execution",
+    )
+
+
 @router.get("/platform-readiness", response_model=PlatformReadinessResponse)
 def get_platform_readiness():
     """Get platform readiness checklist for persistence and monitoring."""
@@ -319,6 +341,7 @@ def get_platform_readiness():
         _check_live_trading(),
         _check_human_approval(),
         _check_candidate_strategies(),
+        _check_edgesense_execution(),
     ]
 
     blockers = [c.message for c in checks if c.status == "fail"]

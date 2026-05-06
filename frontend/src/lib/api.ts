@@ -2457,6 +2457,137 @@ export type MemoryUpdateResponse = {
   created_at: string;
 };
 
+/** EdgeSense execution workflow (paper-first; backend-owned gates). */
+export type PrecheckStepResult = {
+  name: string;
+  passed: boolean;
+  blockers: string[];
+  warnings: string[];
+  details: Record<string, unknown>;
+  source_timestamps: Record<string, string>;
+};
+
+export type PrecheckSummary = {
+  passed: boolean;
+  steps: PrecheckStepResult[];
+  blockers: string[];
+  warnings: string[];
+};
+
+export type PostcheckSummary = {
+  submission_ok?: boolean | null;
+  fill_quality_ok?: boolean | null;
+  slippage_pct?: number | null;
+  position_sync_ok?: boolean | null;
+  risk_state_updated?: boolean | null;
+  journal_entry_id?: string | null;
+  blockers: string[];
+  warnings: string[];
+  details: Record<string, unknown>;
+};
+
+export type ExecutionRequest = {
+  org_slug?: string;
+  user_id?: string | null;
+  recommendation_id?: string | null;
+  strategy_id?: string | null;
+  symbol: string;
+  asset_class?: "stock" | "option" | "crypto" | "etf";
+  side: "buy" | "sell";
+  quantity?: number | null;
+  notional?: number | null;
+  order_type?: "market" | "limit" | "stop" | "stop_limit";
+  limit_price?: number | null;
+  stop_price?: number | null;
+  time_in_force?: "day" | "gtc" | "ioc" | "opg" | "cls" | "fok";
+  execution_mode?: "paper" | "simulated" | "live_disabled" | "live" | null;
+  reason?: string;
+  confidence_score?: number | null;
+  source?: "signal" | "recommendation" | "manual" | "model_lab" | "backtest";
+  metadata?: Record<string, unknown>;
+  human_approval_confirmed?: boolean;
+  client_request_id?: string | null;
+  stop_loss_price?: number | null;
+};
+
+export type ExecutionResponse = {
+  status: string;
+  execution_mode: string;
+  order_id?: string | null;
+  broker_order_id?: string | null;
+  symbol: string;
+  side: "buy" | "sell";
+  requested_quantity?: number | null;
+  submitted_quantity?: number | null;
+  requested_price?: number | null;
+  submitted_price?: number | null;
+  precheck_summary: PrecheckSummary;
+  postcheck_summary?: PostcheckSummary | null;
+  blockers: string[];
+  warnings: string[];
+  audit_id: string;
+  message: string;
+  created_at?: string | null;
+};
+
+export type ExecutionSummaryResponse = {
+  edgesense: {
+    execution_mode: string;
+    live_trading_enabled: boolean;
+    require_human_approval: boolean;
+    max_daily_loss_pct: number;
+    max_trade_risk_pct: number;
+    max_open_positions: number;
+    max_symbol_exposure_pct: number;
+    allowed_asset_classes: string[];
+    default_order_type: string;
+    max_spread_pct: number;
+    max_slippage_pct: number;
+    order_timeout_seconds: number;
+  };
+  risk_state: {
+    daily_loss_pct_used: number;
+    risk_lockout_active: boolean;
+  };
+  persistence: string;
+};
+
+export type ExecutionOrderListItem = {
+  audit_id: string;
+  final_status: string;
+  broker_order_id: string | null;
+  created_at: string;
+  request_summary: Record<string, unknown>;
+  blockers: string[];
+};
+
+export type ExecutionOrdersListResponse = {
+  orders: ExecutionOrderListItem[];
+};
+
+export type ExecutionOrderDetailResponse = {
+  audit_id?: string;
+  org_slug?: string;
+  final_status?: string;
+  broker_order_id?: string | null;
+  blockers?: string[];
+  warnings?: string[];
+  request_summary?: Record<string, unknown>;
+  precheck?: PrecheckSummary | null;
+  created_at?: string;
+  updated_at?: string;
+  not_configured?: boolean;
+  error?: string;
+} & Record<string, unknown>;
+
+export type ExecutionTestPaperOrderBody = {
+  symbol: string;
+  quantity?: number;
+  limit_price?: number | null;
+  side?: "buy" | "sell";
+  org_slug?: string;
+};
+
 export const api = {
   getCommandCenter: () => request<CommandCenterResponse>("/api/command-center"),
   getAccountRisk: () => request<AccountRiskProfile>("/api/account-risk/profile"),
@@ -2743,6 +2874,26 @@ export const api = {
   // Paper Trading Order API
   placePaperOrder: (payload: PaperOrderRequest) =>
     request<PaperOrderResponse>("/api/paper-trading/order", { method: "POST", body: JSON.stringify(payload) }),
+
+  /** EdgeSense execution workflow (prechecks, paper submit, audit). */
+  getExecutionSummary: () => request<ExecutionSummaryResponse>("/api/execution/summary"),
+  postExecutionPrecheck: (payload: ExecutionRequest) =>
+    request<ExecutionResponse>("/api/execution/precheck", { method: "POST", body: JSON.stringify(payload) }),
+  postExecutionSubmit: (payload: ExecutionRequest) =>
+    request<ExecutionResponse>("/api/execution/submit", { method: "POST", body: JSON.stringify(payload) }),
+  getExecutionOrders: (limit = 50) => request<ExecutionOrdersListResponse>(`/api/execution/orders?limit=${limit}`),
+  getExecutionOrder: (orderId: string) =>
+    request<ExecutionOrderDetailResponse>(`/api/execution/orders/${encodeURIComponent(orderId)}`),
+  postExecutionOrderCancel: (orderId: string) =>
+    request<Record<string, unknown>>(`/api/execution/orders/${encodeURIComponent(orderId)}/cancel`, { method: "POST" }),
+  postExecutionOrderSync: (orderId: string) =>
+    request<Record<string, unknown>>(`/api/execution/orders/${encodeURIComponent(orderId)}/sync`, { method: "POST" }),
+  postExecutionApprove: (payload: { audit_id: string; approved_by?: string | null; org_slug?: string }) =>
+    request<ExecutionResponse>("/api/execution/approve", { method: "POST", body: JSON.stringify(payload) }),
+  postExecutionReject: (payload: { audit_id: string; reason?: string; org_slug?: string }) =>
+    request<ExecutionResponse>("/api/execution/reject", { method: "POST", body: JSON.stringify(payload) }),
+  postExecutionTestPaperOrder: (payload: ExecutionTestPaperOrderBody) =>
+    request<ExecutionResponse>("/api/execution/test-paper-order", { method: "POST", body: JSON.stringify(payload) }),
 
   // Tracing APIs
   getTracingStatus: () => request<TracingStatusResponse>("/api/tracing/status"),

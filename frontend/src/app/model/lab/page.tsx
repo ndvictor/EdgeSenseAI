@@ -5,6 +5,7 @@ import {
   api,
   type BlockedOrPlaceholderModel,
   type DataQualityReport,
+  type ExecutionResponse,
   type FeatureStoreRow,
   type FeatureStoreRunResponse,
   type ModelLabRunRequest,
@@ -24,6 +25,7 @@ const MODEL_LAB_SECTIONS = [
   { id: "model-lab-data-quality", label: "Run Data Quality Check" },
   { id: "model-lab-feature-pipeline", label: "Run Feature Pipeline" },
   { id: "model-lab-model-run", label: "Run Model Run & Run Model Pipeline" },
+  { id: "model-lab-execution-gates", label: "Execution & gates (paper)" },
 ] as const;
 
 type ModelLabSectionId = (typeof MODEL_LAB_SECTIONS)[number]["id"];
@@ -382,6 +384,10 @@ export default function ModelLabPage() {
   const [plan, setPlan] = useState<ModelRunPlanResponse | null>(null);
   const [modelRun, setModelRun] = useState<ModelRunResponse | null>(null);
   const [activeSectionId, setActiveSectionId] = useState<ModelLabSectionId>(MODEL_LAB_SECTIONS[0].id);
+  const [gateAction, setGateAction] = useState<string | null>(null);
+  const [gateError, setGateError] = useState<string | null>(null);
+  const [gateResults, setGateResults] = useState<Record<string, unknown>>({});
+  const [lastPaperExecution, setLastPaperExecution] = useState<ExecutionResponse | null>(null);
   const sectionNavRef = useRef<HTMLDivElement>(null);
   const sectionTabRefs = useRef<Partial<Record<ModelLabSectionId, HTMLAnchorElement>>>({});
   const [sectionIndicator, setSectionIndicator] = useState({ left: 0, width: 0 });
@@ -530,6 +536,24 @@ export default function ModelLabPage() {
       setPipelineError(err instanceof Error ? err.message : "Model pipeline failed");
     } finally {
       setPipelineAction(null);
+    }
+  }
+
+  async function runExecutionGate(label: string, fn: () => Promise<unknown>) {
+    if (!pipelineSymbol) {
+      setGateError("Enter at least one symbol in Symbols before execution gate tests.");
+      return;
+    }
+    setGateAction(label);
+    setGateError(null);
+    try {
+      const out = await fn();
+      setGateResults((prev) => ({ ...prev, [label]: out }));
+    } catch (err) {
+      const msg = err instanceof Error ? err.message : String(err);
+      setGateError(`${label}: ${msg}`);
+    } finally {
+      setGateAction(null);
     }
   }
 
@@ -770,6 +794,91 @@ export default function ModelLabPage() {
               <Panel title="Model Run Plan"><ModelPlanPanel plan={plan} registry={registry} row={latestFeatureRow} quality={quality} loading={pipelineAction === "plan"} /></Panel>
               <Panel title="Model Outputs"><ModelOutputsPanel run={modelRun} loading={pipelineAction === "run"} /></Panel>
               <Panel title="Blocked / Placeholder Models"><BlockedModelsPanel run={modelRun} plan={plan} /></Panel>
+            </div>
+
+            <div id={MODEL_LAB_SECTIONS[4].id} className="scroll-mt-6 space-y-4 border-t border-slate-700/80 pt-6">
+              <h2 className="text-lg font-semibold text-emerald-500">{MODEL_LAB_SECTIONS[4].label}</h2>
+              <Panel title="Paper execution & safety gates (backend)">
+                <p className="mb-4 text-sm leading-relaxed text-slate-400">
+                  Each action calls a real backend endpoint using the first symbol in <span className="font-semibold text-emerald-300">Symbols</span>. Failures surface as errors — there is no mocked success. Paper orders still pass EdgeSense prechecks and env gates.
+                </p>
+                {gateError ? <ErrorState message={gateError} /> : null}
+                <div className="mb-4 flex flex-wrap gap-2">
+                  <PipelineButton
+                    label="Test Data Source"
+                    loading={gateAction === "data"}
+                    disabled={!pipelineSymbol}
+                    onClick={() => runExecutionGate("data_quality", () => api.getDataQuality(pipelineSymbol!, assetClass, dataSource))}
+                  />
+                  <PipelineButton
+                    label="Test Feature Pipeline"
+                    loading={gateAction === "feature"}
+                    disabled={!pipelineSymbol}
+                    onClick={() => runExecutionGate("feature_pipeline", () => api.runFeatureStore({ symbol: pipelineSymbol!, asset_class: assetClass, horizon, source: dataSource }))}
+                  />
+                  <PipelineButton
+                    label="Test Signal Detection"
+                    loading={gateAction === "signal"}
+                    disabled={!pipelineSymbol}
+                    onClick={() => runExecutionGate("signal", () => api.runSignalScoring({ use_latest_events: true, allow_mock: dataSource === "mock", horizon }))}
+                  />
+                  <PipelineButton
+                    label="Test Model Score"
+                    loading={gateAction === "model"}
+                    disabled={!pipelineSymbol}
+                    onClick={() => runExecutionGate("model_score", () => api.getModelPipeline(pipelineSymbol!))}
+                  />
+                  <PipelineButton
+                    label="Test Risk Gate"
+                    loading={gateAction === "risk"}
+                    disabled={!pipelineSymbol}
+                    onClick={() => runExecutionGate("risk_gate", () => api.reviewRisk({ symbol: pipelineSymbol!, asset_class: assetClass, horizon }))}
+                  />
+                  <PipelineButton
+                    label="Test Portfolio Gate"
+                    loading={gateAction === "portfolio"}
+                    disabled={!pipelineSymbol}
+                    onClick={() => runExecutionGate("portfolio_gate", () => api.getAccountFeasibility(pipelineSymbol!))}
+                  />
+                  <PipelineButton
+                    label="Test Paper Order"
+                    loading={gateAction === "paper"}
+                    disabled={!pipelineSymbol}
+                    onClick={() =>
+                      runExecutionGate("paper_order", async () => {
+                        const res = await api.postExecutionTestPaperOrder({ symbol: pipelineSymbol!, quantity: 1, side: "buy" });
+                        setLastPaperExecution(res);
+                        return res;
+                      })
+                    }
+                  />
+                  <PipelineButton
+                    label="Test Post-Execution Check"
+                    loading={gateAction === "post"}
+                    disabled={!lastPaperExecution?.audit_id}
+                    onClick={() =>
+                      runExecutionGate("post_execution", () => api.getExecutionOrder(lastPaperExecution!.audit_id))
+                    }
+                  />
+                </div>
+                {lastPaperExecution ? (
+                  <p className="mb-3 text-xs text-slate-500">
+                    Last paper test audit: <span className="font-mono text-emerald-300">{lastPaperExecution.audit_id}</span> · status {lastPaperExecution.status}
+                  </p>
+                ) : null}
+                <div className="max-h-96 space-y-3 overflow-y-auto rounded-lg border border-slate-800 bg-slate-950 p-3">
+                  {Object.keys(gateResults).length === 0 ? (
+                    <EmptyState message="Run a gate test to capture JSON responses here." />
+                  ) : (
+                    Object.entries(gateResults).map(([k, v]) => (
+                      <div key={k}>
+                        <p className="text-xs font-semibold uppercase tracking-wide text-slate-500">{k}</p>
+                        <pre className="mt-1 max-h-48 overflow-auto rounded border border-slate-800 bg-slate-900 p-2 text-[11px] text-slate-300">{JSON.stringify(v, null, 2)}</pre>
+                      </div>
+                    ))
+                  )}
+                </div>
+              </Panel>
             </div>
           </div>
         </section>
