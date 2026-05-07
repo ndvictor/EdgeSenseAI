@@ -118,6 +118,7 @@ function UnitRow({ unit }: { unit: LabInventoryUnit }) {
       </td>
       <td className="py-2.5 pr-3 capitalize text-slate-400">{unit.tested_status}</td>
       <td className="py-2.5 pr-3 text-slate-400">{unit.promotion_status}</td>
+      <td className="py-2.5 pr-3 text-xs capitalize text-slate-400">{unit.frontend_status ?? unit.implementation_status ?? "—"}</td>
       <td className="py-2.5 pr-3 text-slate-400">{unit.uses_llm ? "Yes" : "No"}</td>
       <td className="py-2.5 pr-3 text-xs text-slate-400">{unit.what_it_should_do}</td>
       <td className="py-2.5 text-xs text-emerald-200/80">{unit.next_action}</td>
@@ -173,6 +174,7 @@ function StageSection({ stage, tab }: { stage: LabInventoryStage; tab: LabTab })
               <th className="pb-2 pr-3">Status</th>
               <th className="pb-2 pr-3">Tested</th>
               <th className="pb-2 pr-3">Promotion</th>
+              <th className="pb-2 pr-3">Frontend</th>
               <th className="pb-2 pr-3">LLM</th>
               <th className="pb-2 pr-3">Purpose</th>
               <th className="pb-2">Next action</th>

@@ -1,7 +1,14 @@
 "use client";
 
 import React, { useEffect, useState } from "react";
-import { api, PlatformReadinessResponse, TracingStatusResponse, type ExecutionSummaryResponse } from "@/lib/api";
+import {
+  api,
+  getPlatformReadinessStatus,
+  type PlatformReadinessResponse,
+  type PlatformReadinessStatusResponse,
+  type TracingStatusResponse,
+  type ExecutionSummaryResponse,
+} from "@/lib/api";
 
 const statusColors = {
   pass: "bg-green-500",
@@ -16,6 +23,7 @@ const statusColors = {
 
 export default function PlatformReadinessPage() {
   const [readiness, setReadiness] = useState<PlatformReadinessResponse | null>(null);
+  const [spine, setSpine] = useState<PlatformReadinessStatusResponse | null>(null);
   const [tracing, setTracing] = useState<TracingStatusResponse | null>(null);
   const [execution, setExecution] = useState<ExecutionSummaryResponse | null>(null);
   const [executionErr, setExecutionErr] = useState<string | null>(null);
@@ -28,11 +36,13 @@ export default function PlatformReadinessPage() {
       setLoading(true);
       setError(null);
       try {
-        const [readinessData, tracingData] = await Promise.all([
+        const [readinessData, spineData, tracingData] = await Promise.all([
           api.getPlatformReadiness(),
+          getPlatformReadinessStatus().catch(() => null),
           api.getTracingStatus(),
         ]);
         setReadiness(readinessData);
+        setSpine(spineData);
         setTracing(tracingData);
         setExecutionErr(null);
         try {
@@ -107,7 +117,7 @@ export default function PlatformReadinessPage() {
         <div>
           <h1 className="text-3xl font-bold text-white">Platform Readiness</h1>
           <p className="text-slate-400 mt-1">
-            System health, persistence status, and safety configuration
+            Operational spine (Phase 4), environment checklist, persistence status, and safety configuration
           </p>
         </div>
         <button
@@ -120,6 +130,76 @@ export default function PlatformReadinessPage() {
           Refresh
         </button>
       </div>
+
+      {spine ? (
+        <div className="mb-10 rounded-xl border border-emerald-500/30 bg-emerald-950/20 p-6 shadow">
+          <h2 className="mb-1 text-lg font-semibold text-emerald-200">Operational checklist (Phase 4)</h2>
+          <p className="mb-4 text-sm text-slate-400">
+            Source: <span className="font-mono text-slate-300">GET /api/platform-readiness/status</span> · updated {String(spine.updated_at ?? "—")}
+          </p>
+          <div className="mb-4 grid gap-3 text-sm md:grid-cols-2">
+            <div className="rounded-lg border border-slate-700 bg-slate-900/80 p-3">
+              <div className="text-xs uppercase text-slate-500">next_action</div>
+              <p className="mt-1 text-slate-200">{String(spine.next_action ?? "—")}</p>
+            </div>
+            <div className="rounded-lg border border-slate-700 bg-slate-900/80 p-3">
+              <div className="text-xs uppercase text-slate-500">safety_summary (backend)</div>
+              <pre className="mt-1 max-h-24 overflow-auto text-xs text-slate-400">
+                {JSON.stringify(spine.systems?.safety_summary ?? {}, null, 2)}
+              </pre>
+            </div>
+          </div>
+          <div className="mb-4 grid gap-3 sm:grid-cols-2 lg:grid-cols-3 xl:grid-cols-4">
+            {[
+              "database",
+              "redis",
+              "agent_runtime",
+              "workflow_orchestrator",
+              "approval_queue",
+              "audit_log",
+              "workflow_scheduler",
+              "governance",
+              "qlib_integration",
+              "proof_registry",
+              "model_evidence",
+              "strategy_evidence",
+              "execution_gates",
+              "master_admin",
+            ].map((k) => (
+              <div key={k} className="rounded-lg border border-slate-700 bg-slate-900/60 p-3">
+                <div className="text-[10px] font-semibold uppercase tracking-wide text-slate-500">{k}</div>
+                <pre className="mt-2 max-h-40 overflow-auto text-[10px] text-slate-400">
+                  {JSON.stringify((spine.systems as Record<string, unknown> | undefined)?.[k] ?? {}, null, 2)}
+                </pre>
+              </div>
+            ))}
+          </div>
+          {(spine.missing_backend_components?.length ?? 0) > 0 ? (
+            <div className="mb-3 rounded border border-amber-600/40 bg-amber-900/20 p-3 text-sm text-amber-100">
+              <div className="font-semibold">missing_backend_components</div>
+              <ul className="mt-1 list-inside list-disc">
+                {(spine.missing_backend_components ?? []).map((x) => (
+                  <li key={x}>{x}</li>
+                ))}
+              </ul>
+            </div>
+          ) : null}
+          {(spine.missing_frontend_components?.length ?? 0) > 0 ? (
+            <div className="rounded border border-sky-600/40 bg-sky-900/20 p-3 text-sm text-sky-100">
+              <div className="font-semibold">missing_frontend_components (backend inventory hint)</div>
+              <ul className="mt-1 list-inside list-disc">
+                {(spine.missing_frontend_components ?? []).map((x) => (
+                  <li key={x}>{x}</li>
+                ))}
+              </ul>
+            </div>
+          ) : null}
+        </div>
+      ) : (
+        <div className="mb-8 rounded-lg border border-slate-700 bg-slate-900/40 p-4 text-sm text-slate-400">
+          Phase 4 operational spine unavailable (API error or offline). Environment checklist below still applies when loaded.
+        </div>
+      )}
 
       {/* EdgeSense execution (backend env) */}
       <div className="mb-8 rounded-lg border border-slate-700 bg-slate-900 p-6 shadow">

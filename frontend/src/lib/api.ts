@@ -2643,6 +2643,190 @@ export type WorkflowRunbookLatestResponse = {
   updated_at?: string;
 } & Record<string, unknown>;
 
+/** Phase 5 — workflow orchestrator & operator APIs */
+export type OrchestratorRunRequest = {
+  workflow_name?: string;
+  asset_class?: string;
+  horizon?: string;
+  mode?: string;
+  source?: string;
+  symbols?: string[];
+  strategy_key?: string | null;
+  max_candidates?: number;
+  stop_at_stage?: number;
+  dry_run?: boolean;
+  require_human_approval?: boolean;
+  allow_submit?: boolean;
+  simulated_position?: boolean;
+  simulated_closed_trade?: boolean;
+  idempotency_key?: string | null;
+  metadata?: Record<string, unknown>;
+};
+
+export type OrchestratorRunRecord = {
+  orchestrator_run_id: string;
+  workflow_run_id: string;
+  status: string;
+  current_stage: number | null;
+  current_agent_key: string | null;
+  stage_timeline: Array<Record<string, unknown>>;
+  agent_run_ids: string[];
+  blockers: string[];
+  warnings: string[];
+  next_action: string;
+  approval_required: boolean;
+  approval_id: string | null;
+  execution_boundary_reached: boolean;
+  submitted_order: boolean;
+  broker_called: boolean;
+  llm_used: boolean;
+  created_at: string;
+  updated_at: string;
+} & Record<string, unknown>;
+
+export type WorkflowOrchestratorTraceResponse = {
+  status?: string;
+  workflow_run_id: string;
+  audit_events?: Array<Record<string, unknown>>;
+} & Record<string, unknown>;
+
+export type AgentRuntimeAgentDescriptor = {
+  agent_key: string;
+  display_name: string;
+  stage_number: number | null;
+  role: string;
+  agent_type: string;
+  status: string;
+  uses_llm: boolean;
+  allowed_tools: string[];
+  forbidden_actions: string[];
+  safety_notes: string[];
+} & Record<string, unknown>;
+
+export type AgentRunRequestBody = {
+  workflow_run_id?: string | null;
+  agent_key: string;
+  inputs: Record<string, unknown>;
+  context?: Record<string, unknown>;
+  dry_run?: boolean;
+  requested_stage?: number | null;
+  idempotency_key?: string | null;
+};
+
+export type AgentRunResultRecord = {
+  run_id: string;
+  workflow_run_id: string;
+  agent_key: string;
+  status: string;
+  decision: Record<string, unknown>;
+  blockers: string[];
+  warnings: string[];
+  next_action: string;
+  next_agent: string | null;
+  trace: Array<Record<string, unknown>>;
+  trace_id: string;
+  created_at: string;
+  persistence_mode?: string | null;
+} & Record<string, unknown>;
+
+export type ApprovalActionBody = {
+  actor?: string;
+  reason?: string | null;
+};
+
+export type ApprovalQueueItemRecord = {
+  approval_id: string;
+  workflow_run_id: string;
+  orchestrator_run_id: string | null;
+  agent_run_id: string | null;
+  approval_type: string;
+  status: string;
+  requested_action: Record<string, unknown>;
+  risk_summary: Record<string, unknown>;
+  required_approver: string | null;
+  expires_at: string | null;
+  created_at: string;
+  updated_at: string;
+} & Record<string, unknown>;
+
+export type AuditLogEventRecord = {
+  audit_id: string;
+  workflow_run_id: string | null;
+  orchestrator_run_id: string | null;
+  agent_run_id: string | null;
+  event_type: string;
+  actor: string;
+  severity: string;
+  message: string;
+  metadata: Record<string, unknown>;
+  created_at: string;
+} & Record<string, unknown>;
+
+export type WorkflowScheduleCreateRequest = {
+  schedule_id?: string | null;
+  name: string;
+  enabled?: boolean;
+  schedule_type?: string;
+  cron_expression?: string | null;
+  interval_seconds?: number | null;
+  workflow_request?: Record<string, unknown>;
+  max_runs_per_day?: number;
+};
+
+export type WorkflowScheduleRecord = {
+  schedule_id: string;
+  name: string;
+  enabled: boolean;
+  schedule_type: string;
+  cron_expression: string | null;
+  interval_seconds: number | null;
+  workflow_request: Record<string, unknown>;
+  max_runs_per_day: number;
+  last_run_at: string | null;
+  next_run_at: string | null;
+  created_at: string;
+  updated_at: string;
+} & Record<string, unknown>;
+
+export type SchedulerRunOnceRequest = {
+  workflow_request?: Record<string, unknown>;
+};
+
+export type WorkflowGovernanceCheckRequest = {
+  workflow_run_id?: string | null;
+  asset_class?: string;
+  horizon?: string;
+  mode?: string;
+  source?: string;
+  symbols?: string[];
+  dry_run?: boolean;
+  require_human_approval?: boolean;
+  allow_submit?: boolean;
+  metadata?: Record<string, unknown>;
+};
+
+export type WorkflowGovernanceCheckResult = {
+  status?: string;
+  decision: "allowed" | "blocked" | "warning" | string;
+  blockers: string[];
+  warnings: string[];
+  gates: Record<string, unknown>;
+  limits: Record<string, unknown>;
+  next_action?: string;
+  created_at?: string;
+} & Record<string, unknown>;
+
+/** GET /api/platform-readiness/status — Phase 4 systems rollup */
+export type PlatformReadinessStatusResponse = {
+  status?: string;
+  data_mode?: string;
+  updated_at?: string;
+  systems?: Record<string, unknown>;
+  missing_backend_components?: string[];
+  missing_frontend_components?: string[];
+  next_action?: string;
+} & Record<string, unknown>;
+
 export type IntegrationCheckCatalogEntry = {
   key: string;
   label: string;
@@ -3998,6 +4182,310 @@ export async function getWorkflowRunbookLatest(): Promise<WorkflowRunbookLatestR
   return request<WorkflowRunbookLatestResponse>("/api/workflow-runbook/latest");
 }
 
+/** Workflow orchestrator (Phase 4) */
+export async function runWorkflowOrchestrator(requestBody: OrchestratorRunRequest): Promise<{ status: string; run: OrchestratorRunRecord }> {
+  return request<{ status: string; run: OrchestratorRunRecord }>("/api/workflow-orchestrator/run", {
+    method: "POST",
+    body: JSON.stringify(requestBody),
+  });
+}
+
+export async function getWorkflowOrchestratorStatus(workflowRunId: string): Promise<WorkflowOrchestratorTraceResponse> {
+  return request<WorkflowOrchestratorTraceResponse>(`/api/workflow-orchestrator/status/${encodeURIComponent(workflowRunId)}`);
+}
+
+export async function getLatestWorkflowOrchestratorRun(): Promise<{ status: string; run: OrchestratorRunRecord | null }> {
+  return request<{ status: string; run: OrchestratorRunRecord | null }>("/api/workflow-orchestrator/latest");
+}
+
+export async function listWorkflowOrchestratorRuns(limit = 20): Promise<{ status: string; runs: OrchestratorRunRecord[] }> {
+  return request<{ status: string; runs: OrchestratorRunRecord[] }>(`/api/workflow-orchestrator/runs?limit=${limit}`);
+}
+
+export async function getWorkflowOrchestratorTrace(workflowRunId: string): Promise<WorkflowOrchestratorTraceResponse> {
+  return request<WorkflowOrchestratorTraceResponse>(`/api/workflow-orchestrator/trace/${encodeURIComponent(workflowRunId)}`);
+}
+
+export async function pauseWorkflowOrchestratorRun(workflowRunId: string): Promise<Record<string, unknown>> {
+  return request<Record<string, unknown>>(`/api/workflow-orchestrator/${encodeURIComponent(workflowRunId)}/pause`, { method: "POST" });
+}
+
+export async function resumeWorkflowOrchestratorRun(workflowRunId: string): Promise<Record<string, unknown>> {
+  return request<Record<string, unknown>>(`/api/workflow-orchestrator/${encodeURIComponent(workflowRunId)}/resume`, { method: "POST" });
+}
+
+export async function stopWorkflowOrchestratorRun(workflowRunId: string): Promise<Record<string, unknown>> {
+  return request<Record<string, unknown>>(`/api/workflow-orchestrator/${encodeURIComponent(workflowRunId)}/stop`, { method: "POST" });
+}
+
+/** Agent runtime */
+export async function getAgentRuntimeStatus(): Promise<Record<string, unknown>> {
+  return request<Record<string, unknown>>("/api/agent-runtime/status");
+}
+
+export async function getAgentRuntimeAgents(): Promise<{ status: string; agents: AgentRuntimeAgentDescriptor[] }> {
+  return request<{ status: string; agents: AgentRuntimeAgentDescriptor[] }>("/api/agent-runtime/agents");
+}
+
+export async function getAgentRuntimeLatest(): Promise<Record<string, unknown>> {
+  return request<Record<string, unknown>>("/api/agent-runtime/latest");
+}
+
+export async function createAgentWorkflowRun(requestBody: Record<string, unknown>): Promise<{ status: string; workflow_run: Record<string, unknown> }> {
+  return request<{ status: string; workflow_run: Record<string, unknown> }>("/api/agent-runtime/workflow-runs", {
+    method: "POST",
+    body: JSON.stringify(requestBody),
+  });
+}
+
+export async function getAgentWorkflowRun(workflowRunId: string): Promise<{ status: string; workflow_run: Record<string, unknown> }> {
+  return request<{ status: string; workflow_run: Record<string, unknown> }>(
+    `/api/agent-runtime/workflow-runs/${encodeURIComponent(workflowRunId)}`,
+  );
+}
+
+export async function createAgentRun(requestBody: AgentRunRequestBody): Promise<{ status: string; agent_run: AgentRunResultRecord }> {
+  return request<{ status: string; agent_run: AgentRunResultRecord }>("/api/agent-runtime/agent-runs", {
+    method: "POST",
+    body: JSON.stringify(requestBody),
+  });
+}
+
+export async function getAgentRun(runId: string): Promise<{ status: string; agent_run: AgentRunResultRecord }> {
+  return request<{ status: string; agent_run: AgentRunResultRecord }>(`/api/agent-runtime/agent-runs/${encodeURIComponent(runId)}`);
+}
+
+/** Approval queue */
+export async function getApprovalQueueStatus(): Promise<Record<string, unknown>> {
+  return request<Record<string, unknown>>("/api/approval-queue/status");
+}
+
+export async function listApprovalQueueItems(limit = 50, statusFilter?: string): Promise<{ status: string; items: ApprovalQueueItemRecord[] }> {
+  const q = new URLSearchParams({ limit: String(limit) });
+  if (statusFilter) q.set("status", statusFilter);
+  return request<{ status: string; items: ApprovalQueueItemRecord[] }>(`/api/approval-queue/items?${q}`);
+}
+
+export async function getApprovalQueueItem(approvalId: string): Promise<{ status: string; item: ApprovalQueueItemRecord }> {
+  return request<{ status: string; item: ApprovalQueueItemRecord }>(
+    `/api/approval-queue/items/${encodeURIComponent(approvalId)}`,
+  );
+}
+
+export async function approveApprovalQueueItem(approvalId: string, body: ApprovalActionBody): Promise<{ status: string; item: ApprovalQueueItemRecord }> {
+  return request<{ status: string; item: ApprovalQueueItemRecord }>(
+    `/api/approval-queue/items/${encodeURIComponent(approvalId)}/approve`,
+    { method: "POST", body: JSON.stringify(body) },
+  );
+}
+
+export async function rejectApprovalQueueItem(approvalId: string, body: ApprovalActionBody): Promise<{ status: string; item: ApprovalQueueItemRecord }> {
+  return request<{ status: string; item: ApprovalQueueItemRecord }>(
+    `/api/approval-queue/items/${encodeURIComponent(approvalId)}/reject`,
+    { method: "POST", body: JSON.stringify(body) },
+  );
+}
+
+export async function cancelApprovalQueueItem(approvalId: string, body: ApprovalActionBody): Promise<{ status: string; item: ApprovalQueueItemRecord }> {
+  return request<{ status: string; item: ApprovalQueueItemRecord }>(
+    `/api/approval-queue/items/${encodeURIComponent(approvalId)}/cancel`,
+    { method: "POST", body: JSON.stringify(body) },
+  );
+}
+
+/** Audit log */
+export async function getAuditLogStatus(): Promise<Record<string, unknown>> {
+  return request<Record<string, unknown>>("/api/audit-log/status");
+}
+
+export async function listAuditLogEvents(limit = 50): Promise<{ status: string; events: AuditLogEventRecord[] }> {
+  return request<{ status: string; events: AuditLogEventRecord[] }>(`/api/audit-log/events?limit=${limit}`);
+}
+
+export async function getAuditLogEvent(auditId: string): Promise<{ status: string; event: AuditLogEventRecord }> {
+  return request<{ status: string; event: AuditLogEventRecord }>(`/api/audit-log/events/${encodeURIComponent(auditId)}`);
+}
+
+/** Workflow scheduler */
+export async function getWorkflowSchedulerStatus(): Promise<Record<string, unknown>> {
+  return request<Record<string, unknown>>("/api/workflow-scheduler/status");
+}
+
+export async function listWorkflowSchedules(limit = 50): Promise<{ status: string; schedules: WorkflowScheduleRecord[] }> {
+  return request<{ status: string; schedules: WorkflowScheduleRecord[] }>(`/api/workflow-scheduler/schedules?limit=${limit}`);
+}
+
+export async function getWorkflowSchedule(scheduleId: string): Promise<{ status: string; schedule: WorkflowScheduleRecord }> {
+  return request<{ status: string; schedule: WorkflowScheduleRecord }>(
+    `/api/workflow-scheduler/schedules/${encodeURIComponent(scheduleId)}`,
+  );
+}
+
+export async function createWorkflowSchedule(requestBody: WorkflowScheduleCreateRequest): Promise<{ status: string; schedule: WorkflowScheduleRecord }> {
+  return request<{ status: string; schedule: WorkflowScheduleRecord }>("/api/workflow-scheduler/schedules", {
+    method: "POST",
+    body: JSON.stringify(requestBody),
+  });
+}
+
+export async function updateWorkflowSchedule(
+  scheduleId: string,
+  requestBody: WorkflowScheduleCreateRequest,
+): Promise<{ status: string; schedule: WorkflowScheduleRecord }> {
+  return request<{ status: string; schedule: WorkflowScheduleRecord }>(
+    `/api/workflow-scheduler/schedules/${encodeURIComponent(scheduleId)}`,
+    { method: "PUT", body: JSON.stringify(requestBody) },
+  );
+}
+
+export async function enableWorkflowSchedule(scheduleId: string): Promise<{ status: string; schedule: WorkflowScheduleRecord }> {
+  return request<{ status: string; schedule: WorkflowScheduleRecord }>(
+    `/api/workflow-scheduler/schedules/${encodeURIComponent(scheduleId)}/enable`,
+    { method: "POST" },
+  );
+}
+
+export async function disableWorkflowSchedule(scheduleId: string): Promise<{ status: string; schedule: WorkflowScheduleRecord }> {
+  return request<{ status: string; schedule: WorkflowScheduleRecord }>(
+    `/api/workflow-scheduler/schedules/${encodeURIComponent(scheduleId)}/disable`,
+    { method: "POST" },
+  );
+}
+
+export async function runWorkflowSchedulerOnce(requestBody: SchedulerRunOnceRequest): Promise<{ status: string; run: OrchestratorRunRecord }> {
+  return request<{ status: string; run: OrchestratorRunRecord }>("/api/workflow-scheduler/run-once", {
+    method: "POST",
+    body: JSON.stringify(requestBody),
+  });
+}
+
+/** Workflow governance */
+export async function getWorkflowGovernanceStatus(): Promise<Record<string, unknown>> {
+  return request<Record<string, unknown>>("/api/workflow-governance/status");
+}
+
+export async function checkWorkflowGovernance(requestBody: WorkflowGovernanceCheckRequest): Promise<WorkflowGovernanceCheckResult> {
+  return request<WorkflowGovernanceCheckResult>("/api/workflow-governance/check", {
+    method: "POST",
+    body: JSON.stringify(requestBody),
+  });
+}
+
+/** Platform readiness Phase 4 rollup */
+export async function getPlatformReadinessStatus(): Promise<PlatformReadinessStatusResponse> {
+  return request<PlatformReadinessStatusResponse>("/api/platform-readiness/status");
+}
+
+/** Qlib integration */
+export async function getQlibStatus(): Promise<Record<string, unknown>> {
+  return request<Record<string, unknown>>("/api/qlib/status");
+}
+
+export async function listQlibArtifacts(limit = 50): Promise<{ status: string; artifacts: Record<string, unknown>[] }> {
+  return request<{ status: string; artifacts: Record<string, unknown>[] }>(`/api/qlib/artifacts?limit=${limit}`);
+}
+
+export async function getLatestQlibSignals(): Promise<{ status: string; artifact: Record<string, unknown> | null }> {
+  return request<{ status: string; artifact: Record<string, unknown> | null }>("/api/qlib/signals/latest");
+}
+
+export async function scoreQlibSignals(requestBody: Record<string, unknown>): Promise<{ status: string; artifact: Record<string, unknown> }> {
+  return request<{ status: string; artifact: Record<string, unknown> }>("/api/qlib/signals/score", {
+    method: "POST",
+    body: JSON.stringify(requestBody),
+  });
+}
+
+export async function recordQlibBacktest(requestBody: Record<string, unknown>): Promise<{ status: string; artifact: Record<string, unknown> }> {
+  return request<{ status: string; artifact: Record<string, unknown> }>("/api/qlib/backtests/record", {
+    method: "POST",
+    body: JSON.stringify(requestBody),
+  });
+}
+
+export async function registerQlibModelArtifact(requestBody: Record<string, unknown>): Promise<{ status: string; artifact: Record<string, unknown> }> {
+  return request<{ status: string; artifact: Record<string, unknown> }>("/api/qlib/models/register-artifact", {
+    method: "POST",
+    body: JSON.stringify(requestBody),
+  });
+}
+
+export async function runQlibAutomationBacktest(requestBody: Record<string, unknown>): Promise<Record<string, unknown>> {
+  return request<Record<string, unknown>>("/api/qlib/automation/backtest", {
+    method: "POST",
+    body: JSON.stringify(requestBody),
+  });
+}
+
+export async function runQlibAutomationScore(requestBody: Record<string, unknown>): Promise<Record<string, unknown>> {
+  return request<Record<string, unknown>>("/api/qlib/automation/score", {
+    method: "POST",
+    body: JSON.stringify(requestBody),
+  });
+}
+
+export async function getQlibAutomationStatus(): Promise<Record<string, unknown>> {
+  return request<Record<string, unknown>>("/api/qlib/automation/status");
+}
+
+/** Evidence registries */
+export async function getProofRegistryStatus(): Promise<Record<string, unknown>> {
+  return request<Record<string, unknown>>("/api/proof-registry/status");
+}
+
+export async function listProofRegistryRecords(limit = 50): Promise<{ status: string; records: Record<string, unknown>[] }> {
+  return request<{ status: string; records: Record<string, unknown>[] }>(`/api/proof-registry/records?limit=${limit}`);
+}
+
+export async function getLatestProofRegistryRecord(): Promise<{ status: string; record: Record<string, unknown> | null }> {
+  return request<{ status: string; record: Record<string, unknown> | null }>("/api/proof-registry/latest");
+}
+
+export async function createProofRegistryRecord(requestBody: Record<string, unknown>): Promise<{ status: string; record: Record<string, unknown> }> {
+  return request<{ status: string; record: Record<string, unknown> }>("/api/proof-registry/records", {
+    method: "POST",
+    body: JSON.stringify(requestBody),
+  });
+}
+
+export async function getModelEvidenceStatus(): Promise<Record<string, unknown>> {
+  return request<Record<string, unknown>>("/api/model-evidence/status");
+}
+
+export async function listModelEvidenceRecords(limit = 50): Promise<{ status: string; records: Record<string, unknown>[] }> {
+  return request<{ status: string; records: Record<string, unknown>[] }>(`/api/model-evidence/records?limit=${limit}`);
+}
+
+export async function getLatestModelEvidenceRecord(): Promise<{ status: string; record: Record<string, unknown> | null }> {
+  return request<{ status: string; record: Record<string, unknown> | null }>("/api/model-evidence/latest");
+}
+
+export async function createModelEvidenceRecord(requestBody: Record<string, unknown>): Promise<{ status: string; record: Record<string, unknown> }> {
+  return request<{ status: string; record: Record<string, unknown> }>("/api/model-evidence/records", {
+    method: "POST",
+    body: JSON.stringify(requestBody),
+  });
+}
+
+export async function getStrategyEvidenceStatus(): Promise<Record<string, unknown>> {
+  return request<Record<string, unknown>>("/api/strategy-evidence/status");
+}
+
+export async function listStrategyEvidenceRecords(limit = 50): Promise<{ status: string; records: Record<string, unknown>[] }> {
+  return request<{ status: string; records: Record<string, unknown>[] }>(`/api/strategy-evidence/records?limit=${limit}`);
+}
+
+export async function getLatestStrategyEvidenceRecord(): Promise<{ status: string; record: Record<string, unknown> | null }> {
+  return request<{ status: string; record: Record<string, unknown> | null }>("/api/strategy-evidence/latest");
+}
+
+export async function createStrategyEvidenceRecord(requestBody: Record<string, unknown>): Promise<{ status: string; record: Record<string, unknown> }> {
+  return request<{ status: string; record: Record<string, unknown> }>("/api/strategy-evidence/records", {
+    method: "POST",
+    body: JSON.stringify(requestBody),
+  });
+}
+
 export const api = {
   getCommandCenter: () => request<CommandCenterResponse>("/api/command-center"),
   getAccountRisk: () => request<AccountRiskProfile>("/api/account-risk/profile"),
@@ -4336,6 +4824,64 @@ export const api = {
   getWorkflowRunbookStatus,
   getWorkflowRunbookStages,
   getWorkflowRunbookLatest,
+
+  /** Phase 5 — orchestrator, runtime, approvals, audit, scheduler, governance, readiness v2, Qlib, evidence. */
+  runWorkflowOrchestrator,
+  getWorkflowOrchestratorStatus,
+  getLatestWorkflowOrchestratorRun,
+  listWorkflowOrchestratorRuns,
+  getWorkflowOrchestratorTrace,
+  pauseWorkflowOrchestratorRun,
+  resumeWorkflowOrchestratorRun,
+  stopWorkflowOrchestratorRun,
+  getAgentRuntimeStatus,
+  getAgentRuntimeAgents,
+  getAgentRuntimeLatest,
+  createAgentWorkflowRun,
+  getAgentWorkflowRun,
+  createAgentRun,
+  getAgentRun,
+  getApprovalQueueStatus,
+  listApprovalQueueItems,
+  getApprovalQueueItem,
+  approveApprovalQueueItem,
+  rejectApprovalQueueItem,
+  cancelApprovalQueueItem,
+  getAuditLogStatus,
+  listAuditLogEvents,
+  getAuditLogEvent,
+  getWorkflowSchedulerStatus,
+  listWorkflowSchedules,
+  getWorkflowSchedule,
+  createWorkflowSchedule,
+  updateWorkflowSchedule,
+  enableWorkflowSchedule,
+  disableWorkflowSchedule,
+  runWorkflowSchedulerOnce,
+  getWorkflowGovernanceStatus,
+  checkWorkflowGovernance,
+  getPlatformReadinessStatus,
+  getQlibStatus,
+  listQlibArtifacts,
+  getLatestQlibSignals,
+  scoreQlibSignals,
+  recordQlibBacktest,
+  registerQlibModelArtifact,
+  runQlibAutomationBacktest,
+  runQlibAutomationScore,
+  getQlibAutomationStatus,
+  getProofRegistryStatus,
+  listProofRegistryRecords,
+  getLatestProofRegistryRecord,
+  createProofRegistryRecord,
+  getModelEvidenceStatus,
+  listModelEvidenceRecords,
+  getLatestModelEvidenceRecord,
+  createModelEvidenceRecord,
+  getStrategyEvidenceStatus,
+  listStrategyEvidenceRecords,
+  getLatestStrategyEvidenceRecord,
+  createStrategyEvidenceRecord,
 
   /** Catalog of integration matrix checks (Alpaca, data stack, signals, risk, …). */
   getIntegrationChecksCatalog: () => request<IntegrationChecksCatalogResponse>("/api/integration-checks/catalog"),
