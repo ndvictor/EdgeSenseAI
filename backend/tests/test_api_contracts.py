@@ -213,6 +213,202 @@ def test_session_router_latest_after_evaluation_contract():
     assert payload["session"]["session_id"].startswith("sr_")
 
 
+def test_strategy_eligibility_status_contract():
+    response = client.get("/api/strategy-eligibility/status")
+    assert response.status_code == 200
+    payload = response.json()
+    assert payload["status"] == "ok"
+    assert payload["stage"]["stage_number"] == 7
+    assert payload["stage"]["stage_key"] == "strategy_eligibility"
+    assert payload["data_mode"] == "rules_v1"
+    assert payload["updated_at"]
+    assert payload["summary"]["checker_status"] == "ready"
+    assert payload["summary"]["llm_required"] is False
+    assert payload["supported_strategy_groups"]
+    assert any(c["key"] == "proof_status_checker" for c in payload["checkers"])
+
+
+def test_strategy_eligibility_check_baseline_proven_regime_aware_momentum_contract():
+    response = client.post(
+        "/api/strategy-eligibility/check",
+        json={
+            "workflow_context": {"selected_workflow": "baseline_fast_path", "workflow_mode": "baseline", "session": "market_open"},
+            "strategy_candidate": {
+                "strategy_key": "regime_aware_momentum_catalyst",
+                "strategy_group": "regime_aware_momentum",
+                "proof_status": "proven",
+                "paper_status": "passed",
+                "requires_backtest": False,
+                "already_backtested": True,
+            },
+            "market_condition": {
+                "regime": "risk_on",
+                "volatility_state": "normal",
+                "liquidity_state": "good",
+                "data_quality": "pass",
+                "urgency": "high",
+            },
+            "features": {
+                "rvol_elevated": True,
+                "price_above_vwap": True,
+                "vwap_reclaiming": False,
+                "relative_strength_positive": True,
+                "catalyst_confirmed": True,
+                "volume_confirms": True,
+                "spread_pass": True,
+                "risk_reward_pass": True,
+            },
+            "account_state": {
+                "risk_budget_available": True,
+                "paper_trading_enabled": True,
+                "live_trading_enabled": False,
+                "human_approval_required": True,
+            },
+        },
+    )
+    assert response.status_code == 200
+    payload = response.json()
+    assert payload["status"] == "ok"
+    eligibility = payload["eligibility"]
+    assert eligibility["eligible"] is True
+    assert eligibility["eligibility_status"] == "eligible"
+    assert eligibility["strategy_key"] == "regime_aware_momentum_catalyst"
+    assert eligibility["strategy_group"] == "regime_aware_momentum"
+
+
+def test_strategy_eligibility_check_data_quality_fail_blocked_contract():
+    response = client.post(
+        "/api/strategy-eligibility/check",
+        json={
+            "workflow_context": {"selected_workflow": "baseline_fast_path", "workflow_mode": "baseline", "session": "market_open"},
+            "strategy_candidate": {
+                "strategy_key": "regime_aware_momentum_catalyst",
+                "strategy_group": "regime_aware_momentum",
+                "proof_status": "proven",
+                "paper_status": "passed",
+                "requires_backtest": False,
+                "already_backtested": True,
+            },
+            "market_condition": {
+                "regime": "risk_on",
+                "volatility_state": "normal",
+                "liquidity_state": "good",
+                "data_quality": "fail",
+                "urgency": "high",
+            },
+            "features": {
+                "rvol_elevated": True,
+                "price_above_vwap": True,
+                "vwap_reclaiming": False,
+                "relative_strength_positive": True,
+                "catalyst_confirmed": True,
+                "volume_confirms": True,
+                "spread_pass": True,
+                "risk_reward_pass": True,
+            },
+            "account_state": {
+                "risk_budget_available": True,
+                "paper_trading_enabled": True,
+                "live_trading_enabled": False,
+                "human_approval_required": True,
+            },
+        },
+    )
+    assert response.status_code == 200
+    payload = response.json()
+    assert payload["status"] == "ok"
+    assert payload["eligibility"]["eligibility_status"] == "blocked"
+
+
+def test_strategy_eligibility_check_market_open_unproven_returns_paper_only_contract():
+    response = client.post(
+        "/api/strategy-eligibility/check",
+        json={
+            "workflow_context": {"selected_workflow": "baseline_fast_path", "workflow_mode": "baseline", "session": "market_open"},
+            "strategy_candidate": {
+                "strategy_key": "regime_aware_momentum_catalyst",
+                "strategy_group": "regime_aware_momentum",
+                "proof_status": "backtest_required",
+                "paper_status": "testing",
+                "requires_backtest": True,
+                "already_backtested": False,
+            },
+            "market_condition": {
+                "regime": "risk_on",
+                "volatility_state": "normal",
+                "liquidity_state": "good",
+                "data_quality": "pass",
+                "urgency": "high",
+            },
+            "features": {
+                "rvol_elevated": True,
+                "price_above_vwap": True,
+                "vwap_reclaiming": False,
+                "relative_strength_positive": True,
+                "catalyst_confirmed": True,
+                "volume_confirms": True,
+                "spread_pass": True,
+                "risk_reward_pass": True,
+            },
+            "account_state": {
+                "risk_budget_available": True,
+                "paper_trading_enabled": True,
+                "live_trading_enabled": False,
+                "human_approval_required": True,
+            },
+        },
+    )
+    assert response.status_code == 200
+    payload = response.json()
+    assert payload["status"] == "ok"
+    assert payload["eligibility"]["eligibility_status"] == "paper_only"
+
+
+def test_strategy_eligibility_latest_after_check_contract():
+    _ = client.post(
+        "/api/strategy-eligibility/check",
+        json={
+            "workflow_context": {"selected_workflow": "baseline_fast_path", "workflow_mode": "baseline", "session": "market_open"},
+            "strategy_candidate": {
+                "strategy_key": "regime_aware_momentum_catalyst",
+                "strategy_group": "regime_aware_momentum",
+                "proof_status": "proven",
+                "paper_status": "passed",
+                "requires_backtest": False,
+                "already_backtested": True,
+            },
+            "market_condition": {
+                "regime": "risk_on",
+                "volatility_state": "normal",
+                "liquidity_state": "good",
+                "data_quality": "pass",
+                "urgency": "high",
+            },
+            "features": {
+                "rvol_elevated": True,
+                "price_above_vwap": True,
+                "vwap_reclaiming": False,
+                "relative_strength_positive": True,
+                "catalyst_confirmed": True,
+                "volume_confirms": True,
+                "spread_pass": True,
+                "risk_reward_pass": True,
+            },
+            "account_state": {
+                "risk_budget_available": True,
+                "paper_trading_enabled": True,
+                "live_trading_enabled": False,
+                "human_approval_required": True,
+            },
+        },
+    )
+    latest = client.get("/api/strategy-eligibility/latest")
+    assert latest.status_code == 200
+    payload = latest.json()
+    assert payload["status"] == "ok"
+    assert payload["eligibility"]["check_id"].startswith("se_")
+
+
 def _patch_market_routes_use_mock(monkeypatch: pytest.MonkeyPatch) -> None:
     """These routes call ``get_market_data_provider()`` with no query override; tests must not depend on workspace runtime_settings.json (e.g. Polygon)."""
     from app.data_providers.mock_provider import MockMarketDataProvider

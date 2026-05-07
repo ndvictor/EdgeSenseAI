@@ -505,7 +505,7 @@ _UNITS_SPEC: list[tuple[str, list[int] | Literal["all"], str, bool, str, bool, s
         [7],
         "AI-Agent no LLM",
         True,
-        "need_to_build_clarify",
+        "present_partial",
         False,
         "Decide whether a response path is allowed given proofs and gates.",
         "Consolidate eligibility logic scattered across services.",
