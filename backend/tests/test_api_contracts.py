@@ -764,6 +764,123 @@ def test_execution_planner_precheck_handoff_broker_disabled_still_never_calls_br
     assert payload["handoff"]["broker_called"] is False
 
 
+def _position_monitoring_sample_request(
+    *,
+    asset_class: str = "stock",
+    invalidation_hit: bool = False,
+    force_close_requested: bool = False,
+    emergency_stop: bool = False,
+    current_price: float = 152.20,
+    entry_price: float = 151.15,
+    stop_loss: float = 148.85,
+    reduce_at_r_multiple: float = 1.5,
+) -> dict:
+    return {
+        "position": {
+            "position_id": "pos_sample",
+            "symbol": "AMD",
+            "asset_class": asset_class,
+            "horizon": "day_trading",
+            "side": "long",
+            "quantity": 13,
+            "entry_price": entry_price,
+            "current_price": current_price,
+            "stop_loss": stop_loss,
+            "target_price": 155.60,
+            "opened_at": "2026-05-07T09:40:00-05:00",
+        },
+        "thesis": {
+            "strategy_key": "regime_aware_momentum_catalyst",
+            "trigger_key": "rvol_vwap_breakout_confirm",
+            "vwap": 149.80,
+            "price_above_vwap": True,
+            "volume_confirms": True,
+            "relative_strength_positive": True,
+            "invalidation_hit": invalidation_hit,
+        },
+        "risk_state": {
+            "account_equity": 10000,
+            "max_daily_loss_percent": 3.0,
+            "current_daily_loss_percent": 0.4,
+            "max_position_size_percent": 20.0,
+            "force_close_requested": force_close_requested,
+            "emergency_stop": emergency_stop,
+        },
+        "monitoring_preferences": {
+            "time_stop_minutes": 45,
+            "reduce_at_r_multiple": reduce_at_r_multiple,
+            "exit_at_thesis_invalid": True,
+        },
+        "evaluated_at": "2026-05-07T10:00:00-05:00",
+    }
+
+
+def test_position_monitoring_status_contract():
+    response = client.get("/api/position-monitoring/status")
+    assert response.status_code == 200
+    payload = response.json()
+    assert payload["status"] == "ok"
+    assert payload["stage"]["stage_number"] == 11
+    assert payload["stage"]["stage_key"] == "position_monitoring"
+    assert payload["data_mode"] == "rules_v1"
+    assert payload["updated_at"]
+    assert payload["summary"]["monitor_status"] == "ready"
+    assert payload["summary"]["llm_required"] is False
+    assert "hold" in payload["supported_position_actions"]
+
+
+def test_position_monitoring_healthy_returns_hold_or_watch():
+    response = client.post("/api/position-monitoring/evaluate", json=_position_monitoring_sample_request())
+    assert response.status_code == 200
+    payload = response.json()
+    assert payload["status"] == "ok"
+    ev = payload["position_evaluation"]
+    assert ev["evaluation_id"].startswith("pm_")
+    assert ev["recommended_action"] in {"hold", "watch"}
+    assert ev["llm_used"] is False
+
+
+def test_position_monitoring_invalidation_hit_returns_exit_review():
+    response = client.post("/api/position-monitoring/evaluate", json=_position_monitoring_sample_request(invalidation_hit=True))
+    assert response.status_code == 200
+    payload = response.json()
+    assert payload["position_evaluation"]["recommended_action"] == "exit_review"
+
+
+def test_position_monitoring_force_close_requested_returns_exit_review():
+    response = client.post("/api/position-monitoring/evaluate", json=_position_monitoring_sample_request(force_close_requested=True))
+    assert response.status_code == 200
+    payload = response.json()
+    assert payload["position_evaluation"]["recommended_action"] == "exit_review"
+
+
+def test_position_monitoring_crypto_asset_class_returns_blocked():
+    response = client.post("/api/position-monitoring/evaluate", json=_position_monitoring_sample_request(asset_class="crypto"))
+    assert response.status_code == 200
+    payload = response.json()
+    assert payload["position_evaluation"]["recommended_action"] == "blocked"
+
+
+def test_position_monitoring_high_r_multiple_returns_reduce():
+    # r_multiple ≈ (current-entry)/(entry-stop) -> (154.6-151.15)/2.30 ≈ 1.5
+    response = client.post(
+        "/api/position-monitoring/evaluate",
+        json=_position_monitoring_sample_request(current_price=154.60, reduce_at_r_multiple=1.2),
+    )
+    assert response.status_code == 200
+    payload = response.json()
+    assert payload["position_evaluation"]["recommended_action"] == "reduce"
+
+
+def test_position_monitoring_latest_after_evaluation_contract():
+    _ = client.post("/api/position-monitoring/evaluate", json=_position_monitoring_sample_request())
+    latest = client.get("/api/position-monitoring/latest")
+    assert latest.status_code == 200
+    payload = latest.json()
+    assert payload["status"] == "ok"
+    assert payload["position_evaluation"]["evaluation_id"].startswith("pm_")
+
+
 def _patch_market_routes_use_mock(monkeypatch: pytest.MonkeyPatch) -> None:
     """These routes call ``get_market_data_provider()`` with no query override; tests must not depend on workspace runtime_settings.json (e.g. Polygon)."""
     from app.data_providers.mock_provider import MockMarketDataProvider

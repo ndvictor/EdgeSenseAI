@@ -66,6 +66,7 @@ from app.api.routes.strategy_eligibility import router as strategy_eligibility_r
 from app.api.routes.trigger_rules import router as trigger_rules_router
 from app.api.routes.trigger_monitoring import router as trigger_monitoring_router
 from app.api.routes.execution_planner import router as execution_planner_router
+from app.api.routes.position_monitoring import router as position_monitoring_router
 from app.api.routes.universe_discovery import router as universe_discovery_router
 from app.api.routes.universe_selection import router as universe_selection_router
 from app.api.routes.upper_workflow import router as upper_workflow_router
@@ -198,6 +199,7 @@ app.include_router(session_router_router, prefix="/api")
 app.include_router(strategy_eligibility_router, prefix="/api")
 app.include_router(trigger_monitoring_router, prefix="/api")
 app.include_router(execution_planner_router, prefix="/api")
+app.include_router(position_monitoring_router, prefix="/api")
 
 _ACCOUNT_PROFILE = AccountRiskProfile()
 
