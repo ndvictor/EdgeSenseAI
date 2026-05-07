@@ -2052,6 +2052,121 @@ export type ExecutionPlannerPrecheckHandoffResponse = {
   handoff: ExecutionPlannerPrecheckHandoffResult;
 };
 
+export type PositionMonitoringPnl = {
+  unrealized_pnl?: number | null;
+  unrealized_pnl_percent?: number | null;
+  r_multiple?: number | null;
+};
+
+export type PositionMonitoringRisk = {
+  risk_per_share?: number | null;
+  current_distance_to_stop?: number | null;
+  distance_to_target?: number | null;
+  position_notional?: number | null;
+  position_size_percent?: number | null;
+  daily_loss_percent?: number | null;
+};
+
+export type PositionThesisValidity = {
+  valid: boolean;
+  score?: number | null;
+  passed_reasons?: string[];
+  failed_reasons?: string[];
+};
+
+export type PositionMonitoringBlockedStage = {
+  stage: number;
+  reason: string;
+};
+
+export type PositionMonitoringChecker = {
+  checker: string;
+  status: "pass" | "warn" | "fail" | "unknown" | string;
+  message?: string;
+  details?: Record<string, unknown>;
+};
+
+export type PositionEvaluationResult = {
+  evaluation_id: string;
+  position_id: string;
+  symbol: string;
+  asset_class: string;
+  horizon: string;
+  position_status: string;
+  recommended_action: string;
+  llm_used?: boolean;
+  pnl: PositionMonitoringPnl;
+  risk: PositionMonitoringRisk;
+  thesis_validity: PositionThesisValidity;
+  blockers?: string[];
+  warnings?: string[];
+  allowed_next_stages?: number[];
+  blocked_next_stages?: PositionMonitoringBlockedStage[];
+  next_action?: string;
+  created_at?: string;
+};
+
+export type PositionMonitoringStatusResponse = {
+  status: "ok" | string;
+  stage: number;
+  monitor_status: "ready" | "partial" | "not_ready" | "unknown" | string;
+  llm_required: false | boolean;
+  supported_position_actions: string[];
+  checker_statuses?: PositionMonitoringChecker[];
+  latest_evaluation?: PositionEvaluationResult | null;
+  updated_at?: string;
+  next_action?: string;
+};
+
+export type PositionMonitoringEvaluateRequest = {
+  position: {
+    position_id: string;
+    symbol: string;
+    asset_class: string;
+    horizon: string;
+    side: string;
+    quantity: number;
+    entry_price: number;
+    current_price: number;
+    stop_loss: number;
+    target_price: number;
+    opened_at: string;
+  };
+  thesis: {
+    strategy_key: string;
+    trigger_key: string;
+    vwap: number;
+    price_above_vwap: boolean;
+    volume_confirms: boolean;
+    relative_strength_positive: boolean;
+    invalidation_hit: boolean;
+  };
+  risk_state: {
+    account_equity: number;
+    max_daily_loss_percent: number;
+    current_daily_loss_percent: number;
+    max_position_size_percent: number;
+    force_close_requested: boolean;
+    emergency_stop: boolean;
+  };
+  monitoring_preferences: {
+    time_stop_minutes: number;
+    reduce_at_r_multiple: number;
+    exit_at_thesis_invalid: boolean;
+  };
+  evaluated_at: string;
+};
+
+export type PositionMonitoringEvaluateResponse = {
+  status: "ok" | string;
+  result: PositionEvaluationResult;
+};
+
+export type PositionMonitoringLatestResponse = {
+  status: "ok" | string;
+  result: PositionEvaluationResult | null;
+};
+
 export type IntegrationCheckCatalogEntry = {
   key: string;
   label: string;
@@ -3333,6 +3448,23 @@ export async function createExecutionPlannerPrecheckHandoff(
   });
 }
 
+export async function getPositionMonitoringStatus(): Promise<PositionMonitoringStatusResponse> {
+  return request<PositionMonitoringStatusResponse>("/api/position-monitoring/status");
+}
+
+export async function evaluatePositionMonitoring(
+  requestBody: PositionMonitoringEvaluateRequest
+): Promise<PositionMonitoringEvaluateResponse> {
+  return request<PositionMonitoringEvaluateResponse>("/api/position-monitoring/evaluate", {
+    method: "POST",
+    body: JSON.stringify(requestBody),
+  });
+}
+
+export async function getLatestPositionMonitoringEvaluation(): Promise<PositionMonitoringLatestResponse> {
+  return request<PositionMonitoringLatestResponse>("/api/position-monitoring/latest");
+}
+
 export const api = {
   getCommandCenter: () => request<CommandCenterResponse>("/api/command-center"),
   getAccountRisk: () => request<AccountRiskProfile>("/api/account-risk/profile"),
@@ -3646,6 +3778,11 @@ export const api = {
   createExecutionPlan,
   getLatestExecutionPlan,
   createExecutionPlannerPrecheckHandoff,
+
+  /** Stage 11 Position Monitoring — monitoring visibility (no close). */
+  getPositionMonitoringStatus,
+  evaluatePositionMonitoring,
+  getLatestPositionMonitoringEvaluation,
 
   /** Catalog of integration matrix checks (Alpaca, data stack, signals, risk, …). */
   getIntegrationChecksCatalog: () => request<IntegrationChecksCatalogResponse>("/api/integration-checks/catalog"),
