@@ -1262,6 +1262,53 @@ def test_learning_loop_latest_after_evaluate_contract():
     assert payload["learning_decision"]["decision_id"].startswith("ll_")
 
 
+def test_workflow_runbook_status_contract():
+    r = client.get("/api/workflow-runbook/status")
+    assert r.status_code == 200
+    payload = r.json()
+    assert payload["status"] == "ok"
+    assert payload["data_mode"] == "aggregated_status_v1"
+    scope = payload["scope"]
+    assert scope["asset_class"] == "stock"
+    assert scope["horizon"] == "day_trading"
+    assert scope["mode"] == "paper_first"
+    assert scope["llm_required"] is False
+
+
+def test_workflow_runbook_stages_returns_14_plus_and_has_execution_planner_and_execution_gated():
+    r = client.get("/api/workflow-runbook/stages")
+    assert r.status_code == 200
+    payload = r.json()
+    assert payload["status"] == "ok"
+    stages = payload["stages"]
+    assert len(stages) >= 14
+
+    st9 = next(s for s in stages if s["stage_number"] == 9)
+    assert "/api/execution-planner" in st9["backend_endpoint_family"]
+
+    st10 = next(s for s in stages if s["stage_number"] == 10)
+    assert st10["implementation_status"] == "existing_gated"
+    assert st10["submits_orders"] is False
+
+
+def test_workflow_runbook_latest_contract_and_no_execution_trigger():
+    r = client.get("/api/workflow-runbook/latest")
+    assert r.status_code == 200
+    payload = r.json()
+    assert payload["status"] == "ok"
+    assert payload["data_mode"] == "latest_snapshot_v1"
+    assert "latest" in payload
+    # Should not trigger execution; should only reflect stored snapshots (likely None)
+    assert "execution_planner" in payload["latest"]
+
+
+def test_workflow_runbook_stages_all_uses_llm_false():
+    r = client.get("/api/workflow-runbook/stages")
+    assert r.status_code == 200
+    stages = r.json()["stages"]
+    assert all(bool(s["uses_llm"]) is False for s in stages)
+
+
 def _patch_market_routes_use_mock(monkeypatch: pytest.MonkeyPatch) -> None:
     """These routes call ``get_market_data_provider()`` with no query override; tests must not depend on workspace runtime_settings.json (e.g. Polygon)."""
     from app.data_providers.mock_provider import MockMarketDataProvider
