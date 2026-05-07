@@ -68,6 +68,7 @@ from app.api.routes.trigger_monitoring import router as trigger_monitoring_route
 from app.api.routes.execution_planner import router as execution_planner_router
 from app.api.routes.position_monitoring import router as position_monitoring_router
 from app.api.routes.close_position import router as close_position_router
+from app.api.routes.post_trade_evaluation import router as post_trade_evaluation_router
 from app.api.routes.universe_discovery import router as universe_discovery_router
 from app.api.routes.universe_selection import router as universe_selection_router
 from app.api.routes.upper_workflow import router as upper_workflow_router
@@ -202,6 +203,7 @@ app.include_router(trigger_monitoring_router, prefix="/api")
 app.include_router(execution_planner_router, prefix="/api")
 app.include_router(position_monitoring_router, prefix="/api")
 app.include_router(close_position_router, prefix="/api")
+app.include_router(post_trade_evaluation_router, prefix="/api")
 
 _ACCOUNT_PROFILE = AccountRiskProfile()
 

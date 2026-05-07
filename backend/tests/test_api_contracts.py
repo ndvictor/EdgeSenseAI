@@ -987,6 +987,144 @@ def test_close_position_latest_after_review_contract():
     assert payload["close_review"]["review_id"].startswith("cp_")
 
 
+def _post_trade_evaluation_sample_request(
+    *,
+    asset_class: str = "stock",
+    exit_reason: str = "target_hit",
+    used_approved_strategy: bool = True,
+    respected_stop_loss: bool = True,
+    respected_master_admin_gates: bool = True,
+    max_allowed_slippage_percent: float = 0.15,
+    actual_entry_price: float = 151.20,
+    actual_exit_price: float = 155.50,
+    planned_entry_price: float = 151.15,
+    planned_exit_price: float = 155.60,
+) -> dict:
+    return {
+        "trade": {
+            "trade_id": "trade_sample",
+            "symbol": "AMD",
+            "asset_class": asset_class,
+            "horizon": "day_trading",
+            "side": "long",
+            "quantity": 13,
+            "planned_entry_price": planned_entry_price,
+            "actual_entry_price": actual_entry_price,
+            "planned_exit_price": planned_exit_price,
+            "actual_exit_price": actual_exit_price,
+            "stop_loss": 148.85,
+            "target_price": 155.60,
+            "opened_at": "2026-05-07T09:40:00-05:00",
+            "closed_at": "2026-05-07T10:25:00-05:00",
+            "exit_reason": exit_reason,
+        },
+        "workflow_context": {
+            "selected_workflow": "baseline_fast_path",
+            "strategy_key": "regime_aware_momentum_catalyst",
+            "trigger_key": "rvol_vwap_breakout_confirm",
+            "session": "market_open",
+        },
+        "thesis_outcome": {
+            "thesis_valid_at_exit": True,
+            "invalidation_hit": False,
+            "price_above_vwap_at_exit": True,
+            "volume_confirmed_at_exit": True,
+            "relative_strength_positive_at_exit": True,
+        },
+        "execution_quality": {
+            "planned_entry_price": planned_entry_price,
+            "actual_entry_price": actual_entry_price,
+            "planned_exit_price": planned_exit_price,
+            "actual_exit_price": actual_exit_price,
+            "max_allowed_slippage_percent": max_allowed_slippage_percent,
+        },
+        "rule_compliance": {
+            "entered_after_trigger": True,
+            "used_approved_strategy": used_approved_strategy,
+            "respected_position_size": True,
+            "respected_stop_loss": respected_stop_loss,
+            "respected_master_admin_gates": respected_master_admin_gates,
+            "human_approval_obtained": True,
+        },
+    }
+
+
+def test_post_trade_evaluation_status_contract():
+    r = client.get("/api/post-trade-evaluation/status")
+    assert r.status_code == 200
+    payload = r.json()
+    assert payload["status"] == "ok"
+    assert payload["stage"]["stage_number"] == 13
+    assert payload["stage"]["stage_key"] == "post_trade_evaluation"
+    assert payload["data_mode"] == "rules_v1"
+
+
+def test_post_trade_evaluation_target_hit_positive():
+    r = client.post("/api/post-trade-evaluation/evaluate", json=_post_trade_evaluation_sample_request(exit_reason="target_hit"))
+    assert r.status_code == 200
+    p = r.json()["post_trade_evaluation"]
+    assert p["outcome_label"] == "target_hit"
+    assert p["outcome_status"] == "positive"
+
+
+def test_post_trade_evaluation_stopped_out_negative():
+    r = client.post(
+        "/api/post-trade-evaluation/evaluate",
+        json=_post_trade_evaluation_sample_request(
+            exit_reason="stopped_out",
+            actual_exit_price=148.85,
+            planned_exit_price=148.85,
+        ),
+    )
+    assert r.status_code == 200
+    p = r.json()["post_trade_evaluation"]
+    assert p["outcome_label"] == "stopped_out"
+    assert p["outcome_status"] == "negative"
+
+
+def test_post_trade_evaluation_crypto_asset_class_blocked():
+    r = client.post("/api/post-trade-evaluation/evaluate", json=_post_trade_evaluation_sample_request(asset_class="crypto"))
+    assert r.status_code == 200
+    p = r.json()["post_trade_evaluation"]
+    assert p["outcome_status"] == "blocked"
+    assert "asset_class_not_supported" in p["blockers"]
+
+
+def test_post_trade_evaluation_critical_rule_failure_rule_violation_review_needed():
+    r = client.post(
+        "/api/post-trade-evaluation/evaluate",
+        json=_post_trade_evaluation_sample_request(used_approved_strategy=False),
+    )
+    assert r.status_code == 200
+    p = r.json()["post_trade_evaluation"]
+    assert p["outcome_label"] == "rule_violation"
+    assert p["outcome_status"] == "review_needed"
+
+
+def test_post_trade_evaluation_high_slippage_flags_slippage_issue():
+    # Force slippage fail: (155.50 - 150.00) / 150 * 100 = 3.67% vs max 0.15%
+    r = client.post(
+        "/api/post-trade-evaluation/evaluate",
+        json=_post_trade_evaluation_sample_request(
+            planned_exit_price=150.00,
+            max_allowed_slippage_percent=0.15,
+        ),
+    )
+    assert r.status_code == 200
+    p = r.json()["post_trade_evaluation"]
+    assert p["execution_quality_result"]["slippage_status"] in {"warn", "fail"}
+    assert "slippage_exceeded_threshold" in p["warnings"]
+
+
+def test_post_trade_evaluation_latest_after_evaluation_contract():
+    _ = client.post("/api/post-trade-evaluation/evaluate", json=_post_trade_evaluation_sample_request(exit_reason="target_hit"))
+    latest = client.get("/api/post-trade-evaluation/latest")
+    assert latest.status_code == 200
+    payload = latest.json()
+    assert payload["status"] == "ok"
+    assert payload["post_trade_evaluation"]["evaluation_id"].startswith("pte_")
+
+
 def _patch_market_routes_use_mock(monkeypatch: pytest.MonkeyPatch) -> None:
     """These routes call ``get_market_data_provider()`` with no query override; tests must not depend on workspace runtime_settings.json (e.g. Polygon)."""
     from app.data_providers.mock_provider import MockMarketDataProvider
