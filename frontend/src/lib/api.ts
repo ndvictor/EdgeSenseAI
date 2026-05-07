@@ -1746,6 +1746,103 @@ export type StrategyEligibilityLatestResponse = {
   result: StrategyEligibilityResult | null;
 };
 
+export type TriggerTiming = {
+  created_at: string;
+  expires_at: string;
+  evaluated_at: string;
+  seconds_to_expiration?: number | null;
+  is_expired?: boolean;
+  is_within_window?: boolean;
+};
+
+export type TriggerBlockedStage = {
+  stage: number;
+  reason: string;
+};
+
+export type TriggerCheckerResult = {
+  checker: string;
+  status: "pass" | "warn" | "fail" | "unknown" | string;
+  message?: string;
+  details?: Record<string, unknown>;
+};
+
+export type TriggerEvaluationResult = {
+  symbol: string;
+  asset_class: string;
+  horizon: string;
+  trigger_key: string;
+  trigger_state: string;
+  reason: string;
+  llm_used?: boolean;
+  timing?: TriggerTiming;
+  requirements_passed?: string[];
+  requirements_failed?: string[];
+  blockers?: string[];
+  warnings?: string[];
+  checker_results?: TriggerCheckerResult[];
+  allowed_next_stages?: number[];
+  blocked_next_stages?: TriggerBlockedStage[];
+  next_action?: string;
+  created_at?: string;
+};
+
+export type TriggerMonitoringStatusResponse = {
+  status: "ok" | string;
+  stage: number;
+  monitor_status: "ready" | "partial" | "not_ready" | "unknown" | string;
+  llm_required: false | boolean;
+  supported_trigger_states: string[];
+  checker_statuses?: TriggerCheckerResult[];
+  latest_evaluation?: TriggerEvaluationResult | null;
+  updated_at?: string;
+  next_action?: string;
+};
+
+export type TriggerMonitoringEvaluateRequest = {
+  workflow_context: {
+    selected_workflow: string;
+    workflow_mode: string;
+    session: string;
+  };
+  eligibility_context: {
+    eligible: boolean;
+    eligibility_status: string;
+    strategy_key: string;
+    strategy_group: string;
+  };
+  trigger_candidate: {
+    symbol: string;
+    asset_class: string;
+    horizon: string;
+    trigger_key: string;
+    created_at: string;
+    expires_at: string;
+    trigger_price: number;
+    current_price: number;
+    vwap: number;
+  };
+  current_state: {
+    evaluated_at: string;
+    data_quality: string;
+    spread_pass: boolean;
+    volume_confirms: boolean;
+    price_above_trigger: boolean;
+    price_above_vwap: boolean;
+    invalidation_hit: boolean;
+  };
+};
+
+export type TriggerMonitoringEvaluateResponse = {
+  status: "ok" | string;
+  result: TriggerEvaluationResult;
+};
+
+export type TriggerMonitoringLatestResponse = {
+  status: "ok" | string;
+  result: TriggerEvaluationResult | null;
+};
+
 export type IntegrationCheckCatalogEntry = {
   key: string;
   label: string;
@@ -2984,6 +3081,23 @@ export async function getLatestStrategyEligibilityCheck(): Promise<StrategyEligi
   return request<StrategyEligibilityLatestResponse>("/api/strategy-eligibility/latest");
 }
 
+export async function getTriggerMonitoringStatus(): Promise<TriggerMonitoringStatusResponse> {
+  return request<TriggerMonitoringStatusResponse>("/api/trigger-monitoring/status");
+}
+
+export async function evaluateTriggerMonitoring(
+  requestBody: TriggerMonitoringEvaluateRequest
+): Promise<TriggerMonitoringEvaluateResponse> {
+  return request<TriggerMonitoringEvaluateResponse>("/api/trigger-monitoring/evaluate", {
+    method: "POST",
+    body: JSON.stringify(requestBody),
+  });
+}
+
+export async function getLatestTriggerMonitoringEvaluation(): Promise<TriggerMonitoringLatestResponse> {
+  return request<TriggerMonitoringLatestResponse>("/api/trigger-monitoring/latest");
+}
+
 export const api = {
   getCommandCenter: () => request<CommandCenterResponse>("/api/command-center"),
   getAccountRisk: () => request<AccountRiskProfile>("/api/account-risk/profile"),
@@ -3286,6 +3400,11 @@ export const api = {
   getStrategyEligibilityStatus,
   checkStrategyEligibility,
   getLatestStrategyEligibilityCheck,
+
+  /** Stage 8 Trigger Monitoring — trigger-state visibility/simulation. */
+  getTriggerMonitoringStatus,
+  evaluateTriggerMonitoring,
+  getLatestTriggerMonitoringEvaluation,
 
   /** Catalog of integration matrix checks (Alpaca, data stack, signals, risk, …). */
   getIntegrationChecksCatalog: () => request<IntegrationChecksCatalogResponse>("/api/integration-checks/catalog"),
