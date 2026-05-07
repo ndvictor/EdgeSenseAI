@@ -1,9 +1,52 @@
 "use client";
 
-import { useEffect, useState } from "react";
+import { useEffect, useMemo, useState } from "react";
 import { PageHeader, MetricCard } from "@/components/Cards";
-import { api, type JournalOutcomeResponse, type PerformanceDriftResponse, type ResearchPriorityResponse, type ModelStrategyUpdateResponse, type MemoryUpdateResponse } from "@/lib/api";
+import {
+  api,
+  type JournalOutcomeResponse,
+  type LearningLoopDecisionResult,
+  type LearningLoopEvaluateRequest,
+  type LearningLoopOutcome,
+  type LearningLoopStatusResponse,
+  type ModelStrategyUpdateResponse,
+  type PerformanceDriftResponse,
+  type ResearchPriorityResponse,
+  type MemoryUpdateResponse,
+} from "@/lib/api";
 import { Play, Target, TrendingUp, Brain, Database, AlertTriangle, CheckCircle, Clock, BookOpen, Activity, RotateCw, XCircle } from "lucide-react";
+
+const LEARNING_ACTIONS = [
+  "promote_candidate",
+  "keep_monitoring",
+  "demote_to_paper",
+  "demote_to_research",
+  "block_strategy",
+  "review_needed",
+];
+
+const STAGE_14_CHECKERS = ["Learning Metrics Updater", "Drift Detector", "Promotion/Demotion Rules", "Learning Loop Agent"];
+
+const DEFAULT_OUTCOMES: LearningLoopOutcome[] = [
+  {
+    trade_id: "trade_1",
+    outcome_label: "target_hit",
+    outcome_status: "positive",
+    realized_pnl: 55.9,
+    r_multiple: 1.83,
+    slippage_status: "pass",
+    rule_compliant: true,
+  },
+  {
+    trade_id: "trade_2",
+    outcome_label: "stopped_out",
+    outcome_status: "negative",
+    realized_pnl: -29.9,
+    r_multiple: -1.0,
+    slippage_status: "pass",
+    rule_compliant: true,
+  },
+];
 
 function resolutionPathBadge(path: string) {
   switch (path) {
@@ -74,6 +117,35 @@ export default function LearningLoopPage() {
   const [researchPriority, setResearchPriority] = useState<ResearchPriorityResponse | null>(null);
   const [modelStrategyUpdate, setModelStrategyUpdate] = useState<ModelStrategyUpdateResponse | null>(null);
   const [memoryUpdate, setMemoryUpdate] = useState<MemoryUpdateResponse | null>(null);
+
+  // Stage 14: Learning Loop (post-trade → learning decision)
+  const [stage14Status, setStage14Status] = useState<LearningLoopStatusResponse | null>(null);
+  const [stage14Decision, setStage14Decision] = useState<LearningLoopDecisionResult | null>(null);
+  const [stage14OutcomesJson, setStage14OutcomesJson] = useState<string>(() => JSON.stringify(DEFAULT_OUTCOMES, null, 2));
+  const [stage14Form, setStage14Form] = useState<Omit<LearningLoopEvaluateRequest, "recent_outcomes">>({
+    strategy_key: "regime_aware_momentum_catalyst",
+    strategy_group: "regime_aware_momentum",
+    asset_class: "stock",
+    horizon: "day_trading",
+    workflow_key: "baseline_fast_path",
+    current_status: {
+      promotion_status: "paper_ready",
+      proof_status: "paper_passed",
+      sample_size: 12,
+      current_drawdown_r: -1.5,
+      last_10_avg_r: 0.42,
+    },
+    thresholds: {
+      min_sample_size_for_promotion: 20,
+      min_avg_r_for_promotion: 0.35,
+      max_drawdown_r_before_demotion: -3.0,
+      max_rule_violation_rate: 0.1,
+      max_slippage_fail_rate: 0.15,
+    },
+  });
+  const [stage14Busy, setStage14Busy] = useState(false);
+  const [stage14Error, setStage14Error] = useState<string | null>(null);
+
   const [isRunningDrift, setIsRunningDrift] = useState(false);
   const [isRunningResearch, setIsRunningResearch] = useState(false);
   const [isRunningUpdate, setIsRunningUpdate] = useState(false);
@@ -83,12 +155,14 @@ export default function LearningLoopPage() {
 
   const loadData = async () => {
     try {
-      const [entries, summary, drift, research, update] = await Promise.all([
+      const [entries, summary, drift, research, update, llStatus, llLatest] = await Promise.all([
         api.getJournalOutcomes({ limit: 10 }),
         api.getJournalSummary(),
         api.getLatestPerformanceDrift(),
         api.getLatestResearchPriority(),
         api.getLatestModelStrategyUpdate(),
+        api.getLearningLoopStatus(),
+        api.getLatestLearningLoopDecision(),
       ]);
       
       if (Array.isArray(entries)) setJournalEntries(entries);
@@ -104,6 +178,10 @@ export default function LearningLoopPage() {
       if (!("status" in update && update.status === "not_found")) {
         setModelStrategyUpdate(update as ModelStrategyUpdateResponse);
       }
+
+      setStage14Status(llStatus as LearningLoopStatusResponse);
+      const latestDecision = (llLatest as any)?.result ?? (llStatus as any)?.latest_decision ?? null;
+      setStage14Decision(latestDecision as LearningLoopDecisionResult | null);
     } catch (err) {
       setError(err instanceof Error ? err.message : "Failed to load data");
     }
@@ -169,13 +247,431 @@ export default function LearningLoopPage() {
     }
   };
 
+  const supportedLearningActions = useMemo(() => {
+    const s = stage14Status?.supported_learning_actions;
+    return Array.isArray(s) && s.length ? s : LEARNING_ACTIONS;
+  }, [stage14Status]);
+
+  const checkerByName = useMemo(() => {
+    const map = new Map<string, { status?: string; message?: string }>();
+    for (const c of stage14Status?.checker_statuses ?? []) map.set(c.checker, c);
+    return map;
+  }, [stage14Status]);
+
+  const handleEvaluateLearning = async () => {
+    setStage14Error(null);
+
+    let parsed: unknown;
+    try {
+      parsed = JSON.parse(stage14OutcomesJson);
+    } catch {
+      setStage14Error("recent_outcomes JSON is invalid. Fix the JSON array before evaluating (no API call was made).");
+      return;
+    }
+
+    if (!Array.isArray(parsed)) {
+      setStage14Error("recent_outcomes must be a JSON array. No API call was made.");
+      return;
+    }
+
+    const recent_outcomes = parsed as LearningLoopOutcome[];
+
+    setStage14Busy(true);
+    setError(null);
+    try {
+      const response = await api.evaluateLearningLoop({ ...stage14Form, recent_outcomes });
+      setStage14Decision(response.result);
+      setSuccessMessage("Stage 14 learning decision evaluated (recommendations only)");
+    } catch (err) {
+      setStage14Error(err instanceof Error ? err.message : "Learning decision evaluation failed");
+    } finally {
+      setStage14Busy(false);
+    }
+  };
+
   return (
     <div className="mx-auto w-full max-w-6xl p-4 lg:p-8">
       <PageHeader
-        eyebrow="workflow steps 20-24"
+        eyebrow="stage 14"
         title="Learning Loop"
-        description="Closed-loop learning: Journal outcomes → Performance drift → Research priorities → Model/strategy updates → Memory storage."
+        description="Stage 14 AI-Agent that evaluates post-trade outcomes, drift, promotion/demotion rules, and learning metrics without using an LLM or automatically promoting to live trading."
       />
+
+      <div className="mb-4 flex flex-wrap gap-2">
+        {["US Stocks Only", "Day Trading Only", "Paper-First", "No LLM", "No Auto Live Promotion"].map((t) => (
+          <span
+            key={t}
+            className={
+              t === "No LLM" || t === "No Auto Live Promotion"
+                ? "rounded-full border border-white/10 bg-slate-950/40 px-3 py-1 text-[10px] font-bold uppercase text-slate-300"
+                : "rounded-full border border-emerald-500/40 bg-emerald-500/10 px-3 py-1 text-[10px] font-bold uppercase text-emerald-300"
+            }
+          >
+            {t}
+          </span>
+        ))}
+      </div>
+
+      {/* Stage 14 Summary Cards */}
+      <div className="mb-6 grid grid-cols-2 gap-4 md:grid-cols-4">
+        <MetricCard label="Stage" value="14" accent />
+        <MetricCard label="Learning Status" value={stage14Status?.learning_status?.replaceAll("_", " ") || "unknown"} />
+        <MetricCard label="Latest Decision" value={stage14Decision?.learning_action?.replaceAll("_", " ") || "—"} />
+        <MetricCard label="Next Action" value={stage14Decision?.next_action || stage14Status?.next_action || "—"} />
+      </div>
+
+      {/* Stage 14 Evaluator */}
+      <div className="mb-6 grid gap-6 lg:grid-cols-3">
+        <div className="rounded-xl border border-slate-700 bg-slate-900/50 p-4 lg:col-span-2">
+          <div className="mb-3 flex flex-wrap items-center justify-between gap-3">
+            <h3 className="flex items-center gap-2 text-sm font-bold uppercase text-emerald-400">
+              <Play className="h-4 w-4" />
+              Stage 14: Evaluate learning decision
+            </h3>
+            <button
+              onClick={handleEvaluateLearning}
+              disabled={stage14Busy}
+              className={`flex items-center gap-2 rounded-xl px-4 py-2 text-sm font-bold uppercase transition-all ${
+                stage14Busy
+                  ? "cursor-not-allowed border border-slate-600 bg-slate-800 text-slate-500"
+                  : "border border-emerald-500 bg-slate-900 text-emerald-400 hover:bg-emerald-500 hover:text-slate-950"
+              }`}
+            >
+              {stage14Busy ? <RotateCw className="h-4 w-4 animate-spin" /> : <Play className="h-4 w-4" />}
+              Evaluate Sample Learning Decision
+            </button>
+          </div>
+
+          {stage14Error && (
+            <div className="mb-3 rounded-xl border border-red-500/30 bg-red-500/10 px-4 py-3 text-sm text-red-400">
+              <AlertTriangle className="mr-2 inline h-4 w-4" />
+              {stage14Error}
+            </div>
+          )}
+
+          <div className="mb-4 flex flex-wrap gap-2">
+            <button
+              className="rounded-lg border border-slate-700 bg-slate-900 px-3 py-1.5 text-xs font-bold uppercase text-slate-300 hover:border-emerald-500/40 hover:text-emerald-300"
+              onClick={() => {
+                setStage14Form((f) => ({
+                  ...f,
+                  current_status: { ...f.current_status, sample_size: 12, current_drawdown_r: -1.5, last_10_avg_r: 0.25 },
+                }));
+              }}
+            >
+              Keep Monitoring Sample
+            </button>
+            <button
+              className="rounded-lg border border-slate-700 bg-slate-900 px-3 py-1.5 text-xs font-bold uppercase text-slate-300 hover:border-emerald-500/40 hover:text-emerald-300"
+              onClick={() => {
+                setStage14Form((f) => ({
+                  ...f,
+                  current_status: { ...f.current_status, sample_size: 24, last_10_avg_r: 0.55, current_drawdown_r: -1.1, promotion_status: "paper_ready" },
+                }));
+                setStage14OutcomesJson(JSON.stringify(DEFAULT_OUTCOMES, null, 2));
+              }}
+            >
+              Promote Candidate Sample
+            </button>
+            <button
+              className="rounded-lg border border-slate-700 bg-slate-900 px-3 py-1.5 text-xs font-bold uppercase text-slate-300 hover:border-emerald-500/40 hover:text-emerald-300"
+              onClick={() => {
+                setStage14Form((f) => ({
+                  ...f,
+                  current_status: { ...f.current_status, current_drawdown_r: -4.2 },
+                }));
+              }}
+            >
+              Drawdown Demotion Sample
+            </button>
+            <button
+              className="rounded-lg border border-slate-700 bg-slate-900 px-3 py-1.5 text-xs font-bold uppercase text-slate-300 hover:border-emerald-500/40 hover:text-emerald-300"
+              onClick={() => {
+                setStage14OutcomesJson(
+                  JSON.stringify(
+                    [
+                      { ...DEFAULT_OUTCOMES[0], rule_compliant: false, outcome_label: "rule_violation", outcome_status: "negative" },
+                      DEFAULT_OUTCOMES[1],
+                    ],
+                    null,
+                    2,
+                  ),
+                );
+              }}
+            >
+              Rule Violation Demotion Sample
+            </button>
+            <button
+              className="rounded-lg border border-slate-700 bg-slate-900 px-3 py-1.5 text-xs font-bold uppercase text-slate-300 hover:border-emerald-500/40 hover:text-emerald-300"
+              onClick={() => setStage14Form((f) => ({ ...f, asset_class: "crypto" }))}
+            >
+              Crypto Blocked Sample
+            </button>
+            <button
+              className="rounded-lg border border-slate-700 bg-slate-900 px-3 py-1.5 text-xs font-bold uppercase text-slate-300 hover:border-emerald-500/40 hover:text-emerald-300"
+              onClick={() => setStage14OutcomesJson("[]")}
+            >
+              Empty Outcomes Review Sample
+            </button>
+          </div>
+
+          <div className="grid gap-4 md:grid-cols-2">
+            <div className="space-y-3">
+              <div>
+                <div className="mb-1 text-xs font-bold uppercase text-slate-500">Strategy</div>
+                <div className="grid gap-2">
+                  <input
+                    className="w-full rounded-lg border border-slate-700 bg-slate-950/30 px-3 py-2 text-sm text-slate-100"
+                    value={stage14Form.strategy_key}
+                    onChange={(e) => setStage14Form((f) => ({ ...f, strategy_key: e.target.value }))}
+                  />
+                  <input
+                    className="w-full rounded-lg border border-slate-700 bg-slate-950/30 px-3 py-2 text-sm text-slate-100"
+                    value={stage14Form.strategy_group}
+                    onChange={(e) => setStage14Form((f) => ({ ...f, strategy_group: e.target.value }))}
+                  />
+                  <div className="grid grid-cols-2 gap-2">
+                    <select
+                      className="w-full rounded-lg border border-slate-700 bg-slate-950/30 px-3 py-2 text-sm text-slate-100"
+                      value={stage14Form.asset_class}
+                      onChange={(e) => setStage14Form((f) => ({ ...f, asset_class: e.target.value }))}
+                    >
+                      <option value="stock">stock</option>
+                      <option value="crypto">crypto</option>
+                      <option value="etf">etf</option>
+                      <option value="option">option</option>
+                    </select>
+                    <select
+                      className="w-full rounded-lg border border-slate-700 bg-slate-950/30 px-3 py-2 text-sm text-slate-100"
+                      value={stage14Form.horizon}
+                      onChange={(e) => setStage14Form((f) => ({ ...f, horizon: e.target.value }))}
+                    >
+                      <option value="day_trading">day_trading</option>
+                      <option value="swing">swing</option>
+                    </select>
+                  </div>
+                  <select
+                    className="w-full rounded-lg border border-slate-700 bg-slate-950/30 px-3 py-2 text-sm text-slate-100"
+                    value={stage14Form.workflow_key}
+                    onChange={(e) => setStage14Form((f) => ({ ...f, workflow_key: e.target.value }))}
+                  >
+                    <option value="baseline_fast_path">baseline_fast_path</option>
+                    <option value="conservative_path">conservative_path</option>
+                    <option value="paper_only_path">paper_only_path</option>
+                  </select>
+                </div>
+              </div>
+
+              <div>
+                <div className="mb-1 text-xs font-bold uppercase text-slate-500">Current status</div>
+                <div className="grid gap-2">
+                  <div className="grid grid-cols-2 gap-2">
+                    <select
+                      className="w-full rounded-lg border border-slate-700 bg-slate-950/30 px-3 py-2 text-sm text-slate-100"
+                      value={stage14Form.current_status.promotion_status}
+                      onChange={(e) =>
+                        setStage14Form((f) => ({ ...f, current_status: { ...f.current_status, promotion_status: e.target.value } }))
+                      }
+                    >
+                      {["paper_ready", "paper_only", "research_only", "blocked"].map((x) => (
+                        <option key={x} value={x}>
+                          {x}
+                        </option>
+                      ))}
+                    </select>
+                    <select
+                      className="w-full rounded-lg border border-slate-700 bg-slate-950/30 px-3 py-2 text-sm text-slate-100"
+                      value={stage14Form.current_status.proof_status}
+                      onChange={(e) => setStage14Form((f) => ({ ...f, current_status: { ...f.current_status, proof_status: e.target.value } }))}
+                    >
+                      {["paper_passed", "paper_failed", "insufficient_data", "unknown"].map((x) => (
+                        <option key={x} value={x}>
+                          {x}
+                        </option>
+                      ))}
+                    </select>
+                  </div>
+                  <input
+                    type="number"
+                    className="w-full rounded-lg border border-slate-700 bg-slate-950/30 px-3 py-2 text-sm text-slate-100"
+                    value={stage14Form.current_status.sample_size}
+                    onChange={(e) => setStage14Form((f) => ({ ...f, current_status: { ...f.current_status, sample_size: Number(e.target.value) } }))}
+                  />
+                  <div className="grid grid-cols-2 gap-2">
+                    <input
+                      type="number"
+                      className="w-full rounded-lg border border-slate-700 bg-slate-950/30 px-3 py-2 text-sm text-slate-100"
+                      value={stage14Form.current_status.current_drawdown_r}
+                      onChange={(e) =>
+                        setStage14Form((f) => ({ ...f, current_status: { ...f.current_status, current_drawdown_r: Number(e.target.value) } }))
+                      }
+                    />
+                    <input
+                      type="number"
+                      className="w-full rounded-lg border border-slate-700 bg-slate-950/30 px-3 py-2 text-sm text-slate-100"
+                      value={stage14Form.current_status.last_10_avg_r}
+                      onChange={(e) => setStage14Form((f) => ({ ...f, current_status: { ...f.current_status, last_10_avg_r: Number(e.target.value) } }))}
+                    />
+                  </div>
+                </div>
+              </div>
+
+              <div>
+                <div className="mb-1 text-xs font-bold uppercase text-slate-500">Thresholds</div>
+                <div className="grid gap-2">
+                  {(
+                    [
+                      ["min_sample_size_for_promotion", "min_sample_size_for_promotion"],
+                      ["min_avg_r_for_promotion", "min_avg_r_for_promotion"],
+                      ["max_drawdown_r_before_demotion", "max_drawdown_r_before_demotion"],
+                      ["max_rule_violation_rate", "max_rule_violation_rate"],
+                      ["max_slippage_fail_rate", "max_slippage_fail_rate"],
+                    ] as const
+                  ).map(([k, label]) => (
+                    <input
+                      key={k}
+                      type="number"
+                      className="w-full rounded-lg border border-slate-700 bg-slate-950/30 px-3 py-2 text-sm text-slate-100"
+                      value={stage14Form.thresholds[k]}
+                      onChange={(e) => setStage14Form((f) => ({ ...f, thresholds: { ...f.thresholds, [k]: Number(e.target.value) } }))}
+                      placeholder={label}
+                    />
+                  ))}
+                </div>
+              </div>
+            </div>
+
+            <div className="space-y-3">
+              <div>
+                <div className="mb-1 text-xs font-bold uppercase text-slate-500">Recent outcomes (JSON)</div>
+                <textarea
+                  className="min-h-56 w-full rounded-lg border border-slate-700 bg-slate-950/30 px-3 py-2 font-mono text-xs text-slate-100"
+                  value={stage14OutcomesJson}
+                  onChange={(e) => setStage14OutcomesJson(e.target.value)}
+                />
+                <p className="mt-2 text-xs text-slate-500">
+                  For v1, paste or edit recent outcome JSON. Later this will be pulled automatically from Stage 13.
+                </p>
+              </div>
+            </div>
+          </div>
+
+          {stage14Decision && (
+            <div className="mt-4 rounded-xl border border-slate-700 bg-slate-950/20 p-4">
+              <div className="mb-2 flex flex-wrap items-center justify-between gap-2">
+                <div className="text-sm font-bold uppercase text-slate-300">Decision output</div>
+                <span className="rounded-full border border-slate-700 bg-slate-900 px-2 py-0.5 text-xs font-bold uppercase text-slate-300">
+                  llm_used: {stage14Decision.llm_used ? "true" : "false"}
+                </span>
+              </div>
+              <div className="grid gap-2 text-xs text-slate-400 md:grid-cols-2">
+                <div>decision_id: <span className="text-slate-200">{stage14Decision.decision_id}</span></div>
+                <div>learning_action: <span className="text-slate-200">{stage14Decision.learning_action}</span></div>
+                <div>strategy_key: <span className="text-slate-200">{stage14Decision.strategy_key}</span></div>
+                <div>strategy_group: <span className="text-slate-200">{stage14Decision.strategy_group}</span></div>
+                <div>asset_class: <span className="text-slate-200">{stage14Decision.asset_class}</span></div>
+                <div>horizon: <span className="text-slate-200">{stage14Decision.horizon}</span></div>
+                <div>created_at: <span className="text-slate-200">{stage14Decision.created_at || "—"}</span></div>
+                <div>next_action: <span className="text-slate-200">{stage14Decision.next_action || "—"}</span></div>
+              </div>
+
+              <div className="mt-3 grid gap-3 md:grid-cols-2">
+                <div className="rounded-lg border border-slate-800 bg-slate-900/40 p-3">
+                  <div className="mb-2 text-xs font-bold uppercase text-slate-500">Metrics</div>
+                  <div className="grid gap-1 text-xs text-slate-400">
+                    <div>sample_size: <span className="text-slate-200">{stage14Decision.metrics.sample_size}</span></div>
+                    <div>wins/losses/flats: <span className="text-slate-200">{stage14Decision.metrics.wins}/{stage14Decision.metrics.losses}/{stage14Decision.metrics.flats}</span></div>
+                    <div>win_rate: <span className="text-slate-200">{stage14Decision.metrics.win_rate}</span></div>
+                    <div>avg_r_multiple: <span className="text-slate-200">{stage14Decision.metrics.avg_r_multiple}</span></div>
+                    <div>avg_realized_pnl: <span className="text-slate-200">{stage14Decision.metrics.avg_realized_pnl}</span></div>
+                    <div>rule_violation_rate: <span className="text-slate-200">{stage14Decision.metrics.rule_violation_rate}</span></div>
+                    <div>slippage_fail_rate: <span className="text-slate-200">{stage14Decision.metrics.slippage_fail_rate}</span></div>
+                    <div>current_drawdown_r: <span className="text-slate-200">{stage14Decision.metrics.current_drawdown_r}</span></div>
+                  </div>
+                </div>
+                <div className="rounded-lg border border-slate-800 bg-slate-900/40 p-3">
+                  <div className="mb-2 text-xs font-bold uppercase text-slate-500">Drift / Promotion / Demotion</div>
+                  <div className="grid gap-1 text-xs text-slate-400">
+                    <div>drift_detected: <span className="text-slate-200">{String(stage14Decision.drift.drift_detected)}</span></div>
+                    <div>drift_reason: <span className="text-slate-200">{stage14Decision.drift.drift_reason}</span></div>
+                    <div>eligible_for_promotion: <span className="text-slate-200">{String(stage14Decision.promotion.eligible_for_promotion)}</span></div>
+                    <div>promotion_target: <span className="text-slate-200">{stage14Decision.promotion.promotion_target}</span></div>
+                    <div>promotion_blocked_reasons: <span className="text-slate-200">{(stage14Decision.promotion.blocked_reasons || []).join(", ") || "—"}</span></div>
+                    <div>demotion_required: <span className="text-slate-200">{String(stage14Decision.demotion.demotion_required)}</span></div>
+                    <div>demotion_target: <span className="text-slate-200">{stage14Decision.demotion.demotion_target}</span></div>
+                    <div>demotion_reasons: <span className="text-slate-200">{(stage14Decision.demotion.reasons || []).join(", ") || "—"}</span></div>
+                  </div>
+                </div>
+              </div>
+
+              <div className="mt-3 text-sm text-slate-300">reason: <span className="text-slate-200">{stage14Decision.reason}</span></div>
+            </div>
+          )}
+        </div>
+
+        <div className="space-y-4">
+          <div className="rounded-xl border border-slate-700 bg-slate-900/50 p-4">
+            <h3 className="mb-2 text-sm font-bold uppercase text-slate-400">Supported learning actions</h3>
+            <div className="flex flex-wrap gap-2">
+              {supportedLearningActions.map((a) => (
+                <span key={a} className="rounded-full border border-slate-700 bg-slate-900 px-2 py-0.5 text-xs font-bold uppercase text-slate-300">
+                  {a}
+                </span>
+              ))}
+            </div>
+          </div>
+
+          <div className="rounded-xl border border-slate-700 bg-slate-900/50 p-4">
+            <h3 className="mb-2 text-sm font-bold uppercase text-slate-400">Checker status</h3>
+            <div className="space-y-2">
+              {STAGE_14_CHECKERS.map((c) => {
+                const r = checkerByName.get(c);
+                return (
+                  <div key={c} className="rounded-lg bg-slate-800/40 p-2 text-xs">
+                    <div className="flex items-center justify-between gap-2">
+                      <span className="font-bold text-slate-300">{c}</span>
+                      <span className="rounded bg-slate-700 px-2 py-0.5 text-[10px] font-bold uppercase text-slate-300">
+                        {r?.status ?? "unknown"}
+                      </span>
+                    </div>
+                    <div className="mt-1 text-slate-500">{r?.message ?? "No details yet (evaluate a sample decision)."}</div>
+                  </div>
+                );
+              })}
+            </div>
+          </div>
+
+          <div className="rounded-xl border border-slate-700 bg-slate-900/50 p-4">
+            <h3 className="mb-2 text-sm font-bold uppercase text-slate-400">Safety guarantees</h3>
+            <ul className="space-y-1 text-xs text-slate-400">
+              <li>no broker calls</li>
+              <li>no execution endpoints</li>
+              <li>no automatic registry update</li>
+              <li>no automatic live promotion</li>
+              <li>no LLM reviewer in v1</li>
+              <li>recommendations only</li>
+            </ul>
+          </div>
+
+          <div className="rounded-xl border border-slate-700 bg-slate-900/50 p-4">
+            <h3 className="mb-2 text-sm font-bold uppercase text-slate-400">Useful links</h3>
+            <div className="flex flex-wrap gap-2 text-xs">
+              <a className="rounded bg-slate-800 px-2 py-1 text-slate-300 hover:text-emerald-300" href="/post-trade-evaluation">
+                Post-Trade Evaluation →
+              </a>
+              <a className="rounded bg-slate-800 px-2 py-1 text-slate-300 hover:text-emerald-300" href="/journal">
+                Journal →
+              </a>
+              <a className="rounded bg-slate-800 px-2 py-1 text-slate-300 hover:text-emerald-300" href="/strategies">
+                Strategies →
+              </a>
+              <a className="rounded bg-slate-800 px-2 py-1 text-slate-300 hover:text-emerald-300" href="/settings?tab=master_admin">
+                Master Admin Controls →
+              </a>
+            </div>
+          </div>
+        </div>
+      </div>
 
       {error && (
         <div className="mb-4 rounded-xl border border-red-500/30 bg-red-500/10 px-4 py-3 text-sm text-red-400">

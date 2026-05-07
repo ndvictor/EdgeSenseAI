@@ -2428,6 +2428,122 @@ export type PostTradeEvaluationLatestResponse = {
   result: PostTradeEvaluationResult | null;
 };
 
+export type LearningLoopOutcome = {
+  trade_id: string;
+  outcome_label: string;
+  outcome_status: string;
+  realized_pnl: number;
+  r_multiple: number;
+  slippage_status: string;
+  rule_compliant: boolean;
+};
+
+export type LearningLoopMetrics = {
+  sample_size: number;
+  wins: number;
+  losses: number;
+  flats: number;
+  win_rate: number;
+  avg_r_multiple: number;
+  avg_realized_pnl: number;
+  rule_violation_rate: number;
+  slippage_fail_rate: number;
+  current_drawdown_r: number;
+};
+
+export type LearningLoopDrift = {
+  drift_detected: boolean;
+  drift_reason: string;
+};
+
+export type LearningLoopPromotion = {
+  eligible_for_promotion: boolean;
+  promotion_target: string;
+  blocked_reasons: string[];
+};
+
+export type LearningLoopDemotion = {
+  demotion_required: boolean;
+  demotion_target: string;
+  reasons: string[];
+};
+
+export type LearningLoopThresholds = {
+  min_sample_size_for_promotion: number;
+  min_avg_r_for_promotion: number;
+  max_drawdown_r_before_demotion: number;
+  max_rule_violation_rate: number;
+  max_slippage_fail_rate: number;
+};
+
+export type LearningLoopChecker = {
+  checker: string;
+  status: "pass" | "warn" | "fail" | "unknown" | string;
+  message?: string;
+  details?: Record<string, unknown>;
+};
+
+export type LearningLoopDecisionResult = {
+  decision_id: string;
+  strategy_key: string;
+  strategy_group: string;
+  asset_class: string;
+  horizon: string;
+  learning_action: string;
+  llm_used?: boolean;
+  metrics: LearningLoopMetrics;
+  drift: LearningLoopDrift;
+  promotion: LearningLoopPromotion;
+  demotion: LearningLoopDemotion;
+  reason: string;
+  blockers?: string[];
+  warnings?: string[];
+  allowed_next_stages?: number[];
+  blocked_next_stages?: { stage: number; reason: string }[];
+  next_action?: string;
+  created_at?: string;
+  checker_results?: LearningLoopChecker[];
+};
+
+export type LearningLoopStatusResponse = {
+  status: "ok" | string;
+  stage: number;
+  learning_status: "ready" | "partial" | "not_ready" | "unknown" | string;
+  llm_required: false | boolean;
+  supported_learning_actions: string[];
+  checker_statuses?: LearningLoopChecker[];
+  latest_decision?: LearningLoopDecisionResult | null;
+  updated_at?: string;
+  next_action?: string;
+};
+
+export type LearningLoopEvaluateRequest = {
+  strategy_key: string;
+  strategy_group: string;
+  asset_class: string;
+  horizon: string;
+  workflow_key: string;
+  recent_outcomes: LearningLoopOutcome[];
+  current_status: {
+    promotion_status: string;
+    proof_status: string;
+    sample_size: number;
+    current_drawdown_r: number;
+    last_10_avg_r: number;
+  };
+  thresholds: LearningLoopThresholds;
+};
+
+export type LearningLoopEvaluateResponse = {
+  status: "ok" | string;
+  result: LearningLoopDecisionResult;
+};
+
+export type LearningLoopLatestResponse = {
+  status: "ok" | string;
+  result: LearningLoopDecisionResult | null;
+};
+
 export type IntegrationCheckCatalogEntry = {
   key: string;
   label: string;
@@ -3756,6 +3872,21 @@ export async function getLatestPostTradeEvaluation(): Promise<PostTradeEvaluatio
   return request<PostTradeEvaluationLatestResponse>("/api/post-trade-evaluation/latest");
 }
 
+export async function getLearningLoopStatus(): Promise<LearningLoopStatusResponse> {
+  return request<LearningLoopStatusResponse>("/api/learning-loop/status");
+}
+
+export async function evaluateLearningLoop(requestBody: LearningLoopEvaluateRequest): Promise<LearningLoopEvaluateResponse> {
+  return request<LearningLoopEvaluateResponse>("/api/learning-loop/evaluate", {
+    method: "POST",
+    body: JSON.stringify(requestBody),
+  });
+}
+
+export async function getLatestLearningLoopDecision(): Promise<LearningLoopLatestResponse> {
+  return request<LearningLoopLatestResponse>("/api/learning-loop/latest");
+}
+
 export const api = {
   getCommandCenter: () => request<CommandCenterResponse>("/api/command-center"),
   getAccountRisk: () => request<AccountRiskProfile>("/api/account-risk/profile"),
@@ -4084,6 +4215,11 @@ export const api = {
   getPostTradeEvaluationStatus,
   evaluatePostTrade,
   getLatestPostTradeEvaluation,
+
+  /** Stage 14 Learning Loop — recommendation visibility (no auto registry changes). */
+  getLearningLoopStatus,
+  evaluateLearningLoop,
+  getLatestLearningLoopDecision,
 
   /** Catalog of integration matrix checks (Alpaca, data stack, signals, risk, …). */
   getIntegrationChecksCatalog: () => request<IntegrationChecksCatalogResponse>("/api/integration-checks/catalog"),
