@@ -1653,6 +1653,99 @@ export type SessionRouterLatestResponse = {
   evaluation: SessionRouterEvaluation | null;
 };
 
+export type StrategyEligibilityBlockedStage = {
+  stage: number;
+  reason: string;
+};
+
+export type StrategyEligibilityCheckerResult = {
+  checker: string;
+  status: "pass" | "warn" | "fail" | "unknown" | string;
+  message?: string;
+  details?: Record<string, unknown>;
+};
+
+export type StrategyEligibilityResult = {
+  strategy_key: string;
+  strategy_group: string;
+  eligible: boolean;
+  eligibility_status: string;
+  reason: string;
+  proof_status?: string;
+  paper_status?: string;
+  requirements_passed?: string[];
+  requirements_failed?: string[];
+  blockers?: string[];
+  warnings?: string[];
+  checker_results?: StrategyEligibilityCheckerResult[];
+  allowed_next_stages?: number[];
+  blocked_next_stages?: StrategyEligibilityBlockedStage[];
+  next_action?: string;
+  created_at?: string;
+  llm_used?: boolean;
+};
+
+export type StrategyEligibilityStatusResponse = {
+  status: "ok" | string;
+  stage: number;
+  checker_status: "ready" | "partial" | "not_ready" | "unknown" | string;
+  llm_required: false | boolean;
+  supported_strategy_groups: string[];
+  checker_statuses?: StrategyEligibilityCheckerResult[];
+  latest_check?: StrategyEligibilityResult | null;
+  updated_at?: string;
+  next_action?: string;
+};
+
+export type StrategyEligibilityCheckRequest = {
+  workflow_context: {
+    selected_workflow: string;
+    workflow_mode: string;
+    session: string;
+  };
+  strategy_candidate: {
+    strategy_key: string;
+    strategy_group: string;
+    proof_status: string;
+    paper_status: string;
+    requires_backtest: boolean;
+    already_backtested: boolean;
+  };
+  market_condition: {
+    regime: string;
+    volatility_state: string;
+    liquidity_state: string;
+    data_quality: string;
+    urgency: string;
+  };
+  features: {
+    rvol_elevated: boolean;
+    price_above_vwap: boolean;
+    vwap_reclaiming: boolean;
+    relative_strength_positive: boolean;
+    catalyst_confirmed: boolean;
+    volume_confirms: boolean;
+    spread_pass: boolean;
+    risk_reward_pass: boolean;
+  };
+  account_state: {
+    risk_budget_available: boolean;
+    paper_trading_enabled: boolean;
+    live_trading_enabled: boolean;
+    human_approval_required: boolean;
+  };
+};
+
+export type StrategyEligibilityCheckResponse = {
+  status: "ok" | string;
+  result: StrategyEligibilityResult;
+};
+
+export type StrategyEligibilityLatestResponse = {
+  status: "ok" | string;
+  result: StrategyEligibilityResult | null;
+};
+
 export type IntegrationCheckCatalogEntry = {
   key: string;
   label: string;
@@ -2874,6 +2967,23 @@ export async function getLatestSessionRouterEvaluation(): Promise<SessionRouterL
   return request<SessionRouterLatestResponse>("/api/session-router/latest");
 }
 
+export async function getStrategyEligibilityStatus(): Promise<StrategyEligibilityStatusResponse> {
+  return request<StrategyEligibilityStatusResponse>("/api/strategy-eligibility/status");
+}
+
+export async function checkStrategyEligibility(
+  requestBody: StrategyEligibilityCheckRequest
+): Promise<StrategyEligibilityCheckResponse> {
+  return request<StrategyEligibilityCheckResponse>("/api/strategy-eligibility/check", {
+    method: "POST",
+    body: JSON.stringify(requestBody),
+  });
+}
+
+export async function getLatestStrategyEligibilityCheck(): Promise<StrategyEligibilityLatestResponse> {
+  return request<StrategyEligibilityLatestResponse>("/api/strategy-eligibility/latest");
+}
+
 export const api = {
   getCommandCenter: () => request<CommandCenterResponse>("/api/command-center"),
   getAccountRisk: () => request<AccountRiskProfile>("/api/account-risk/profile"),
@@ -3171,6 +3281,11 @@ export const api = {
   getSessionRouterStatus,
   evaluateSessionRouter,
   getLatestSessionRouterEvaluation,
+
+  /** Stage 7 Strategy Eligibility — requirements/eligibility visibility. */
+  getStrategyEligibilityStatus,
+  checkStrategyEligibility,
+  getLatestStrategyEligibilityCheck,
 
   /** Catalog of integration matrix checks (Alpaca, data stack, signals, risk, …). */
   getIntegrationChecksCatalog: () => request<IntegrationChecksCatalogResponse>("/api/integration-checks/catalog"),
