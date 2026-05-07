@@ -1320,6 +1320,22 @@ def test_agent_runtime_status_contract_safety_flags():
     assert safety["no_execution_submit"] is True
     assert safety["no_llm_calls"] is True
     assert safety["dry_run_default"] is True
+    assert payload["summary"]["persistence_mode"] in {"postgres", "memory"}
+    assert payload["summary"]["redis_mode"] in {"available", "unavailable", "disabled"}
+
+
+def test_agent_runtime_persistence_mode_contract_is_stable():
+    r = client.get("/api/agent-runtime/status")
+    assert r.status_code == 200
+    payload = r.json()
+    pm = payload["summary"]["persistence_mode"]
+    assert pm in {"postgres", "memory"}
+
+    latest = client.get("/api/agent-runtime/latest")
+    assert latest.status_code == 200
+    latest_payload = latest.json()
+    assert latest_payload["persistence_mode"] in {"postgres", "memory"}
+    assert "latest_agent_runs_by_key" in latest_payload
 
 
 def test_agent_runtime_agents_includes_workflow_orchestrator_agent_and_forbidden_actions():
@@ -1360,9 +1376,11 @@ def test_agent_runtime_agent_runs_records_and_idempotency_duplicate():
     r1 = client.post("/api/agent-runtime/agent-runs", json=body)
     assert r1.status_code == 200
     run1 = r1.json()["agent_run"]
-    assert run1["status"] == "recorded"
+    assert run1["status"] in {"completed", "blocked"}
     assert run1["agent_key"] == "session_router_agent"
-    assert run1["decision"]["phase"] == "foundation_only"
+    assert run1["decision"]["phase"] == "phase_2_wrapped"
+    assert run1["next_agent"] == "workflow_router_agent"
+    assert run1["persistence_mode"] in {"postgres", "memory"}
 
     r2 = client.post("/api/agent-runtime/agent-runs", json=body)
     assert r2.status_code == 200
@@ -1378,6 +1396,8 @@ def test_agent_runtime_latest_contract():
     assert payload["status"] == "ok"
     assert payload["registered_agents_count"] >= 1
     assert "latest_agent_runs_by_key" in payload
+    assert payload["persistence_mode"] in {"postgres", "memory"}
+    assert payload["redis_mode"] in {"available", "unavailable", "disabled"}
 
 
 def test_agent_runtime_unknown_agent_key_returns_400():

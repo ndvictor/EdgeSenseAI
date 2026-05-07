@@ -66,7 +66,7 @@ _AGENTS: dict[str, AgentDescriptor] = {
         role="Stage 3 session routing",
         stage_number=3,
         agent_type="deterministic_agent",
-        status="registered",
+        status="ready",
     ),
     "market_condition_agent": _d(
         agent_key="market_condition_agent",
@@ -82,7 +82,7 @@ _AGENTS: dict[str, AgentDescriptor] = {
         role="Stage 5 workflow routing",
         stage_number=5,
         agent_type="deterministic_agent",
-        status="registered",
+        status="ready",
     ),
     "watchlist_builder_agent": _d(
         agent_key="watchlist_builder_agent",
@@ -114,7 +114,7 @@ _AGENTS: dict[str, AgentDescriptor] = {
         role="Stage 7 eligibility checks",
         stage_number=7,
         agent_type="deterministic_agent",
-        status="registered",
+        status="ready",
     ),
     "trigger_monitor_agent": _d(
         agent_key="trigger_monitor_agent",
@@ -122,7 +122,7 @@ _AGENTS: dict[str, AgentDescriptor] = {
         role="Stage 8 trigger monitoring",
         stage_number=8,
         agent_type="deterministic_agent",
-        status="registered",
+        status="ready",
     ),
     "execution_planner_agent": _d(
         agent_key="execution_planner_agent",
@@ -130,7 +130,7 @@ _AGENTS: dict[str, AgentDescriptor] = {
         role="Stage 9 execution planning",
         stage_number=9,
         agent_type="deterministic_agent",
-        status="registered",
+        status="ready",
     ),
     "execution_approval_agent": _d(
         agent_key="execution_approval_agent",
@@ -146,7 +146,7 @@ _AGENTS: dict[str, AgentDescriptor] = {
         role="Stage 11 position monitoring",
         stage_number=11,
         agent_type="deterministic_agent",
-        status="registered",
+        status="ready",
     ),
     "close_review_agent": _d(
         agent_key="close_review_agent",
@@ -154,7 +154,7 @@ _AGENTS: dict[str, AgentDescriptor] = {
         role="Stage 12 close/reduce review",
         stage_number=12,
         agent_type="deterministic_agent",
-        status="registered",
+        status="ready",
     ),
     "post_trade_evaluator_agent": _d(
         agent_key="post_trade_evaluator_agent",
@@ -162,7 +162,7 @@ _AGENTS: dict[str, AgentDescriptor] = {
         role="Stage 13 post-trade evaluation",
         stage_number=13,
         agent_type="deterministic_agent",
-        status="registered",
+        status="ready",
     ),
     "learning_loop_agent": _d(
         agent_key="learning_loop_agent",
@@ -170,7 +170,7 @@ _AGENTS: dict[str, AgentDescriptor] = {
         role="Stage 14 learning loop",
         stage_number=14,
         agent_type="deterministic_agent",
-        status="registered",
+        status="ready",
     ),
     "narrative_review_agent": _d(
         agent_key="narrative_review_agent",

@@ -1140,8 +1140,39 @@ def _apply_inventory_overrides(units: list[dict[str, Any]]) -> None:
         route=None,
         endpoint_family="/api/agent-runtime",
         notes=[
-            "Phase 0/1 only: contracts + run recording + idempotency. No tool execution until Phase 2.",
+            "Phase 0/1/2: contracts + deterministic tool-calling wrappers + traces + idempotency.",
+            "Postgres best-effort persistence (source of truth when available); memory fallback when unavailable.",
+            "Redis runtime contract added for locks/idempotency cache/active workflow hot state (optional; non-blocking when unavailable).",
             "No broker calls, no execution submit, no LLM.",
+        ],
+    )
+
+    apply(
+        "Agent Wrapper Runtime",
+        backend="present",
+        frontend="missing",
+        test="tested",
+        implementation_status="present_partial",
+        route=None,
+        endpoint_family="/api/agent-runtime",
+        notes=[
+            "Phase 2: wraps Stage 3/5/7/8/9/11/12/13/14 services as tool-calling deterministic agents.",
+            "Safety: stock-only + day-trading-only; allow_submit forced false; never submits orders; no LLM.",
+        ],
+    )
+
+    apply(
+        "Agent Runtime Persistence",
+        backend="present",
+        frontend="missing",
+        test="tested",
+        implementation_status="present_partial",
+        route=None,
+        endpoint_family="/api/agent-runtime",
+        notes=[
+            "Postgres is source of truth for workflow runs, agent runs, traces, and idempotency when available.",
+            "Redis optional hot state (locks, active workflow state cache, idempotency cache acceleration).",
+            "Memory-only is fallback mode when Postgres/Redis are unavailable; startup/tests must not require either.",
         ],
     )
 

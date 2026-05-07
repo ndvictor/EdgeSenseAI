@@ -54,6 +54,8 @@ class AgentRunResult(BaseModel):
     idempotency_key: str
     inputs_hash: str
     created_at: str
+    persistence_mode: str | None = None
+    storage_metadata: dict = Field(default_factory=dict)
 
 
 class WorkflowRunCreateRequest(BaseModel):
@@ -85,6 +87,8 @@ class WorkflowRunRecord(BaseModel):
     created_at: str
     updated_at: str
     metadata: dict = Field(default_factory=dict)
+    persistence_mode: str | None = None
+    storage_metadata: dict = Field(default_factory=dict)
 
 
 class AgentRuntimeStatusResponse(BaseModel):

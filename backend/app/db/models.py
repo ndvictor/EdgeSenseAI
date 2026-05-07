@@ -1,6 +1,6 @@
 from datetime import datetime, timezone
 
-from sqlalchemy import Boolean, DateTime, Float, Integer, JSON, String, Text
+from sqlalchemy import Boolean, DateTime, Float, Index, Integer, JSON, String, Text
 from sqlalchemy.orm import DeclarativeBase, Mapped, mapped_column
 
 
@@ -480,4 +480,66 @@ class MemoryUpdateRunRecord(Base):
     metadata_json: Mapped[dict | list] = mapped_column("metadata", JSON, default=dict)
     blockers: Mapped[dict | list] = mapped_column(JSON, default=list)
     warnings: Mapped[dict | list] = mapped_column(JSON, default=list)
+    created_at: Mapped[datetime] = mapped_column(DateTime(timezone=True), default=utcnow, index=True)
+
+
+# -----------------------------
+# Agent Runtime persistence v1
+# -----------------------------
+class AgentWorkflowRunRecord(Base):
+    __tablename__ = "agent_workflow_runs"
+
+    workflow_run_id: Mapped[str] = mapped_column(String(120), primary_key=True)
+    workflow_name: Mapped[str | None] = mapped_column(Text)
+    asset_class: Mapped[str | None] = mapped_column(String(40))
+    horizon: Mapped[str | None] = mapped_column(String(40))
+    mode: Mapped[str | None] = mapped_column(String(40))
+    source: Mapped[str | None] = mapped_column(String(120))
+    status: Mapped[str | None] = mapped_column(String(40), index=True)
+    current_stage: Mapped[int | None] = mapped_column(Integer, nullable=True)
+    current_agent_key: Mapped[str | None] = mapped_column(String(120), nullable=True)
+    stage_states: Mapped[dict | list | None] = mapped_column(JSON)
+    agent_run_ids: Mapped[dict | list | None] = mapped_column(JSON)
+    blockers: Mapped[dict | list | None] = mapped_column(JSON)
+    warnings: Mapped[dict | list | None] = mapped_column(JSON)
+    metadata_json: Mapped[dict | list | None] = mapped_column("metadata", JSON)
+    created_at: Mapped[datetime] = mapped_column(DateTime(timezone=True), default=utcnow, index=True)
+    updated_at: Mapped[datetime] = mapped_column(DateTime(timezone=True), default=utcnow, onupdate=utcnow)
+
+    __table_args__ = (Index("ix_agent_workflow_runs_created_at", "created_at"),)
+
+
+class AgentRunRecord(Base):
+    __tablename__ = "agent_runs"
+
+    run_id: Mapped[str] = mapped_column(String(120), primary_key=True)
+    workflow_run_id: Mapped[str] = mapped_column(String(120), index=True)
+    agent_key: Mapped[str] = mapped_column(String(120), index=True)
+    status: Mapped[str | None] = mapped_column(String(40), index=True)
+    decision: Mapped[dict | list | None] = mapped_column(JSON)
+    blockers: Mapped[dict | list | None] = mapped_column(JSON)
+    warnings: Mapped[dict | list | None] = mapped_column(JSON)
+    next_action: Mapped[str | None] = mapped_column(Text)
+    next_agent: Mapped[str | None] = mapped_column(String(120), nullable=True)
+    artifacts: Mapped[dict | list | None] = mapped_column(JSON)
+    trace_id: Mapped[str | None] = mapped_column(String(120))
+    trace: Mapped[dict | list | None] = mapped_column(JSON)
+    idempotency_key: Mapped[str | None] = mapped_column(String(200))
+    inputs_hash: Mapped[str | None] = mapped_column(String(120))
+    created_at: Mapped[datetime] = mapped_column(DateTime(timezone=True), default=utcnow, index=True)
+
+    __table_args__ = (
+        Index("ix_agent_runs_created_at", "created_at"),
+        Index("ix_agent_runs_workflow_run_id", "workflow_run_id"),
+        Index("ix_agent_runs_agent_key", "agent_key"),
+    )
+
+
+class AgentIdempotencyIndexRecord(Base):
+    __tablename__ = "agent_idempotency_index"
+
+    fingerprint: Mapped[str] = mapped_column(String(120), primary_key=True)
+    run_id: Mapped[str] = mapped_column(String(120))
+    workflow_run_id: Mapped[str] = mapped_column(String(120))
+    agent_key: Mapped[str] = mapped_column(String(120))
     created_at: Mapped[datetime] = mapped_column(DateTime(timezone=True), default=utcnow, index=True)
