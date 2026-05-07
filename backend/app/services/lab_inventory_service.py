@@ -1202,6 +1202,29 @@ def _apply_inventory_overrides(units: list[dict[str, Any]]) -> None:
             notes=["Phase 3: backend adapters/registries added; frontend deferred."],
         )
 
+    # Phase 4 backend platform units
+    for name, ep in [
+        ("WorkflowOrchestratorAgent", "/api/workflow-orchestrator"),
+        ("Workflow Run Backend", "/api/workflow-orchestrator/run"),
+        ("Approval Queue Backend", "/api/approval-queue"),
+        ("Audit Log Backend", "/api/audit-log"),
+        ("Workflow Scheduler Backend", "/api/workflow-scheduler"),
+        ("Workflow Governance Backend", "/api/workflow-governance"),
+        ("Retry/Backoff Backend", "/api/workflow-orchestrator"),
+        ("Qlib Automation Backend", "/api/qlib/automation"),
+        ("Platform Readiness Backend", "/api/platform-readiness/status"),
+    ]:
+        apply(
+            name,
+            backend="present",
+            frontend="missing",
+            test="tested",
+            implementation_status="present_partial",
+            route=None,
+            endpoint_family=ep,
+            notes=["Phase 4: backend control-plane endpoints implemented; frontend deferred to Phase 5."],
+        )
+
 
 def _summarize_units(units: list[dict[str, Any]]) -> dict[str, Any]:
     present = sum(1 for u in units if _is_present_bucket(u["status"]))

@@ -246,3 +246,35 @@ def register_model_artifact(body: QlibModelArtifactRegisterCreate) -> QlibArtifa
         )
     )
 
+
+# -----------------------------
+# Phase 4 controlled automation
+# -----------------------------
+def get_qlib_automation_status() -> dict[str, Any]:
+    st = get_qlib_status()
+    return {
+        "status": "ok",
+        "qlib_available": bool(st.qlib_available),
+        "qlib_version": st.qlib_version,
+        "message": "Qlib automation is metadata-only in Phase 4 (no heavy jobs).",
+        "blockers": st.blockers,
+        "warnings": st.warnings,
+    }
+
+
+def automation_backtest(*, payload: dict[str, Any]) -> dict[str, Any]:
+    st = get_qlib_status()
+    if not st.qlib_available:
+        return {"status": "unavailable", "qlib_available": False, "blockers": st.blockers, "message": "Qlib unavailable; cannot run automation backtest. Record external artifacts via /backtests/record."}
+    # Phase 4: do not run heavy backtests; only record metadata as artifact.
+    art = record_backtest_artifact(QlibBacktestRecordCreate(**payload))
+    return {"status": "ok", "artifact": art.model_dump(), "message": "Recorded backtest metadata (no job executed)."}
+
+
+def automation_score(*, payload: dict[str, Any]) -> dict[str, Any]:
+    st = get_qlib_status()
+    if not st.qlib_available:
+        return {"status": "unavailable", "qlib_available": False, "blockers": st.blockers, "message": "Qlib unavailable; cannot run automation score. Record external scores via /signals/score."}
+    art = save_signal_scores(QlibSignalScoreCreate(**payload))
+    return {"status": "ok", "artifact": art.model_dump(), "message": "Recorded signal score metadata (no job executed)."}
+

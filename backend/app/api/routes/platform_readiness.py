@@ -362,3 +362,59 @@ def get_platform_readiness():
         warnings=warnings,
         generated_at=datetime.now(timezone.utc).isoformat(),
     )
+
+
+@router.get("/platform-readiness/status")
+def get_platform_readiness_status() -> dict[str, Any]:
+    """Phase 4 readiness rollup for all major backend systems (stable contract for Phase 6)."""
+    from app.services.agent_runtime.service import build_status as agent_runtime_status
+    from app.services.audit_log.service import get_audit_log_status
+    from app.services.approval_queue.service import get_status as approval_status
+    from app.services.workflow_governance.service import get_governance_status
+    from app.services.workflow_orchestrator.service import get_orchestrator_status
+    from app.services.workflow_scheduler.service import get_status as scheduler_status
+    from app.services.qlib_integration.service import get_qlib_automation_status
+    from app.services.proof_registry.service import get_proof_registry_status
+    from app.services.model_evidence.service import get_model_evidence_status
+    from app.services.strategy_evidence.service import get_strategy_evidence_status
+    from app.core.effective_runtime import effective_bool
+
+    db = check_database_health()
+    systems = {
+        "database": db,
+        "redis": {"configured": bool(os.environ.get("REDIS_URL"))},
+        "agent_runtime": agent_runtime_status().model_dump(),
+        "workflow_orchestrator": get_orchestrator_status().model_dump(),
+        "approval_queue": approval_status().model_dump(),
+        "audit_log": get_audit_log_status().model_dump(),
+        "workflow_scheduler": scheduler_status().model_dump(),
+        "governance": get_governance_status().model_dump(),
+        "qlib_integration": get_qlib_automation_status(),
+        "proof_registry": get_proof_registry_status().model_dump(),
+        "model_evidence": get_model_evidence_status().model_dump(),
+        "strategy_evidence": get_strategy_evidence_status().model_dump(),
+        "execution_gates": {
+            "workflow_enabled": effective_bool("WORKFLOW_ENABLED"),
+            "execution_enabled": effective_bool("EXECUTION_ENABLED"),
+            "emergency_stop": effective_bool("EMERGENCY_STOP"),
+            "paper_trading_enabled": effective_bool("PAPER_TRADING_ENABLED"),
+            "live_trading_enabled": effective_bool("LIVE_TRADING_ENABLED"),
+            "broker_execution_enabled": effective_bool("BROKER_EXECUTION_ENABLED"),
+            "require_human_approval": effective_bool("REQUIRE_HUMAN_APPROVAL"),
+        },
+        "safety_summary": {"no_llm": True, "no_broker_calls": True, "no_execution_submit": True},
+    }
+
+    missing_backend_components = []
+    if not systems["execution_gates"]["workflow_enabled"]:
+        missing_backend_components.append("WORKFLOW_ENABLED gate is false")
+
+    return {
+        "status": "ok",
+        "data_mode": "platform_readiness_v2",
+        "updated_at": datetime.now(timezone.utc).isoformat(),
+        "systems": systems,
+        "missing_backend_components": missing_backend_components,
+        "missing_frontend_components": ["workflow_dashboard_phase5", "approval_queue_ui_phase5"],
+        "next_action": "Phase 5: build frontend dashboards for orchestrator, approvals, audit, scheduler.",
+    }

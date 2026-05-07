@@ -204,7 +204,7 @@ _AGENTS: dict[str, AgentDescriptor] = {
         role="Orchestrate multi-stage workflow (Phase 2+; deferred)",
         stage_number=None,
         agent_type="orchestrator_agent",
-        status="not_implemented",
+        status="ready",
     ),
 }
 

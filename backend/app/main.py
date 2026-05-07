@@ -76,6 +76,11 @@ from app.api.routes.proof_registry import router as proof_registry_router
 from app.api.routes.model_evidence import router as model_evidence_router
 from app.api.routes.strategy_evidence import router as strategy_evidence_router
 from app.api.routes.qlib_integration import router as qlib_integration_router
+from app.api.routes.workflow_orchestrator import router as workflow_orchestrator_router
+from app.api.routes.workflow_governance import router as workflow_governance_router
+from app.api.routes.approval_queue import router as approval_queue_router
+from app.api.routes.audit_log import router as audit_log_router
+from app.api.routes.workflow_scheduler import router as workflow_scheduler_router
 from app.api.routes.universe_discovery import router as universe_discovery_router
 from app.api.routes.universe_selection import router as universe_selection_router
 from app.api.routes.upper_workflow import router as upper_workflow_router
@@ -218,6 +223,11 @@ app.include_router(proof_registry_router, prefix="/api")
 app.include_router(model_evidence_router, prefix="/api")
 app.include_router(strategy_evidence_router, prefix="/api")
 app.include_router(qlib_integration_router, prefix="/api")
+app.include_router(workflow_orchestrator_router, prefix="/api")
+app.include_router(workflow_governance_router, prefix="/api")
+app.include_router(approval_queue_router, prefix="/api")
+app.include_router(audit_log_router, prefix="/api")
+app.include_router(workflow_scheduler_router, prefix="/api")
 
 _ACCOUNT_PROFILE = AccountRiskProfile()
 

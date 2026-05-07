@@ -1502,6 +1502,99 @@ def test_qlib_signal_score_post_records_artifact():
     assert art["artifact_type"] == "signal_scores"
 
 
+def test_workflow_governance_status_and_check_contract():
+    r = client.get("/api/workflow-governance/status")
+    assert r.status_code == 200
+    payload = r.json()
+    assert payload["status"] == "ok"
+    c = client.post("/api/workflow-governance/check", json={"asset_class": "stock", "horizon": "day_trading", "symbols": ["AMD"], "allow_submit": False})
+    assert c.status_code == 200
+    assert c.json()["status"] == "ok"
+
+
+def test_audit_log_status_and_post_event_contract():
+    r = client.get("/api/audit-log/status")
+    assert r.status_code == 200
+    p = r.json()
+    assert p["status"] == "ok"
+    e = client.post("/api/audit-log/events", json={"event_type": "test_event", "actor": "test", "severity": "info", "message": "hello", "metadata": {"k": "v"}})
+    assert e.status_code == 200
+    assert e.json()["event"]["audit_id"].startswith("audit_")
+
+
+def test_approval_queue_create_approve_reject_cancel_and_audit():
+    # Create
+    r = client.post(
+        "/api/approval-queue/items",
+        json={"workflow_run_id": "wr_test", "approval_type": "execution_boundary", "status": "pending", "requested_action": {"action": "noop"}, "risk_summary": {}},
+    )
+    assert r.status_code == 200
+    approval_id = r.json()["item"]["approval_id"]
+    # Approve
+    a = client.post(f"/api/approval-queue/items/{approval_id}/approve", json={"actor": "owner", "reason": "ok"})
+    assert a.status_code == 200
+    assert a.json()["item"]["status"] == "approved"
+    # Reject (new item)
+    r2 = client.post("/api/approval-queue/items", json={"workflow_run_id": "wr_test2", "approval_type": "execution_boundary", "status": "pending", "requested_action": {"action": "noop"}, "risk_summary": {}})
+    approval_id2 = r2.json()["item"]["approval_id"]
+    rej = client.post(f"/api/approval-queue/items/{approval_id2}/reject", json={"actor": "owner", "reason": "no"})
+    assert rej.status_code == 200
+    assert rej.json()["item"]["status"] == "rejected"
+    # Cancel (new item)
+    r3 = client.post("/api/approval-queue/items", json={"workflow_run_id": "wr_test3", "approval_type": "execution_boundary", "status": "pending", "requested_action": {"action": "noop"}, "risk_summary": {}})
+    approval_id3 = r3.json()["item"]["approval_id"]
+    c = client.post(f"/api/approval-queue/items/{approval_id3}/cancel", json={"actor": "owner", "reason": "cancel"})
+    assert c.status_code == 200
+    assert c.json()["item"]["status"] == "cancelled"
+
+
+def test_workflow_scheduler_status_create_enable_disable_run_once():
+    s = client.get("/api/workflow-scheduler/status")
+    assert s.status_code == 200
+    c = client.post("/api/workflow-scheduler/schedules", json={"name": "test", "enabled": True, "schedule_type": "interval", "interval_seconds": 60, "workflow_request": {"symbols": ["AMD"], "asset_class": "stock", "horizon": "day_trading"}})
+    assert c.status_code == 200
+    schedule_id = c.json()["schedule"]["schedule_id"]
+    d = client.post(f"/api/workflow-scheduler/schedules/{schedule_id}/disable")
+    assert d.status_code == 200
+    e = client.post(f"/api/workflow-scheduler/schedules/{schedule_id}/enable")
+    assert e.status_code == 200
+    ro = client.post("/api/workflow-scheduler/run-once", json={"workflow_request": {"symbols": ["AMD"], "asset_class": "stock", "horizon": "day_trading", "dry_run": True, "allow_submit": False}})
+    assert ro.status_code == 200
+    assert ro.json()["run"]["submitted_order"] is False
+
+
+def test_workflow_orchestrator_run_creates_run_and_pauses_at_execution_boundary_with_approval():
+    r = client.post(
+        "/api/workflow-orchestrator/run",
+        json={"asset_class": "stock", "horizon": "day_trading", "mode": "paper_first", "source": "manual", "symbols": ["AMD"], "dry_run": True, "stop_at_stage": 12, "allow_submit": False, "require_human_approval": True},
+    )
+    assert r.status_code == 200
+    run = r.json()["run"]
+    assert run["submitted_order"] is False
+    assert run["broker_called"] is False
+    assert run["llm_used"] is False
+    assert run["execution_boundary_reached"] in {True, False}
+    if run["approval_required"] is True:
+        assert run["approval_id"] is not None
+        assert run["status"] in {"paused_for_approval", "blocked", "completed_preview"}
+
+
+def test_platform_readiness_status_v2_contract():
+    r = client.get("/api/platform-readiness/status")
+    assert r.status_code == 200
+    payload = r.json()
+    assert payload["status"] == "ok"
+    assert "systems" in payload
+    assert "agent_runtime" in payload["systems"]
+    assert "workflow_orchestrator" in payload["systems"]
+
+
+def test_qlib_automation_status_contract_non_failing():
+    r = client.get("/api/qlib/automation/status")
+    assert r.status_code == 200
+    assert r.json()["status"] == "ok"
+
+
 def test_agent_runtime_phase3_data_readiness_agent_runs_and_traces_tool_called():
     body = {
         "agent_key": "data_readiness_agent",

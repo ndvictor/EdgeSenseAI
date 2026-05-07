@@ -659,3 +659,138 @@ class QlibArtifactRecord(Base):
         Index("ix_qlib_artifacts_strategy_key", "strategy_key"),
         Index("ix_qlib_artifacts_created_at", "created_at"),
     )
+
+
+# -----------------------------
+# Phase 4 platform tables
+# -----------------------------
+class WorkflowOrchestratorRunRecord(Base):
+    __tablename__ = "workflow_orchestrator_runs"
+
+    orchestrator_run_id: Mapped[str] = mapped_column(String(120), primary_key=True)
+    workflow_run_id: Mapped[str] = mapped_column(String(120), index=True)
+    status: Mapped[str] = mapped_column(String(80), index=True)
+    asset_class: Mapped[str] = mapped_column(String(40))
+    horizon: Mapped[str] = mapped_column(String(40))
+    mode: Mapped[str] = mapped_column(String(40))
+    source: Mapped[str] = mapped_column(String(120))
+    symbols: Mapped[dict | list] = mapped_column(JSON, default=list)
+    current_stage: Mapped[int | None] = mapped_column(Integer, nullable=True)
+    current_agent_key: Mapped[str | None] = mapped_column(String(120), nullable=True)
+    stage_timeline: Mapped[dict | list] = mapped_column(JSON, default=list)
+    agent_run_ids: Mapped[dict | list] = mapped_column(JSON, default=list)
+    blockers: Mapped[dict | list] = mapped_column(JSON, default=list)
+    warnings: Mapped[dict | list] = mapped_column(JSON, default=list)
+    next_action: Mapped[str] = mapped_column(Text, default="")
+    approval_required: Mapped[bool] = mapped_column(Boolean, default=True)
+    execution_boundary_reached: Mapped[bool] = mapped_column(Boolean, default=False)
+    submitted_order: Mapped[bool] = mapped_column(Boolean, default=False)
+    broker_called: Mapped[bool] = mapped_column(Boolean, default=False)
+    llm_used: Mapped[bool] = mapped_column(Boolean, default=False)
+    metadata_json: Mapped[dict | list] = mapped_column("metadata", JSON, default=dict)
+    created_at: Mapped[datetime] = mapped_column(DateTime(timezone=True), default=utcnow, index=True)
+    updated_at: Mapped[datetime] = mapped_column(DateTime(timezone=True), default=utcnow, onupdate=utcnow)
+
+    __table_args__ = (
+        Index("ix_workflow_orchestrator_runs_workflow_run_id", "workflow_run_id"),
+        Index("ix_workflow_orchestrator_runs_created_at", "created_at"),
+    )
+
+
+class WorkflowApprovalItemRecord(Base):
+    __tablename__ = "workflow_approval_items"
+
+    approval_id: Mapped[str] = mapped_column(String(120), primary_key=True)
+    workflow_run_id: Mapped[str] = mapped_column(String(120), index=True)
+    orchestrator_run_id: Mapped[str | None] = mapped_column(String(120), nullable=True)
+    agent_run_id: Mapped[str | None] = mapped_column(String(120), nullable=True)
+    approval_type: Mapped[str] = mapped_column(String(80))
+    status: Mapped[str] = mapped_column(String(80), index=True)
+    requested_action: Mapped[dict | list] = mapped_column(JSON, default=dict)
+    risk_summary: Mapped[dict | list] = mapped_column(JSON, default=dict)
+    required_approver: Mapped[str | None] = mapped_column(String(120), nullable=True)
+    approved_by: Mapped[str | None] = mapped_column(String(120), nullable=True)
+    rejected_by: Mapped[str | None] = mapped_column(String(120), nullable=True)
+    approval_reason: Mapped[str | None] = mapped_column(Text, nullable=True)
+    expires_at: Mapped[datetime | None] = mapped_column(DateTime(timezone=True), nullable=True)
+    created_at: Mapped[datetime] = mapped_column(DateTime(timezone=True), default=utcnow, index=True)
+    updated_at: Mapped[datetime] = mapped_column(DateTime(timezone=True), default=utcnow, onupdate=utcnow)
+
+    __table_args__ = (
+        Index("ix_workflow_approval_items_workflow_run_id", "workflow_run_id"),
+        Index("ix_workflow_approval_items_status", "status"),
+    )
+
+
+class WorkflowAuditEventRecord(Base):
+    __tablename__ = "workflow_audit_events"
+
+    audit_id: Mapped[str] = mapped_column(String(120), primary_key=True)
+    workflow_run_id: Mapped[str | None] = mapped_column(String(120), nullable=True, index=True)
+    orchestrator_run_id: Mapped[str | None] = mapped_column(String(120), nullable=True)
+    agent_run_id: Mapped[str | None] = mapped_column(String(120), nullable=True)
+    event_type: Mapped[str] = mapped_column(String(120), index=True)
+    actor: Mapped[str] = mapped_column(String(120), default="system")
+    severity: Mapped[str] = mapped_column(String(40), default="info")
+    message: Mapped[str] = mapped_column(Text, default="")
+    metadata_json: Mapped[dict | list] = mapped_column("metadata", JSON, default=dict)
+    created_at: Mapped[datetime] = mapped_column(DateTime(timezone=True), default=utcnow, index=True)
+
+    __table_args__ = (
+        Index("ix_workflow_audit_events_workflow_run_id", "workflow_run_id"),
+        Index("ix_workflow_audit_events_event_type", "event_type"),
+        Index("ix_workflow_audit_events_created_at", "created_at"),
+    )
+
+
+class WorkflowScheduleRecord(Base):
+    __tablename__ = "workflow_schedules"
+
+    schedule_id: Mapped[str] = mapped_column(String(120), primary_key=True)
+    name: Mapped[str] = mapped_column(String(200))
+    enabled: Mapped[bool] = mapped_column(Boolean, default=True, index=True)
+    schedule_type: Mapped[str] = mapped_column(String(80))
+    cron_expression: Mapped[str | None] = mapped_column(String(120), nullable=True)
+    interval_seconds: Mapped[int | None] = mapped_column(Integer, nullable=True)
+    workflow_request: Mapped[dict | list] = mapped_column(JSON, default=dict)
+    max_runs_per_day: Mapped[int] = mapped_column(Integer, default=50)
+    last_run_at: Mapped[datetime | None] = mapped_column(DateTime(timezone=True), nullable=True)
+    next_run_at: Mapped[datetime | None] = mapped_column(DateTime(timezone=True), nullable=True)
+    created_at: Mapped[datetime] = mapped_column(DateTime(timezone=True), default=utcnow, index=True)
+    updated_at: Mapped[datetime] = mapped_column(DateTime(timezone=True), default=utcnow, onupdate=utcnow)
+
+    __table_args__ = (Index("ix_workflow_schedules_enabled", "enabled"),)
+
+
+class WorkflowRetryEventRecord(Base):
+    __tablename__ = "workflow_retry_events"
+
+    retry_id: Mapped[str] = mapped_column(String(120), primary_key=True)
+    workflow_run_id: Mapped[str] = mapped_column(String(120), index=True)
+    orchestrator_run_id: Mapped[str | None] = mapped_column(String(120), nullable=True)
+    agent_key: Mapped[str | None] = mapped_column(String(120), nullable=True)
+    attempt: Mapped[int] = mapped_column(Integer, default=1)
+    status: Mapped[str] = mapped_column(String(80), index=True)
+    reason: Mapped[str] = mapped_column(Text, default="")
+    next_retry_at: Mapped[datetime | None] = mapped_column(DateTime(timezone=True), nullable=True)
+    metadata_json: Mapped[dict | list] = mapped_column("metadata", JSON, default=dict)
+    created_at: Mapped[datetime] = mapped_column(DateTime(timezone=True), default=utcnow, index=True)
+
+    __table_args__ = (Index("ix_workflow_retry_events_workflow_run_id", "workflow_run_id"),)
+
+
+class WorkflowGovernanceCheckRecord(Base):
+    __tablename__ = "workflow_governance_checks"
+
+    governance_check_id: Mapped[str] = mapped_column(String(120), primary_key=True)
+    workflow_run_id: Mapped[str | None] = mapped_column(String(120), nullable=True, index=True)
+    check_scope: Mapped[str] = mapped_column(String(80))
+    status: Mapped[str] = mapped_column(String(80), index=True)
+    gates: Mapped[dict | list] = mapped_column(JSON, default=dict)
+    blockers: Mapped[dict | list] = mapped_column(JSON, default=list)
+    warnings: Mapped[dict | list] = mapped_column(JSON, default=list)
+    limits: Mapped[dict | list] = mapped_column(JSON, default=dict)
+    metadata_json: Mapped[dict | list] = mapped_column("metadata", JSON, default=dict)
+    created_at: Mapped[datetime] = mapped_column(DateTime(timezone=True), default=utcnow, index=True)
+
+    __table_args__ = (Index("ix_workflow_governance_checks_workflow_run_id", "workflow_run_id"),)

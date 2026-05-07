@@ -4,6 +4,9 @@ from fastapi import APIRouter
 
 from app.services.qlib_integration.models import QlibBacktestRecordCreate, QlibModelArtifactRegisterCreate, QlibSignalScoreCreate
 from app.services.qlib_integration.service import (
+    automation_backtest,
+    automation_score,
+    get_qlib_automation_status,
     get_latest_signal_scores,
     get_qlib_status,
     list_artifacts,
@@ -47,4 +50,19 @@ def post_backtest_record(body: QlibBacktestRecordCreate):
 def post_register_model_artifact(body: QlibModelArtifactRegisterCreate):
     a = register_model_artifact(body)
     return {"status": "ok", "artifact": a.model_dump()}
+
+
+@router.get("/automation/status")
+def get_automation_status():
+    return get_qlib_automation_status()
+
+
+@router.post("/automation/backtest")
+def post_automation_backtest(payload: dict):
+    return automation_backtest(payload=payload)
+
+
+@router.post("/automation/score")
+def post_automation_score(payload: dict):
+    return automation_score(payload=payload)
 
