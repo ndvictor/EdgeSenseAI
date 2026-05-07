@@ -188,11 +188,19 @@ def run_execution_precheck(req: ExecutionRequest, effective_mode: str, cfg: Edge
     warnings: list[str] = []
     details: dict[str, Any] = {"effective_mode": effective_mode}
 
+    if effective_bool("EMERGENCY_STOP"):
+        blockers.append("emergency_stop_active")
+    if not effective_bool("EXECUTION_ENABLED"):
+        blockers.append("execution_disabled")
+
     if req.asset_class.lower() not in cfg.allowed_asset_classes and normalize_asset_class(req.asset_class) not in cfg.allowed_asset_classes:
         # cfg has stock, option, crypto
         ac = normalize_asset_class(req.asset_class)
         if ac not in cfg.allowed_asset_classes:
             blockers.append("asset_class_not_allowed")
+
+    if effective_mode == "paper" and not effective_bool("PAPER_TRADING_ENABLED"):
+        blockers.append("paper_trading_not_enabled")
 
     if effective_mode == "live":
         if not cfg.live_trading_enabled or not effective_bool("LIVE_TRADING_ENABLED"):

@@ -12,6 +12,7 @@ import {
   type NewsSettingsUpdate,
   type PlatformFeaturesUpdate,
   type RateLimitSettingsUpdate,
+  type MasterAdminSettingsUpdate,
   type RiskSettings,
   type AlpacaPaperSnapshot,
   type PlatformIntegrationChecksResponse,
@@ -54,13 +55,13 @@ function SettingsPageInner() {
   const [integrationRunMs, setIntegrationRunMs] = useState<number | null>(null);
   const [integrationError, setIntegrationError] = useState<string | null>(null);
   const [activeTab, setActiveTab] = useState<
-    "overview" | "trading" | "risk" | "market" | "llm" | "news" | "platform" | "readiness" | "rate_limits"
+    "overview" | "trading" | "risk" | "market" | "llm" | "news" | "platform" | "readiness" | "rate_limits" | "master_admin"
   >("overview");
 
   useEffect(() => {
     const tab = searchParams.get("tab");
     if (!tab) return;
-    if (tab === "trading" || tab === "risk" || tab === "market" || tab === "llm" || tab === "news" || tab === "platform" || tab === "readiness" || tab === "rate_limits" || tab === "overview") {
+    if (tab === "trading" || tab === "risk" || tab === "market" || tab === "llm" || tab === "news" || tab === "platform" || tab === "readiness" || tab === "rate_limits" || tab === "master_admin" || tab === "overview") {
       setActiveTab(tab);
     }
   }, [searchParams]);
@@ -208,6 +209,26 @@ function SettingsPageInner() {
       setMessage("Rate limits updated successfully");
     } catch (err) {
       setError(err instanceof Error ? err.message : "Failed to update setting");
+    } finally {
+      setLoading(false);
+    }
+  };
+
+  const updateMasterAdmin = async (updates: MasterAdminSettingsUpdate) => {
+    if (!settings || loading) return;
+    setLoading(true);
+    setMessage(null);
+    try {
+      const updated = await api.updateSettings({
+        master_admin: {
+          ...updates,
+          last_updated_by: "settings_ui",
+        },
+      });
+      setSettings(updated);
+      setMessage("Master Admin controls updated successfully");
+    } catch (err) {
+      setError(err instanceof Error ? err.message : "Failed to update Master Admin controls");
     } finally {
       setLoading(false);
     }
@@ -436,6 +457,7 @@ function SettingsPageInner() {
                 ["platform", "Platform"],
                 ["readiness", "Readiness"],
                 ["rate_limits", "Rate limits"],
+                ["master_admin", "Master Admin"],
               ] as const
             ).map(([id, label]) => (
               <button
@@ -574,6 +596,178 @@ function SettingsPageInner() {
           <div className="py-8 text-center text-sm text-slate-300">Loading settings...</div>
         ) : (
           <div className="space-y-6">
+            {/* Master Admin Control Plane */}
+            {activeTab === "master_admin" && settings && (
+              <section className="rounded-2xl border border-emerald-400/15 bg-black/35 p-6 backdrop-blur shadow-[0_0_40px_rgba(0,0,0,0.25)]">
+                <div className="mb-4 flex flex-wrap items-start justify-between gap-3">
+                  <div>
+                    <h2 className="text-xl font-semibold text-emerald-400">Master Admin Control Plane</h2>
+                    <p className="mt-2 text-sm text-slate-400">
+                      Runtime safety gates for workflows and execution. Emergency stop overrides everything. Force close is a request flag only in v1 (no orders are submitted).
+                    </p>
+                    <p className="mt-2 text-xs text-slate-500">
+                      Last updated by <span className="text-slate-300">{settings.master_admin.last_updated_by || "unknown"}</span>{" "}
+                      {settings.master_admin.updated_at ? (
+                        <>
+                          at <span className="text-slate-300">{settings.master_admin.updated_at}</span>
+                        </>
+                      ) : null}
+                    </p>
+                  </div>
+                </div>
+
+                {(() => {
+                  const emergencyStop = settings.master_admin.emergency_stop;
+                  const executionEnabled = settings.master_admin.execution_enabled;
+                  const workflowEnabled = settings.master_admin.workflow_enabled;
+                  const forceCloseRequested = settings.master_admin.force_close_requested;
+                  const humanApproval = settings.trading.require_human_approval;
+                  const brokerExecution = settings.trading.broker_execution_enabled;
+                  const liveTrading = settings.trading.live_trading_enabled;
+                  const paperTrading = settings.trading.paper_trading_enabled;
+
+                  const disableAll = loading;
+                  const disabledByEmergency = emergencyStop;
+
+                  const liveDisabled =
+                    disableAll ||
+                    disabledByEmergency ||
+                    !executionEnabled ||
+                    !humanApproval ||
+                    !brokerExecution;
+
+                  return (
+                    <div className="space-y-6">
+                      <div className="grid grid-cols-1 gap-4 lg:grid-cols-2">
+                        <ToggleSwitch
+                          label="Start Workflow"
+                          description="Enable platform workflows (scanner, pipeline runs, etc.)"
+                          enabled={workflowEnabled}
+                          onToggle={() => updateMasterAdmin({ workflow_enabled: !workflowEnabled })}
+                          disabled={disableAll}
+                        />
+                        <ToggleSwitch
+                          label="Disable All Execution"
+                          description="Blocks all order submission paths (paper + live)"
+                          enabled={!executionEnabled}
+                          onToggle={() => updateMasterAdmin({ execution_enabled: executionEnabled ? false : true })}
+                          danger={!executionEnabled}
+                          disabled={disableAll || disabledByEmergency}
+                        />
+
+                        <ToggleSwitch
+                          label="Require Human Approval"
+                          description="All sensitive execution paths require explicit confirmation"
+                          enabled={humanApproval}
+                          onToggle={() => updateTrading({ require_human_approval: !humanApproval })}
+                          disabled={disableAll || disabledByEmergency}
+                        />
+
+                        <ToggleSwitch
+                          label="Broker Execution"
+                          description="Allow broker routing when gates pass"
+                          enabled={brokerExecution}
+                          onToggle={() => updateTrading({ broker_execution_enabled: !brokerExecution })}
+                          danger={brokerExecution}
+                          disabled={disableAll || disabledByEmergency || !executionEnabled}
+                        />
+
+                        <ToggleSwitch
+                          label="Paper Trading"
+                          description="Enable paper order submission (simulation)"
+                          enabled={paperTrading}
+                          onToggle={() => updateTrading({ paper_trading_enabled: !paperTrading })}
+                          disabled={disableAll || disabledByEmergency || !executionEnabled}
+                        />
+
+                        <ToggleSwitch
+                          label="Live Trading"
+                          description="⚠️ Dangerous. Requires human approval and broker execution enabled."
+                          enabled={liveTrading}
+                          onToggle={() => updateTrading({ live_trading_enabled: !liveTrading })}
+                          danger
+                          disabled={liveDisabled}
+                        />
+                      </div>
+
+                      <div className="grid grid-cols-1 gap-4 lg:grid-cols-2">
+                        <ToggleSwitch
+                          label="Emergency Stop"
+                          description="Hard stop: blocks execution and disables live/broker execution"
+                          enabled={emergencyStop}
+                          onToggle={() => updateMasterAdmin({ emergency_stop: !emergencyStop })}
+                          danger
+                          disabled={disableAll}
+                        />
+                        <div className="rounded-xl border border-red-800 bg-red-950/20 p-4">
+                          <div className="flex items-center justify-between gap-4">
+                            <div>
+                              <h3 className="font-semibold text-red-400">Clear Emergency Stop</h3>
+                              <p className="text-sm text-slate-400">Re-enable controls after confirming safety.</p>
+                            </div>
+                            <button
+                              type="button"
+                              onClick={() => updateMasterAdmin({ emergency_stop: false })}
+                              disabled={disableAll || !emergencyStop}
+                              className="rounded-xl border border-red-400/40 bg-red-500/10 px-4 py-2 text-sm font-bold uppercase text-red-200 hover:bg-red-500/20 disabled:opacity-50"
+                            >
+                              Clear
+                            </button>
+                          </div>
+                        </div>
+                      </div>
+
+                      <div className="grid grid-cols-1 gap-4 lg:grid-cols-2">
+                        <div className="rounded-xl border border-emerald-400/15 bg-black/35 p-4 backdrop-blur">
+                          <div className="flex items-center justify-between gap-4">
+                            <div>
+                              <h3 className="font-semibold text-white">Stop Workflow</h3>
+                              <p className="text-sm text-slate-400">Disables workflow runs. Does not submit orders.</p>
+                            </div>
+                            <button
+                              type="button"
+                              onClick={() => updateMasterAdmin({ workflow_enabled: false })}
+                              disabled={disableAll || disabledByEmergency || !workflowEnabled}
+                              className="rounded-xl border border-white/10 bg-white/[0.03] px-4 py-2 text-sm font-bold uppercase text-slate-200 hover:bg-white/[0.06] disabled:opacity-50"
+                            >
+                              Stop
+                            </button>
+                          </div>
+                        </div>
+
+                        <div className="rounded-xl border border-emerald-400/15 bg-black/35 p-4 backdrop-blur">
+                          <div className="flex items-center justify-between gap-4">
+                            <div>
+                              <h3 className="font-semibold text-white">Request Force Close Positions</h3>
+                              <p className="text-sm text-slate-400">v1: request flag only (no orders submitted).</p>
+                            </div>
+                            <div className="flex items-center gap-2">
+                              <button
+                                type="button"
+                                onClick={() => updateMasterAdmin({ force_close_requested: true })}
+                                disabled={disableAll || disabledByEmergency || forceCloseRequested}
+                                className="rounded-xl border border-emerald-400/40 bg-emerald-500/10 px-4 py-2 text-sm font-bold uppercase text-emerald-200 hover:bg-emerald-500/20 disabled:opacity-50"
+                              >
+                                Request
+                              </button>
+                              <button
+                                type="button"
+                                onClick={() => updateMasterAdmin({ force_close_requested: false })}
+                                disabled={disableAll || !forceCloseRequested}
+                                className="rounded-xl border border-white/10 bg-white/[0.03] px-4 py-2 text-sm font-bold uppercase text-slate-200 hover:bg-white/[0.06] disabled:opacity-50"
+                              >
+                                Clear
+                              </button>
+                            </div>
+                          </div>
+                        </div>
+                      </div>
+                    </div>
+                  );
+                })()}
+              </section>
+            )}
+
             {/* Trading Settings */}
             {(activeTab === "trading" || activeTab === "overview") && (
             <section className="rounded-2xl border border-emerald-400/15 bg-black/35 p-6 backdrop-blur shadow-[0_0_40px_rgba(0,0,0,0.25)]">

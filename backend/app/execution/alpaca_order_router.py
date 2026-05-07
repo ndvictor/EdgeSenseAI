@@ -37,7 +37,12 @@ def submit_alpaca_order(
     if not key or not sec:
         return 0, {"error": "alpaca_keys_missing"}, None
 
-    if not _env_bool("BROKER_EXECUTION_ENABLED", False):
+    # Master Admin safety gates (runtime-aware)
+    if effective_bool("EMERGENCY_STOP"):
+        return 0, {"error": "emergency_stop_active"}, None
+    if not effective_bool("EXECUTION_ENABLED"):
+        return 0, {"error": "execution_disabled"}, None
+    if not effective_bool("BROKER_EXECUTION_ENABLED"):
         return 0, {"error": "broker_execution_disabled"}, None
 
     if mode == "paper":

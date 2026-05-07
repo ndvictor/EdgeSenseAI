@@ -10,6 +10,18 @@ from fastapi import HTTPException
 RUNTIME_SETTINGS_FILE = Path(__file__).resolve().parent.parent.parent / "runtime_settings.json"
 
 DEFAULT_RUNTIME_SETTINGS: dict[str, Any] = {
+    # Master Admin (control-plane) gates
+    # These are runtime-only switches used to safely pause/stop workflows and all execution without touching broker APIs.
+    "WORKFLOW_ENABLED": True,
+    # When false: blocks all order submission paths (paper + live).
+    "EXECUTION_ENABLED": True,
+    # When true: overrides everything else (blocks execution, disables broker/live, and signals hard stop).
+    "EMERGENCY_STOP": False,
+    # v1: request flag only; must not submit orders.
+    "FORCE_CLOSE_REQUESTED": False,
+    "MASTER_ADMIN_MODE": False,
+    "LAST_UPDATED_BY": "system",
+    "UPDATED_AT": None,
     # Trading Settings
     "PAPER_TRADING_ENABLED": True,
     "LIVE_TRADING_ENABLED": False,

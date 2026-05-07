@@ -354,6 +354,23 @@ export type RateLimitSettings = {
   max_daily_agent_runs: number;
 };
 
+export type MasterAdminSettings = {
+  workflow_enabled: boolean;
+  execution_enabled: boolean;
+  emergency_stop: boolean;
+  force_close_requested: boolean;
+  master_admin_mode: boolean;
+  workflow_allowed: boolean;
+  execution_allowed: boolean;
+  paper_allowed: boolean;
+  live_allowed: boolean;
+  broker_allowed: boolean;
+  requires_human_approval: boolean;
+  force_close_pending: boolean;
+  last_updated_by?: string | null;
+  updated_at?: string | null;
+};
+
 export type RiskSettings = {
   max_risk_per_trade_percent: number;
   max_daily_loss_percent: number;
@@ -369,6 +386,7 @@ export type SettingsResponse = {
   news: NewsSettings;
   platform: PlatformFeatures;
   rate_limits: RateLimitSettings;
+  master_admin: MasterAdminSettings;
 };
 
 export type TradingSettingsUpdate = {
@@ -422,6 +440,15 @@ export type RiskSettingsUpdate = {
   min_reward_risk_ratio?: number;
 };
 
+export type MasterAdminSettingsUpdate = {
+  workflow_enabled?: boolean;
+  execution_enabled?: boolean;
+  emergency_stop?: boolean;
+  force_close_requested?: boolean;
+  master_admin_mode?: boolean;
+  last_updated_by?: string;
+};
+
 export type SettingsUpdateRequest = {
   trading?: TradingSettingsUpdate;
   risk?: RiskSettingsUpdate;
@@ -430,6 +457,7 @@ export type SettingsUpdateRequest = {
   news?: NewsSettingsUpdate;
   platform?: PlatformFeaturesUpdate;
   rate_limits?: RateLimitSettingsUpdate;
+  master_admin?: MasterAdminSettingsUpdate;
 };
 
 // Paper Trading Order Types

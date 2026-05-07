@@ -9,6 +9,7 @@ from fastapi import APIRouter, HTTPException
 from pydantic import BaseModel
 
 from app.core.runtime_settings_store import load_runtime_settings, save_runtime_settings
+from app.core.runtime_settings_store import RUNTIME_SETTINGS_FILE
 from app.core.settings import settings
 
 router = APIRouter()
@@ -58,6 +59,24 @@ class RateLimitSettings(BaseModel):
     max_daily_agent_runs: int
 
 
+class MasterAdminSettings(BaseModel):
+    workflow_enabled: bool
+    execution_enabled: bool
+    emergency_stop: bool
+    force_close_requested: bool
+    master_admin_mode: bool
+    # Computed effective gates (not stored) - safe to surface in UI
+    workflow_allowed: bool
+    execution_allowed: bool
+    paper_allowed: bool
+    live_allowed: bool
+    broker_allowed: bool
+    requires_human_approval: bool
+    force_close_pending: bool
+    last_updated_by: str | None = None
+    updated_at: str | None = None
+
+
 class RiskSettings(BaseModel):
     max_risk_per_trade_percent: float
     max_daily_loss_percent: float
@@ -73,6 +92,7 @@ class SettingsResponse(BaseModel):
     news: NewsSettings
     platform: PlatformFeatures
     rate_limits: RateLimitSettings
+    master_admin: MasterAdminSettings
 
 
 class TradingSettingsUpdate(BaseModel):
@@ -126,6 +146,15 @@ class RiskSettingsUpdate(BaseModel):
     min_reward_risk_ratio: float | None = None
 
 
+class MasterAdminSettingsUpdate(BaseModel):
+    workflow_enabled: bool | None = None
+    execution_enabled: bool | None = None
+    emergency_stop: bool | None = None
+    force_close_requested: bool | None = None
+    master_admin_mode: bool | None = None
+    last_updated_by: str | None = None
+
+
 class SettingsUpdateRequest(BaseModel):
     trading: TradingSettingsUpdate | None = None
     risk: RiskSettingsUpdate | None = None
@@ -134,6 +163,7 @@ class SettingsUpdateRequest(BaseModel):
     news: NewsSettingsUpdate | None = None
     platform: PlatformFeaturesUpdate | None = None
     rate_limits: RateLimitSettingsUpdate | None = None
+    master_admin: MasterAdminSettingsUpdate | None = None
 
 
 def _get_runtime_value(key: str, default: Any) -> Any:
@@ -195,6 +225,37 @@ def get_settings() -> SettingsResponse:
         rate_limits=RateLimitSettings(
             max_daily_llm_cost=runtime.get("MAX_DAILY_LLM_COST", settings.max_daily_llm_cost),
             max_daily_agent_runs=runtime.get("MAX_DAILY_AGENT_RUNS", settings.max_daily_agent_runs),
+        ),
+        master_admin=MasterAdminSettings(
+            workflow_enabled=bool(runtime.get("WORKFLOW_ENABLED", True)),
+            execution_enabled=bool(runtime.get("EXECUTION_ENABLED", True)),
+            emergency_stop=bool(runtime.get("EMERGENCY_STOP", False)),
+            force_close_requested=bool(runtime.get("FORCE_CLOSE_REQUESTED", False)),
+            master_admin_mode=bool(runtime.get("MASTER_ADMIN_MODE", False)),
+            workflow_allowed=bool(runtime.get("WORKFLOW_ENABLED", True)) and not bool(runtime.get("EMERGENCY_STOP", False)),
+            execution_allowed=bool(runtime.get("EXECUTION_ENABLED", True)) and not bool(runtime.get("EMERGENCY_STOP", False)),
+            paper_allowed=(
+                bool(runtime.get("EXECUTION_ENABLED", True))
+                and not bool(runtime.get("EMERGENCY_STOP", False))
+                and bool(runtime.get("PAPER_TRADING_ENABLED", settings.paper_trading_enabled))
+            ),
+            broker_allowed=(
+                bool(runtime.get("EXECUTION_ENABLED", True))
+                and not bool(runtime.get("EMERGENCY_STOP", False))
+                and bool(runtime.get("BROKER_EXECUTION_ENABLED", settings.broker_execution_enabled))
+                and bool(runtime.get("REQUIRE_HUMAN_APPROVAL", settings.require_human_approval))
+            ),
+            live_allowed=(
+                bool(runtime.get("EXECUTION_ENABLED", True))
+                and not bool(runtime.get("EMERGENCY_STOP", False))
+                and bool(runtime.get("LIVE_TRADING_ENABLED", settings.live_trading_enabled))
+                and bool(runtime.get("BROKER_EXECUTION_ENABLED", settings.broker_execution_enabled))
+                and bool(runtime.get("REQUIRE_HUMAN_APPROVAL", settings.require_human_approval))
+            ),
+            requires_human_approval=bool(runtime.get("REQUIRE_HUMAN_APPROVAL", settings.require_human_approval)),
+            force_close_pending=bool(runtime.get("FORCE_CLOSE_REQUESTED", False)),
+            last_updated_by=runtime.get("LAST_UPDATED_BY"),
+            updated_at=runtime.get("UPDATED_AT"),
         ),
     )
 
@@ -294,6 +355,23 @@ def _apply_risk_updates(current: dict, updates: RiskSettingsUpdate | None) -> No
         current["MIN_REWARD_RISK_RATIO"] = updates.min_reward_risk_ratio
 
 
+def _apply_master_admin_updates(current: dict, updates: MasterAdminSettingsUpdate | None) -> None:
+    if updates is None:
+        return
+    if updates.workflow_enabled is not None:
+        current["WORKFLOW_ENABLED"] = bool(updates.workflow_enabled)
+    if updates.execution_enabled is not None:
+        current["EXECUTION_ENABLED"] = bool(updates.execution_enabled)
+    if updates.emergency_stop is not None:
+        current["EMERGENCY_STOP"] = bool(updates.emergency_stop)
+    if updates.force_close_requested is not None:
+        current["FORCE_CLOSE_REQUESTED"] = bool(updates.force_close_requested)
+    if updates.master_admin_mode is not None:
+        current["MASTER_ADMIN_MODE"] = bool(updates.master_admin_mode)
+    if updates.last_updated_by is not None and str(updates.last_updated_by).strip():
+        current["LAST_UPDATED_BY"] = str(updates.last_updated_by).strip()[:120]
+
+
 @router.post("/settings", response_model=SettingsResponse)
 def update_settings(request: SettingsUpdateRequest) -> SettingsResponse:
     """Update runtime settings.
@@ -311,12 +389,37 @@ def update_settings(request: SettingsUpdateRequest) -> SettingsResponse:
     _apply_news_updates(current, request.news)
     _apply_platform_updates(current, request.platform)
     _apply_rate_limit_updates(current, request.rate_limits)
+    _apply_master_admin_updates(current, request.master_admin)
     
+    # Always stamp audit fields on any update
+    if not current.get("LAST_UPDATED_BY"):
+        current["LAST_UPDATED_BY"] = "settings_api"
+    try:
+        from datetime import datetime, timezone
+
+        current["UPDATED_AT"] = datetime.now(timezone.utc).isoformat()
+    except Exception:
+        # keep last value if clock/format fails
+        pass
+
+    # Emergency stop overrides everything (runtime-only; no broker calls here)
+    if current.get("EMERGENCY_STOP"):
+        current["EXECUTION_ENABLED"] = False
+        current["EXECUTION_AGENT_ENABLED"] = False
+        current["BROKER_EXECUTION_ENABLED"] = False
+        current["LIVE_TRADING_ENABLED"] = False
+
     # Safety validation
     if current.get("LIVE_TRADING_ENABLED") and not current.get("REQUIRE_HUMAN_APPROVAL"):
         raise HTTPException(
             status_code=400,
             detail="Cannot enable live trading without human approval requirement"
+        )
+
+    if current.get("LIVE_TRADING_ENABLED") and not current.get("BROKER_EXECUTION_ENABLED"):
+        raise HTTPException(
+            status_code=400,
+            detail="Cannot enable live trading without broker execution enabled"
         )
     
     if current.get("BROKER_EXECUTION_ENABLED") and not current.get("REQUIRE_HUMAN_APPROVAL"):

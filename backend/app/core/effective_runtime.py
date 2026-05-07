@@ -10,6 +10,11 @@ from app.core.settings import settings
 
 # Uppercase env keys -> Settings attribute name for fallback when env is unset
 _BOOL_ENV_TO_SETTINGS: dict[str, str] = {
+    "WORKFLOW_ENABLED": "",
+    "EXECUTION_ENABLED": "",
+    "EMERGENCY_STOP": "",
+    "FORCE_CLOSE_REQUESTED": "",
+    "MASTER_ADMIN_MODE": "",
     "PAPER_TRADING_ENABLED": "paper_trading_enabled",
     "LIVE_TRADING_ENABLED": "live_trading_enabled",
     "BROKER_EXECUTION_ENABLED": "broker_execution_enabled",
@@ -114,3 +119,11 @@ def effective_str(env_key: str) -> str:
 def broker_or_agent_execution_enabled() -> bool:
     """True when either broker execution or execution agent is enabled (runtime-aware)."""
     return effective_bool("BROKER_EXECUTION_ENABLED") or effective_bool("EXECUTION_AGENT_ENABLED")
+
+
+def emergency_stop_active() -> bool:
+    return effective_bool("EMERGENCY_STOP")
+
+
+def execution_enabled() -> bool:
+    return effective_bool("EXECUTION_ENABLED") and not emergency_stop_active()

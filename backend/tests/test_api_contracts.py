@@ -1395,3 +1395,30 @@ def test_backtesting_action_stubs_not_configured():
     sim = client.post("/api/backtesting/simulate-execution", json=body).json()
     assert len(sim["checks"]) == 10
     assert all(c["status"] == "not_configured" for c in sim["checks"])
+
+
+def test_settings_master_admin_contract():
+    response = client.get("/api/settings")
+    assert response.status_code == 200
+    payload = response.json()
+    assert "trading" in payload
+    assert "master_admin" in payload
+
+    ma = payload["master_admin"]
+    # Required settings fields
+    assert "workflow_enabled" in ma
+    assert "execution_enabled" in ma
+    assert "emergency_stop" in ma
+    assert "force_close_requested" in ma
+    assert "master_admin_mode" in ma
+    assert "last_updated_by" in ma
+    assert "updated_at" in ma
+
+    # Required effective gates
+    assert "workflow_allowed" in ma
+    assert "execution_allowed" in ma
+    assert "paper_allowed" in ma
+    assert "live_allowed" in ma
+    assert "broker_allowed" in ma
+    assert "requires_human_approval" in ma
+    assert "force_close_pending" in ma
