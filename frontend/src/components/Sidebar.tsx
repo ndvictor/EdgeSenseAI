@@ -19,6 +19,7 @@ import {
   ShieldCheck,
   SlidersHorizontal,
   Target,
+  TestTube2,
   Users,
   WalletCards,
   Zap,
@@ -43,6 +44,7 @@ const items = [
   { label: "Journal", href: "/journal", icon: BookOpen },
   { label: "Learning Loop", href: "/learning-loop", icon: RefreshCw },
   { label: "Platform Readiness", href: "/platform-readiness", icon: ShieldCheck },
+  { label: "Lab Platform", href: "/lab", icon: TestTube2 },
   { label: "Settings", href: "/settings", icon: Settings },
 ];
 

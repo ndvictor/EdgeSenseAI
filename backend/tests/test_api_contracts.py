@@ -31,6 +31,60 @@ def test_metrics_endpoint():
     assert "edgesenseai_backend_requests_total" in response.text
 
 
+def test_lab_inventory_contract():
+    response = client.get("/api/lab/inventory")
+    assert response.status_code == 200
+    payload = response.json()
+    assert payload["status"] == "ok"
+    assert payload["data_mode"] == "desired_inventory"
+    assert payload["updated_at"]
+    summary = payload["summary"]
+    assert summary["total_stages"] == 14
+    assert summary["total_units"] == 80
+    assert summary["present"] + summary["partial"] + summary["missing"] + summary["backlog"] == 80
+    assert summary["tested"] == 0
+    assert summary["untested"] == 80
+    assert summary["ready_to_promote"] == 0
+    assert summary["next_action"]
+
+    stages = payload["stages"]
+    assert len(stages) == 14
+    assert stages[0]["stage_number"] == 1
+    assert stages[0]["stage_key"] == "account_owner_configuration"
+    assert stages[13]["stage_number"] == 14
+    for st in stages:
+        assert st["stage_name"]
+        su = st["summary"]
+        assert su["total_units"] == len(st["units"])
+        assert su["present"] + su["partial"] + su["missing"] + su["backlog"] == su["total_units"]
+
+    cats = payload["component_categories"]
+    assert len(cats) == 7
+    assert {c["category"] for c in cats} == {
+        "Python Script",
+        "AI-Agent no LLM",
+        "AI-Agent + LLM",
+        "ML/Statistics Model",
+        "State Object",
+        "UI Component",
+        "Orchestrator",
+    }
+    for c in cats:
+        assert c["total"] == c["present"] + c["partial"] + c["missing"] + c["backlog"]
+
+    unit = next(u for u in payload["stages"][0]["units"] if u["unit_id"] == "unit_001")
+    assert unit["name"] == "Account settings schema"
+    assert unit["status"] in {
+        "present",
+        "present_partial",
+        "partial",
+        "need_to_build",
+        "need_to_build_clarify",
+        "backlog",
+        "unclear",
+    }
+
+
 def test_data_sources_status_contract():
     response = client.get("/api/data-sources/status")
     assert response.status_code == 200

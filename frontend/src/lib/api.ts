@@ -1456,6 +1456,76 @@ export type PlatformReadinessResponse = {
   generated_at: string;
 };
 
+export type LabInventoryComponent = {
+  component_name: string;
+  component_type: string;
+  status: string;
+  notes: string;
+};
+
+export type LabInventoryUnit = {
+  unit_id: string;
+  name: string;
+  stage_numbers: number[];
+  type: string;
+  needed_for_baseline: boolean;
+  status: string;
+  status_label: string;
+  tested_status: string;
+  promotion_status: string;
+  uses_llm: boolean;
+  what_it_should_do: string;
+  required_components: LabInventoryComponent[];
+  next_action: string;
+};
+
+export type LabInventorySummary = {
+  total_stages: number;
+  total_units: number;
+  present: number;
+  partial: number;
+  missing: number;
+  backlog: number;
+  tested: number;
+  untested: number;
+  ready_to_promote: number;
+  next_action: string;
+};
+
+export type LabInventoryStageSummary = {
+  total_units: number;
+  present: number;
+  partial: number;
+  missing: number;
+  backlog: number;
+};
+
+export type LabInventoryStage = {
+  stage_number: number;
+  stage_name: string;
+  stage_key: string;
+  summary: LabInventoryStageSummary;
+  units: LabInventoryUnit[];
+};
+
+export type LabComponentCategory = {
+  category: string;
+  total: number;
+  present: number;
+  partial: number;
+  missing: number;
+  backlog: number;
+};
+
+export type LabInventoryResponse = {
+  status: "ok";
+  data_mode: "desired_inventory";
+  updated_at: string;
+  summary: LabInventorySummary;
+  stages: LabInventoryStage[];
+  component_categories: LabComponentCategory[];
+};
+
 export type IntegrationCheckCatalogEntry = {
   key: string;
   label: string;
@@ -2643,6 +2713,10 @@ export type ExecutionTestPaperOrderBody = {
   org_slug?: string;
 };
 
+export async function getLabInventory(): Promise<LabInventoryResponse> {
+  return request<LabInventoryResponse>("/api/lab/inventory");
+}
+
 export const api = {
   getCommandCenter: () => request<CommandCenterResponse>("/api/command-center"),
   getAccountRisk: () => request<AccountRiskProfile>("/api/account-risk/profile"),
@@ -2927,6 +3001,9 @@ export const api = {
 
   // Platform Readiness APIs
   getPlatformReadiness: () => request<PlatformReadinessResponse>("/api/platform-readiness"),
+
+  /** Lab Platform — desired workflow inventory (v1 static registry). */
+  getLabInventory,
 
   /** Catalog of integration matrix checks (Alpaca, data stack, signals, risk, …). */
   getIntegrationChecksCatalog: () => request<IntegrationChecksCatalogResponse>("/api/integration-checks/catalog"),
