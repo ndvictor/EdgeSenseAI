@@ -3,12 +3,14 @@
 import React, { useEffect, useMemo, useState } from "react";
 import Link from "next/link";
 import {
+  api,
   createExecutionPlan,
   getExecutionPlannerStatus,
   getLatestExecutionPlan,
   type ExecutionPlanResult,
   type ExecutionPlannerChecker,
   type ExecutionPlannerPlanRequest,
+  type ExecutionPlannerPrecheckHandoffResult,
   type ExecutionPlannerStatusResponse,
 } from "@/lib/api";
 
@@ -235,6 +237,9 @@ export default function ExecutionPlannerPage() {
   const [loading, setLoading] = useState(true);
   const [actionLoading, setActionLoading] = useState<"run" | "latest" | null>(null);
   const [error, setError] = useState<string | null>(null);
+  const [handoff, setHandoff] = useState<ExecutionPlannerPrecheckHandoffResult | null>(null);
+  const [handoffLoading, setHandoffLoading] = useState(false);
+  const [handoffError, setHandoffError] = useState<string | null>(null);
 
   useEffect(() => {
     let cancelled = false;
@@ -286,6 +291,28 @@ export default function ExecutionPlannerPage() {
       setError(e instanceof Error ? e.message : "Failed to load latest plan");
     } finally {
       setActionLoading(null);
+    }
+  }
+
+  async function handleRunHandoff() {
+    if (!plan || !plan.plan_status) return;
+    setHandoffLoading(true);
+    setHandoffError(null);
+    try {
+      const res = await api.createExecutionPlannerPrecheckHandoff({
+        execution_plan: plan,
+        handoff_preferences: {
+          org_slug: "default",
+          source: "execution_planner",
+          allow_submit: false,
+          require_human_approval: true,
+        },
+      });
+      setHandoff(res.handoff);
+    } catch (e) {
+      setHandoffError(e instanceof Error ? e.message : "Safe precheck handoff failed");
+    } finally {
+      setHandoffLoading(false);
     }
   }
 
@@ -618,7 +645,135 @@ export default function ExecutionPlannerPage() {
           </div>
 
           {plan ? (
-            <PlanPanel plan={plan} />
+            <>
+              <PlanPanel plan={plan} />
+
+              <div className="rounded-2xl border border-emerald-400/10 bg-[#070c12]/95 p-4 shadow-[inset_0_1px_0_rgba(255,255,255,0.04)]">
+                <div className="flex flex-wrap items-start justify-between gap-3">
+                  <div>
+                    <div className="text-xs font-semibold uppercase tracking-[0.2em] text-slate-500">Stage 9 → Stage 10 Precheck Handoff</div>
+                    <p className="mt-1 text-sm text-slate-400">
+                      Converts the current execution plan into a safe execution request preview and runs offline precheck logic. This never submits orders and never calls the broker.
+                    </p>
+                  </div>
+                  <button
+                    type="button"
+                    onClick={handleRunHandoff}
+                    disabled={!plan || !plan.plan_status || loading || actionLoading !== null || handoffLoading}
+                    className="h-fit rounded-lg border border-emerald-400/50 bg-emerald-400/15 px-3 py-2 text-sm font-semibold text-emerald-100 transition hover:bg-emerald-400/20 disabled:opacity-50"
+                  >
+                    {handoffLoading ? "Running..." : "Run Safe Precheck Handoff"}
+                  </button>
+                </div>
+
+                <div className="mt-4 grid gap-3 lg:grid-cols-2">
+                  <div className="rounded-xl border border-white/[0.06] bg-[#0a1018]/80 p-3">
+                    <FieldLabel>Safety guarantees</FieldLabel>
+                    <div className="mt-2 grid gap-2">
+                      {boolPill("submitted_order (guarantee)", false)}
+                      {boolPill("broker_called (guarantee)", false)}
+                      {boolPill("allow_submit forced false", false)}
+                      {boolPill("live trading enabled from this page", false)}
+                    </div>
+                    <div className="mt-3 text-xs text-slate-500">
+                      This page does not call execution submit endpoints. It only calls the precheck handoff endpoint for preview.
+                    </div>
+                  </div>
+
+                  <div className="rounded-xl border border-white/[0.06] bg-[#0a1018]/80 p-3">
+                    <FieldLabel>Links (no submit here)</FieldLabel>
+                    <div className="mt-2 flex flex-wrap gap-2 text-sm">
+                      <Link className="rounded-lg border border-white/10 bg-black/20 px-3 py-2 text-slate-200 hover:border-emerald-400/25" href="/auto-execution-monitor">
+                        Auto-Execution Monitor
+                      </Link>
+                      <Link className="rounded-lg border border-white/10 bg-black/20 px-3 py-2 text-slate-200 hover:border-emerald-400/25" href="/settings?tab=master_admin">
+                        Master Admin Controls
+                      </Link>
+                      <Link className="rounded-lg border border-white/10 bg-black/20 px-3 py-2 text-slate-200 hover:border-emerald-400/25" href="/tradenow">
+                        TradeNow
+                      </Link>
+                    </div>
+                  </div>
+                </div>
+
+                {handoffError ? (
+                  <div className="mt-4 rounded-xl border border-red-500/35 bg-red-500/10 px-4 py-3 text-sm text-red-100/90">
+                    {handoffError}
+                  </div>
+                ) : null}
+
+                {handoff ? (
+                  <div className="mt-4 space-y-3">
+                    <div className="rounded-xl border border-white/[0.06] bg-[#0a1018]/80 p-3">
+                      <FieldLabel>Handoff result</FieldLabel>
+                      <div className="mt-2 flex flex-wrap gap-2">
+                        <span className={`inline-flex rounded-lg border px-2 py-0.5 text-[11px] font-medium ${chip(handoff.precheck_status)}`}>{handoff.precheck_status}</span>
+                        <span className={`inline-flex rounded-lg border px-2 py-0.5 text-[11px] font-medium ${chip(handoff.submitted_order ? "fail" : "pass")}`}>
+                          submitted_order: {handoff.submitted_order ? "true" : "false"}
+                        </span>
+                        <span className={`inline-flex rounded-lg border px-2 py-0.5 text-[11px] font-medium ${chip(handoff.broker_called ? "fail" : "pass")}`}>
+                          broker_called: {handoff.broker_called ? "true" : "false"}
+                        </span>
+                      </div>
+                      <div className="mt-3 grid gap-2 text-xs text-slate-400 sm:grid-cols-2">
+                        <div>handoff_id: {handoff.handoff_id}</div>
+                        <div>handoff_to_stage: {handoff.handoff_to_stage}</div>
+                        <div>handoff_type: {handoff.handoff_type}</div>
+                        <div>plan_id: {handoff.plan_id}</div>
+                        <div>symbol: {handoff.symbol}</div>
+                        <div>llm_used: {String(handoff.llm_used)}</div>
+                        <div>created_at: {handoff.created_at}</div>
+                      </div>
+                      <div className="mt-3 text-sm text-emerald-200/80">next_action: {handoff.next_action}</div>
+                    </div>
+
+                    <div className="grid gap-3 lg:grid-cols-2">
+                      <div className="rounded-xl border border-white/[0.06] bg-[#0a1018]/80 p-3">
+                        <FieldLabel>Blockers</FieldLabel>
+                        <div className="mt-2 space-y-1 text-xs text-slate-400">
+                          {(handoff.blockers ?? []).length ? handoff.blockers.map((b, i) => (
+                            <div key={`${b}-${i}`} className="rounded-lg border border-white/5 bg-black/20 px-3 py-2">{b}</div>
+                          )) : <div className="text-sm text-slate-500">—</div>}
+                        </div>
+                      </div>
+                      <div className="rounded-xl border border-white/[0.06] bg-[#0a1018]/80 p-3">
+                        <FieldLabel>Warnings</FieldLabel>
+                        <div className="mt-2 space-y-1 text-xs text-slate-400">
+                          {(handoff.warnings ?? []).length ? handoff.warnings.map((w, i) => (
+                            <div key={`${w}-${i}`} className="rounded-lg border border-white/5 bg-black/20 px-3 py-2">{w}</div>
+                          )) : <div className="text-sm text-slate-500">—</div>}
+                        </div>
+                      </div>
+                    </div>
+
+                    <div className="rounded-xl border border-white/[0.06] bg-[#0a1018]/80 p-3">
+                      <FieldLabel>Execution request preview</FieldLabel>
+                      <pre className="mt-2 max-h-[320px] overflow-auto rounded-lg border border-white/10 bg-black/30 p-3 text-xs text-slate-200">
+{JSON.stringify(handoff.execution_request_preview ?? {}, null, 2)}
+                      </pre>
+                    </div>
+
+                    <div className="rounded-xl border border-white/[0.06] bg-[#0a1018]/80 p-3">
+                      <FieldLabel>Precheck preview</FieldLabel>
+                      <div className="mt-2 text-sm text-slate-300">
+                        status: <span className="font-semibold">{handoff.precheck?.status ?? "—"}</span>
+                      </div>
+                      {(handoff.precheck?.steps ?? []).length ? (
+                        <pre className="mt-2 max-h-[260px] overflow-auto rounded-lg border border-white/10 bg-black/30 p-3 text-xs text-slate-200">
+{JSON.stringify(handoff.precheck.steps, null, 2)}
+                        </pre>
+                      ) : (
+                        <div className="mt-2 text-sm text-slate-500">Offline precheck preview returned no step details in v1.</div>
+                      )}
+                    </div>
+                  </div>
+                ) : (
+                  <div className="mt-4 rounded-xl border border-white/[0.06] bg-[#0a1018]/60 p-4 text-sm text-slate-400">
+                    Run the safe handoff to preview the Stage 10 precheck request and results. No orders will be submitted.
+                  </div>
+                )}
+              </div>
+            </>
           ) : (
             <div className="rounded-2xl border border-slate-700/50 bg-slate-900/40 p-6 text-center text-slate-400">
               No plan loaded yet. Click “Create Sample Execution Plan” to simulate planning output.

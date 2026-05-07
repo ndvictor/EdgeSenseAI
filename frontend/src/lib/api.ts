@@ -1995,6 +1995,63 @@ export type ExecutionPlannerLatestResponse = {
   result: ExecutionPlanResult | null;
 };
 
+export type ExecutionPlannerPrecheckHandoffPreferences = {
+  org_slug: string;
+  source: string;
+  allow_submit: false | boolean;
+  require_human_approval: true | boolean;
+};
+
+export type ExecutionPlannerPrecheckHandoffRequest = {
+  execution_plan: ExecutionPlanResult;
+  handoff_preferences: ExecutionPlannerPrecheckHandoffPreferences;
+};
+
+export type ExecutionRequestPreview = {
+  org_slug?: string;
+  symbol?: string;
+  asset_class?: string;
+  side?: string;
+  quantity?: number | null;
+  order_type?: string;
+  limit_price?: number | null;
+  time_in_force?: string;
+  source?: string;
+  reason?: string;
+  human_approval_confirmed?: boolean;
+} & Record<string, unknown>;
+
+export type ExecutionPrecheckPreview = {
+  status: "passed" | "blocked" | "failed" | string;
+  steps?: unknown[];
+} & Record<string, unknown>;
+
+export type ExecutionPlannerPrecheckHandoffResult = {
+  handoff_id: string;
+  stage_number: number;
+  handoff_to_stage: number;
+  handoff_type: string;
+  plan_id: string;
+  symbol: string;
+  precheck_status: "passed" | "blocked" | "failed" | string;
+  llm_used: boolean;
+  submitted_order: boolean;
+  broker_called: boolean;
+  execution_request_preview: ExecutionRequestPreview;
+  precheck: ExecutionPrecheckPreview;
+  blockers: string[];
+  warnings: string[];
+  allowed_next_stages: number[];
+  blocked_next_stages: ExecutionPlannerBlockedStage[];
+  next_action: string;
+  created_at: string;
+};
+
+export type ExecutionPlannerPrecheckHandoffResponse = {
+  status: "ok" | string;
+  handoff: ExecutionPlannerPrecheckHandoffResult;
+};
+
 export type IntegrationCheckCatalogEntry = {
   key: string;
   label: string;
@@ -3267,6 +3324,15 @@ export async function getLatestExecutionPlan(): Promise<ExecutionPlannerLatestRe
   return request<ExecutionPlannerLatestResponse>("/api/execution-planner/latest");
 }
 
+export async function createExecutionPlannerPrecheckHandoff(
+  requestBody: ExecutionPlannerPrecheckHandoffRequest
+): Promise<ExecutionPlannerPrecheckHandoffResponse> {
+  return request<ExecutionPlannerPrecheckHandoffResponse>("/api/execution-planner/precheck-handoff", {
+    method: "POST",
+    body: JSON.stringify(requestBody),
+  });
+}
+
 export const api = {
   getCommandCenter: () => request<CommandCenterResponse>("/api/command-center"),
   getAccountRisk: () => request<AccountRiskProfile>("/api/account-risk/profile"),
@@ -3579,6 +3645,7 @@ export const api = {
   getExecutionPlannerStatus,
   createExecutionPlan,
   getLatestExecutionPlan,
+  createExecutionPlannerPrecheckHandoff,
 
   /** Catalog of integration matrix checks (Alpaca, data stack, signals, risk, …). */
   getIntegrationChecksCatalog: () => request<IntegrationChecksCatalogResponse>("/api/integration-checks/catalog"),
