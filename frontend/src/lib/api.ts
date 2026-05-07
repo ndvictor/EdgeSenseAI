@@ -1871,6 +1871,130 @@ export type TriggerMonitoringLatestResponse = {
   result: TriggerEvaluationResult | null;
 };
 
+export type ExecutionPlanEntry = {
+  order_type: string;
+  side: string;
+  limit_price?: number | null;
+  reference_price?: number | null;
+};
+
+export type ExecutionPlanRisk = {
+  stop_loss?: number | null;
+  target_price?: number | null;
+  risk_per_share?: number | null;
+  reward_per_share?: number | null;
+  reward_risk_ratio?: number | null;
+  max_dollar_risk?: number | null;
+};
+
+export type ExecutionPlanSizing = {
+  planned_quantity?: number | null;
+  planned_notional?: number | null;
+  position_size_percent?: number | null;
+  max_allowed_notional?: number | null;
+  sizing_status?: string;
+};
+
+export type ExecutionReadiness = {
+  workflow_enabled?: boolean;
+  execution_enabled?: boolean;
+  paper_trading_enabled?: boolean;
+  live_trading_enabled?: boolean;
+  broker_execution_enabled?: boolean;
+  human_approval_required?: boolean;
+  emergency_stop?: boolean;
+  force_close_requested?: boolean;
+};
+
+export type ExecutionPlannerChecker = {
+  checker: string;
+  status: "pass" | "warn" | "fail" | "unknown" | string;
+  message?: string;
+  details?: Record<string, unknown>;
+};
+
+export type ExecutionPlannerBlockedStage = {
+  stage: number;
+  reason: string;
+};
+
+export type ExecutionPlanResult = {
+  plan_id: string;
+  symbol: string;
+  asset_class: string;
+  horizon: string;
+  plan_status: string;
+  llm_used?: boolean;
+  entry: ExecutionPlanEntry;
+  risk: ExecutionPlanRisk;
+  sizing: ExecutionPlanSizing;
+  execution_readiness: ExecutionReadiness;
+  blockers?: string[];
+  warnings?: string[];
+  allowed_next_stages?: number[];
+  blocked_next_stages?: ExecutionPlannerBlockedStage[];
+  next_action?: string;
+  created_at?: string;
+};
+
+export type ExecutionPlannerStatusResponse = {
+  status: "ok" | string;
+  stage: number;
+  planner_status: "ready" | "partial" | "not_ready" | "unknown" | string;
+  llm_required: false | boolean;
+  checker_statuses?: ExecutionPlannerChecker[];
+  latest_plan?: ExecutionPlanResult | null;
+  updated_at?: string;
+  next_action?: string;
+};
+
+export type ExecutionPlannerPlanRequest = {
+  trigger_evaluation: {
+    trigger_state: string;
+    symbol: string;
+    asset_class: string;
+    horizon: string;
+    trigger_key: string;
+  };
+  market_snapshot: {
+    current_price: number;
+    vwap: number;
+    atr: number;
+    bid: number;
+    ask: number;
+    spread_percent: number;
+    volume_confirms: boolean;
+  };
+  account_state: {
+    account_equity: number;
+    cash: number;
+    risk_budget_available: boolean;
+    max_risk_per_trade_percent: number;
+    max_position_size_percent: number;
+    paper_trading_enabled: boolean;
+    live_trading_enabled: boolean;
+    human_approval_required: boolean;
+    execution_enabled: boolean;
+  };
+  planning_preferences: {
+    order_style: string;
+    stop_method: string;
+    target_reward_risk: number;
+    atr_stop_multiplier: number;
+    max_spread_percent: number;
+  };
+};
+
+export type ExecutionPlannerPlanResponse = {
+  status: "ok" | string;
+  result: ExecutionPlanResult;
+};
+
+export type ExecutionPlannerLatestResponse = {
+  status: "ok" | string;
+  result: ExecutionPlanResult | null;
+};
+
 export type IntegrationCheckCatalogEntry = {
   key: string;
   label: string;
@@ -3126,6 +3250,23 @@ export async function getLatestTriggerMonitoringEvaluation(): Promise<TriggerMon
   return request<TriggerMonitoringLatestResponse>("/api/trigger-monitoring/latest");
 }
 
+export async function getExecutionPlannerStatus(): Promise<ExecutionPlannerStatusResponse> {
+  return request<ExecutionPlannerStatusResponse>("/api/execution-planner/status");
+}
+
+export async function createExecutionPlan(
+  requestBody: ExecutionPlannerPlanRequest
+): Promise<ExecutionPlannerPlanResponse> {
+  return request<ExecutionPlannerPlanResponse>("/api/execution-planner/plan", {
+    method: "POST",
+    body: JSON.stringify(requestBody),
+  });
+}
+
+export async function getLatestExecutionPlan(): Promise<ExecutionPlannerLatestResponse> {
+  return request<ExecutionPlannerLatestResponse>("/api/execution-planner/latest");
+}
+
 export const api = {
   getCommandCenter: () => request<CommandCenterResponse>("/api/command-center"),
   getAccountRisk: () => request<AccountRiskProfile>("/api/account-risk/profile"),
@@ -3433,6 +3574,11 @@ export const api = {
   getTriggerMonitoringStatus,
   evaluateTriggerMonitoring,
   getLatestTriggerMonitoringEvaluation,
+
+  /** Stage 9 Execution Planner — planning visibility (no submit). */
+  getExecutionPlannerStatus,
+  createExecutionPlan,
+  getLatestExecutionPlan,
 
   /** Catalog of integration matrix checks (Alpaca, data stack, signals, risk, …). */
   getIntegrationChecksCatalog: () => request<IntegrationChecksCatalogResponse>("/api/integration-checks/catalog"),
