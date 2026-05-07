@@ -1400,6 +1400,247 @@ def test_agent_runtime_latest_contract():
     assert payload["redis_mode"] in {"available", "unavailable", "disabled"}
 
 
+def test_proof_registry_status_contract():
+    r = client.get("/api/proof-registry/status")
+    assert r.status_code == 200
+    payload = r.json()
+    assert payload["status"] == "ok"
+    assert payload["data_mode"] == "proof_registry_v1"
+
+
+def test_proof_registry_post_record_and_latest():
+    body = {
+        "symbol": "AMD",
+        "asset_class": "stock",
+        "horizon": "day_trading",
+        "strategy_key": "stock_day_trading",
+        "proof_type": "backtest",
+        "proof_status": "proof_required",
+        "sample_size": 0,
+        "win_rate": 0.0,
+        "avg_r_multiple": 0.0,
+        "source": "test",
+        "evidence": {"note": "placeholder"},
+    }
+    r = client.post("/api/proof-registry/records", json=body)
+    assert r.status_code == 200
+    rec = r.json()["record"]
+    assert rec["proof_id"].startswith("proof_")
+    latest = client.get("/api/proof-registry/latest")
+    assert latest.status_code == 200
+    assert latest.json()["record"]["proof_id"] == rec["proof_id"]
+
+
+def test_model_evidence_status_contract():
+    r = client.get("/api/model-evidence/status")
+    assert r.status_code == 200
+    payload = r.json()
+    assert payload["status"] == "ok"
+    assert payload["data_mode"] == "model_evidence_v1"
+
+
+def test_model_evidence_post_record():
+    body = {
+        "model_key": "weighted_ranker_v1",
+        "model_name": "Weighted Ranker V1",
+        "model_family": "deterministic_baseline",
+        "asset_class": "stock",
+        "horizon": "day_trading",
+        "status": "recorded",
+        "metrics": {"note": "test"},
+    }
+    r = client.post("/api/model-evidence/records", json=body)
+    assert r.status_code == 200
+    rec = r.json()["record"]
+    assert rec["evidence_id"].startswith("mev_")
+
+
+def test_strategy_evidence_status_contract():
+    r = client.get("/api/strategy-evidence/status")
+    assert r.status_code == 200
+    payload = r.json()
+    assert payload["status"] == "ok"
+    assert payload["data_mode"] == "strategy_evidence_v1"
+
+
+def test_strategy_evidence_post_record():
+    body = {
+        "strategy_key": "stock_day_trading",
+        "strategy_group": "stock",
+        "asset_class": "stock",
+        "horizon": "day_trading",
+        "status": "recorded",
+        "metrics": {"note": "test"},
+    }
+    r = client.post("/api/strategy-evidence/records", json=body)
+    assert r.status_code == 200
+    rec = r.json()["record"]
+    assert rec["evidence_id"].startswith("sev_")
+
+
+def test_qlib_status_contract_non_failing_when_unavailable():
+    r = client.get("/api/qlib/status")
+    assert r.status_code == 200
+    payload = r.json()
+    assert payload["status"] == "ok"
+    assert payload["data_mode"] == "qlib_integration_v1"
+    assert isinstance(payload["qlib_available"], bool)
+
+
+def test_qlib_signal_score_post_records_artifact():
+    body = {
+        "symbol": "AMD",
+        "asset_class": "stock",
+        "horizon": "day_trading",
+        "scores": {"score": 0.67, "rank": 5},
+        "metrics": {"source": "test"},
+    }
+    r = client.post("/api/qlib/signals/score", json=body)
+    assert r.status_code == 200
+    art = r.json()["artifact"]
+    assert art["artifact_id"].startswith("qs_")
+    assert art["artifact_type"] == "signal_scores"
+
+
+def test_agent_runtime_phase3_data_readiness_agent_runs_and_traces_tool_called():
+    body = {
+        "agent_key": "data_readiness_agent",
+        "inputs": {"asset_class": "stock", "horizon": "day_trading", "symbols": ["AMD"]},
+        "context": {"source": "phase_3_test"},
+        "dry_run": True,
+        "idempotency_key": "idem_phase3_data_readiness",
+    }
+    r = client.post("/api/agent-runtime/agent-runs", json=body)
+    assert r.status_code == 200
+    run = r.json()["agent_run"]
+    assert run["agent_key"] == "data_readiness_agent"
+    assert any(e["event"] == "tool_called" for e in run["trace"])
+    assert run["artifacts"].get("broker_called") is False
+    assert run["artifacts"].get("submitted_order") is False
+    assert run["artifacts"].get("llm_used") is False
+
+
+def test_agent_runtime_phase3_market_condition_agent_runs():
+    body = {
+        "agent_key": "market_condition_agent",
+        "inputs": {"asset_class": "stock", "horizon": "day_trading", "symbols": ["AMD"]},
+        "context": {"source": "phase_3_test"},
+        "dry_run": True,
+        "idempotency_key": "idem_phase3_market_condition",
+    }
+    r = client.post("/api/agent-runtime/agent-runs", json=body)
+    assert r.status_code == 200
+    run = r.json()["agent_run"]
+    assert run["agent_key"] == "market_condition_agent"
+    assert any(e["event"] == "tool_called" for e in run["trace"])
+
+
+def test_agent_runtime_phase3_watchlist_builder_agent_returns_watchlist_empty_safely():
+    body = {
+        "agent_key": "watchlist_builder_agent",
+        "inputs": {"asset_class": "stock", "horizon": "day_trading"},
+        "context": {"source": "phase_3_test"},
+        "dry_run": True,
+        "idempotency_key": "idem_phase3_watchlist",
+    }
+    r = client.post("/api/agent-runtime/agent-runs", json=body)
+    assert r.status_code == 200
+    run = r.json()["agent_run"]
+    assert run["agent_key"] == "watchlist_builder_agent"
+    assert "symbols" in run["decision"]["result"]
+
+
+def test_agent_runtime_phase3_strategy_selection_agent_persists_evidence():
+    body = {
+        "agent_key": "strategy_selection_agent",
+        "inputs": {"asset_class": "stock", "horizon": "day_trading", "market_phase": "market_open", "active_loop": "paper_first", "regime": "risk_on"},
+        "context": {"source": "phase_3_test"},
+        "dry_run": True,
+        "idempotency_key": "idem_phase3_strategy_selection",
+    }
+    r = client.post("/api/agent-runtime/agent-runs", json=body)
+    assert r.status_code == 200
+    run = r.json()["agent_run"]
+    assert run["agent_key"] == "strategy_selection_agent"
+    # evidence should be writable regardless of DB availability
+    ev = client.get("/api/strategy-evidence/latest")
+    assert ev.status_code == 200
+
+
+def test_agent_runtime_phase3_model_selection_agent_persists_model_evidence():
+    body = {
+        "agent_key": "model_selection_agent",
+        "inputs": {"asset_class": "stock", "horizon": "day_trading", "symbol": "AMD", "strategy_key": "stock_day_trading"},
+        "context": {"source": "phase_3_test"},
+        "dry_run": True,
+        "idempotency_key": "idem_phase3_model_selection",
+    }
+    r = client.post("/api/agent-runtime/agent-runs", json=body)
+    assert r.status_code == 200
+    run = r.json()["agent_run"]
+    assert run["agent_key"] == "model_selection_agent"
+    ev = client.get("/api/model-evidence/latest")
+    assert ev.status_code == 200
+
+
+def test_agent_runtime_phase3_backtest_validation_agent_does_not_fake_proof():
+    body = {
+        "agent_key": "backtest_validation_agent",
+        "inputs": {"asset_class": "stock", "horizon": "day_trading", "strategy_key": "stock_day_trading"},
+        "context": {"source": "phase_3_test"},
+        "dry_run": True,
+        "idempotency_key": "idem_phase3_backtest_validation",
+    }
+    r = client.post("/api/agent-runtime/agent-runs", json=body)
+    assert r.status_code == 200
+    run = r.json()["agent_run"]
+    assert run["agent_key"] == "backtest_validation_agent"
+    assert run["decision"]["result"]["proof_status"] in {"proof_required", "backtest_required", "paper_passed", "proven", "research_only", "blocked"}
+
+
+def test_agent_runtime_phase3_qlib_research_agent_non_failing():
+    body = {
+        "agent_key": "qlib_research_agent",
+        "inputs": {"asset_class": "stock", "horizon": "day_trading", "symbols": ["AMD"]},
+        "context": {"source": "phase_3_test"},
+        "dry_run": True,
+        "idempotency_key": "idem_phase3_qlib_research",
+    }
+    r = client.post("/api/agent-runtime/agent-runs", json=body)
+    assert r.status_code == 200
+    run = r.json()["agent_run"]
+    assert run["agent_key"] == "qlib_research_agent"
+
+
+def test_agent_runtime_phase3_safety_crypto_blocked():
+    body = {
+        "agent_key": "data_readiness_agent",
+        "inputs": {"asset_class": "crypto", "horizon": "day_trading", "symbols": ["BTC-USD"]},
+        "context": {"source": "phase_3_test"},
+        "dry_run": True,
+        "idempotency_key": "idem_phase3_crypto_blocked",
+    }
+    r = client.post("/api/agent-runtime/agent-runs", json=body)
+    assert r.status_code == 200
+    run = r.json()["agent_run"]
+    assert run["status"] == "blocked"
+
+
+def test_agent_runtime_phase3_allow_submit_true_is_sanitized_or_blocked():
+    body = {
+        "agent_key": "model_selection_agent",
+        "inputs": {"asset_class": "stock", "horizon": "day_trading", "symbol": "AMD", "allow_submit": True},
+        "context": {"source": "phase_3_test"},
+        "dry_run": True,
+        "idempotency_key": "idem_phase3_allow_submit",
+    }
+    r = client.post("/api/agent-runtime/agent-runs", json=body)
+    assert r.status_code == 200
+    run = r.json()["agent_run"]
+    assert run["status"] in {"completed", "blocked"}
+    assert run["artifacts"].get("submitted_order") is False
+
+
 def test_agent_runtime_unknown_agent_key_returns_400():
     r = client.post("/api/agent-runtime/agent-runs", json={"agent_key": "unknown_agent", "inputs": {}})
     assert r.status_code in {400, 404}

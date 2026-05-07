@@ -543,3 +543,119 @@ class AgentIdempotencyIndexRecord(Base):
     workflow_run_id: Mapped[str] = mapped_column(String(120))
     agent_key: Mapped[str] = mapped_column(String(120))
     created_at: Mapped[datetime] = mapped_column(DateTime(timezone=True), default=utcnow, index=True)
+
+
+# -----------------------------
+# Phase 3 evidence + Qlib tables
+# -----------------------------
+class ProofRegistryRecord(Base):
+    __tablename__ = "proof_registry_records"
+
+    proof_id: Mapped[str] = mapped_column(String(120), primary_key=True)
+    symbol: Mapped[str] = mapped_column(String(40), index=True)
+    asset_class: Mapped[str] = mapped_column(String(40))
+    horizon: Mapped[str] = mapped_column(String(40))
+    strategy_key: Mapped[str] = mapped_column(String(120), index=True)
+    model_key: Mapped[str | None] = mapped_column(String(120), nullable=True, index=True)
+    proof_type: Mapped[str] = mapped_column(String(80))
+    proof_status: Mapped[str] = mapped_column(String(80), index=True)
+    sample_size: Mapped[int] = mapped_column(Integer)
+    win_rate: Mapped[float] = mapped_column(Float)
+    avg_r_multiple: Mapped[float] = mapped_column(Float)
+    sharpe_ratio: Mapped[float | None] = mapped_column(Float, nullable=True)
+    max_drawdown_r: Mapped[float | None] = mapped_column(Float, nullable=True)
+    slippage_fail_rate: Mapped[float | None] = mapped_column(Float, nullable=True)
+    rule_violation_rate: Mapped[float | None] = mapped_column(Float, nullable=True)
+    backtest_run_id: Mapped[str | None] = mapped_column(String(120), nullable=True)
+    paper_run_id: Mapped[str | None] = mapped_column(String(120), nullable=True)
+    source: Mapped[str] = mapped_column(String(120))
+    evidence: Mapped[dict | list] = mapped_column(JSON, default=dict)
+    blockers: Mapped[dict | list] = mapped_column(JSON, default=list)
+    warnings: Mapped[dict | list] = mapped_column(JSON, default=list)
+    created_at: Mapped[datetime] = mapped_column(DateTime(timezone=True), default=utcnow, index=True)
+    updated_at: Mapped[datetime] = mapped_column(DateTime(timezone=True), default=utcnow, onupdate=utcnow)
+
+    __table_args__ = (
+        Index("ix_proof_registry_strategy_asset_horizon", "strategy_key", "asset_class", "horizon"),
+        Index("ix_proof_registry_model_key", "model_key"),
+    )
+
+
+class ModelEvidenceRecord(Base):
+    __tablename__ = "model_evidence_records"
+
+    evidence_id: Mapped[str] = mapped_column(String(120), primary_key=True)
+    model_key: Mapped[str] = mapped_column(String(120), index=True)
+    model_name: Mapped[str] = mapped_column(String(200))
+    model_family: Mapped[str] = mapped_column(String(120))
+    asset_class: Mapped[str] = mapped_column(String(40))
+    horizon: Mapped[str] = mapped_column(String(40))
+    status: Mapped[str] = mapped_column(String(80), index=True)
+    score: Mapped[float | None] = mapped_column(Float, nullable=True)
+    confidence: Mapped[float | None] = mapped_column(Float, nullable=True)
+    rank: Mapped[int | None] = mapped_column(Integer, nullable=True)
+    drift_status: Mapped[str | None] = mapped_column(String(80), nullable=True)
+    training_status: Mapped[str | None] = mapped_column(String(80), nullable=True)
+    backtest_status: Mapped[str | None] = mapped_column(String(80), nullable=True)
+    paper_status: Mapped[str | None] = mapped_column(String(80), nullable=True)
+    qlib_artifact_id: Mapped[str | None] = mapped_column(String(120), nullable=True)
+    metrics: Mapped[dict | list] = mapped_column(JSON, default=dict)
+    blockers: Mapped[dict | list] = mapped_column(JSON, default=list)
+    warnings: Mapped[dict | list] = mapped_column(JSON, default=list)
+    created_at: Mapped[datetime] = mapped_column(DateTime(timezone=True), default=utcnow, index=True)
+    updated_at: Mapped[datetime] = mapped_column(DateTime(timezone=True), default=utcnow, onupdate=utcnow)
+
+    __table_args__ = (Index("ix_model_evidence_key_asset_horizon", "model_key", "asset_class", "horizon"),)
+
+
+class StrategyEvidenceRecord(Base):
+    __tablename__ = "strategy_evidence_records"
+
+    evidence_id: Mapped[str] = mapped_column(String(120), primary_key=True)
+    strategy_key: Mapped[str] = mapped_column(String(120), index=True)
+    strategy_group: Mapped[str] = mapped_column(String(120))
+    asset_class: Mapped[str] = mapped_column(String(40))
+    horizon: Mapped[str] = mapped_column(String(40))
+    status: Mapped[str] = mapped_column(String(80), index=True)
+    strategy_score: Mapped[float | None] = mapped_column(Float, nullable=True)
+    regime_fit: Mapped[float | None] = mapped_column(Float, nullable=True)
+    proof_status: Mapped[str | None] = mapped_column(String(80), nullable=True)
+    selected_model_keys: Mapped[dict | list] = mapped_column(JSON, default=list)
+    scanner_needs: Mapped[dict | list] = mapped_column(JSON, default=list)
+    data_needs: Mapped[dict | list] = mapped_column(JSON, default=list)
+    metrics: Mapped[dict | list] = mapped_column(JSON, default=dict)
+    blockers: Mapped[dict | list] = mapped_column(JSON, default=list)
+    warnings: Mapped[dict | list] = mapped_column(JSON, default=list)
+    created_at: Mapped[datetime] = mapped_column(DateTime(timezone=True), default=utcnow, index=True)
+    updated_at: Mapped[datetime] = mapped_column(DateTime(timezone=True), default=utcnow, onupdate=utcnow)
+
+    __table_args__ = (Index("ix_strategy_evidence_key_asset_horizon", "strategy_key", "asset_class", "horizon"),)
+
+
+class QlibArtifactRecord(Base):
+    __tablename__ = "qlib_artifacts"
+
+    artifact_id: Mapped[str] = mapped_column(String(120), primary_key=True)
+    artifact_type: Mapped[str] = mapped_column(String(80))
+    model_key: Mapped[str | None] = mapped_column(String(120), nullable=True, index=True)
+    strategy_key: Mapped[str | None] = mapped_column(String(120), nullable=True, index=True)
+    symbol: Mapped[str | None] = mapped_column(String(40), nullable=True, index=True)
+    asset_class: Mapped[str] = mapped_column(String(40))
+    horizon: Mapped[str] = mapped_column(String(40))
+    qlib_available: Mapped[bool] = mapped_column(Boolean, default=False)
+    qlib_version: Mapped[str | None] = mapped_column(String(80), nullable=True)
+    artifact_status: Mapped[str] = mapped_column(String(80), index=True)
+    artifact_path: Mapped[str | None] = mapped_column(Text, nullable=True)
+    metrics: Mapped[dict | list] = mapped_column(JSON, default=dict)
+    scores: Mapped[dict | list] = mapped_column(JSON, default=dict)
+    metadata_json: Mapped[dict | list] = mapped_column("metadata", JSON, default=dict)
+    blockers: Mapped[dict | list] = mapped_column(JSON, default=list)
+    warnings: Mapped[dict | list] = mapped_column(JSON, default=list)
+    created_at: Mapped[datetime] = mapped_column(DateTime(timezone=True), default=utcnow, index=True)
+    updated_at: Mapped[datetime] = mapped_column(DateTime(timezone=True), default=utcnow, onupdate=utcnow)
+
+    __table_args__ = (
+        Index("ix_qlib_artifacts_model_key", "model_key"),
+        Index("ix_qlib_artifacts_strategy_key", "strategy_key"),
+        Index("ix_qlib_artifacts_created_at", "created_at"),
+    )

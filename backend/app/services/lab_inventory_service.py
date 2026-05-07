@@ -1176,6 +1176,32 @@ def _apply_inventory_overrides(units: list[dict[str, Any]]) -> None:
         ],
     )
 
+    # Phase 3 glue agents + evidence/Qlib registries (backend + tests; no frontend).
+    for name in [
+        "Data Readiness Agent",
+        "Market Condition Agent",
+        "Watchlist Builder Agent",
+        "Strategy Selection Agent",
+        "Model Selection Agent",
+        "Backtest Validation Agent",
+        "Qlib Research Agent",
+        "Proof Registry",
+        "Model Evidence Registry",
+        "Strategy Evidence Registry",
+        "Qlib Integration Adapter",
+        "Qlib Signal Score Adapter",
+    ]:
+        apply(
+            name,
+            backend="present",
+            frontend="missing",
+            test="tested",
+            implementation_status="present_partial",
+            route=None,
+            endpoint_family="/api/agent-runtime" if "Agent" in name else ("/api/qlib" if "Qlib" in name else None),
+            notes=["Phase 3: backend adapters/registries added; frontend deferred."],
+        )
+
 
 def _summarize_units(units: list[dict[str, Any]]) -> dict[str, Any]:
     present = sum(1 for u in units if _is_present_bucket(u["status"]))

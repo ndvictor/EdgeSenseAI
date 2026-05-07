@@ -3,10 +3,20 @@ from __future__ import annotations
 from typing import Any
 
 from app.services.agent_runtime.wrappers.safety import SafetyResult, enforce_phase2_safety
+from app.services.agent_runtime.wrappers.glue_agents import GLUE_AGENT_KEYS, run_glue_agent
 
 
 WRAPPED_AGENT_KEYS = frozenset(
     {
+        # Phase 3 glue agents
+        "data_readiness_agent",
+        "market_condition_agent",
+        "watchlist_builder_agent",
+        "strategy_selection_agent",
+        "model_selection_agent",
+        "backtest_validation_agent",
+        "qlib_research_agent",
+        # Phase 2 stage wrappers
         "session_router_agent",
         "workflow_router_agent",
         "strategy_eligibility_agent",
@@ -88,6 +98,9 @@ def run_wrapped_agent(*, agent_key: str, inputs: dict[str, Any], context: dict[s
         }
 
     s = safety.sanitized_inputs
+
+    if agent_key in GLUE_AGENT_KEYS:
+        return run_glue_agent(agent_key=agent_key, inputs=inputs, context=context, safety=safety)
 
     if agent_key == "session_router_agent":
         from app.services.session_router.models import SessionEvaluateRequest

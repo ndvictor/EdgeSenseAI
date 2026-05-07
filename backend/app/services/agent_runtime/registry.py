@@ -58,7 +58,7 @@ _AGENTS: dict[str, AgentDescriptor] = {
         role="Stage 2 data readiness",
         stage_number=2,
         agent_type="deterministic_agent",
-        status="registered",
+        status="ready",
     ),
     "session_router_agent": _d(
         agent_key="session_router_agent",
@@ -74,7 +74,7 @@ _AGENTS: dict[str, AgentDescriptor] = {
         role="Stage 4 market condition scan",
         stage_number=4,
         agent_type="deterministic_agent",
-        status="registered",
+        status="ready",
     ),
     "workflow_router_agent": _d(
         agent_key="workflow_router_agent",
@@ -90,7 +90,7 @@ _AGENTS: dict[str, AgentDescriptor] = {
         role="Stage 6 watchlist building",
         stage_number=6,
         agent_type="deterministic_agent",
-        status="registered",
+        status="ready",
     ),
     "strategy_selection_agent": _d(
         agent_key="strategy_selection_agent",
@@ -98,7 +98,7 @@ _AGENTS: dict[str, AgentDescriptor] = {
         role="Stage 7 strategy selection",
         stage_number=7,
         agent_type="deterministic_agent",
-        status="registered",
+        status="ready",
     ),
     "model_selection_agent": _d(
         agent_key="model_selection_agent",
@@ -106,7 +106,7 @@ _AGENTS: dict[str, AgentDescriptor] = {
         role="Model selection support",
         stage_number=None,
         agent_type="ml_agent",
-        status="registered",
+        status="ready",
     ),
     "strategy_eligibility_agent": _d(
         agent_key="strategy_eligibility_agent",
@@ -188,15 +188,15 @@ _AGENTS: dict[str, AgentDescriptor] = {
         role="Backtest validation support",
         stage_number=None,
         agent_type="ml_agent",
-        status="registered",
+        status="ready",
     ),
     "qlib_research_agent": _d(
         agent_key="qlib_research_agent",
         display_name="Qlib Research Agent",
-        role="Qlib research/backtest integration (deferred)",
+        role="Qlib research/backtest integration",
         stage_number=None,
         agent_type="ml_agent",
-        status="not_implemented",
+        status="ready",
     ),
     "workflow_orchestrator_agent": _d(
         agent_key="workflow_orchestrator_agent",
