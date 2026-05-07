@@ -1596,6 +1596,63 @@ export type WorkflowRouterLatestResponse = {
   decision: WorkflowDecision | null;
 };
 
+export type SessionCheckerStatus = {
+  checker: string;
+  status: "pass" | "warn" | "fail" | "unknown" | string;
+  message?: string;
+  details?: Record<string, unknown>;
+};
+
+export type SessionBlockedWorkflowBias = {
+  bias: string;
+  reason: string;
+};
+
+export type SessionRouterEvaluation = {
+  session: string;
+  market: string;
+  timezone: string;
+  evaluated_at: string;
+  market_date?: string | null;
+  is_trading_day?: boolean;
+  is_holiday?: boolean;
+  llm_used?: boolean;
+  allowed_workflow_bias?: string[];
+  blocked_workflow_bias?: SessionBlockedWorkflowBias[];
+  session_notes?: string[];
+  next_action?: string;
+  checker_statuses?: SessionCheckerStatus[];
+};
+
+export type SessionRouterStatusResponse = {
+  status: "ok" | string;
+  stage: number;
+  router_status: "ready" | "partial" | "not_ready" | "unknown" | string;
+  llm_required: false | boolean;
+  calendar_mode: string;
+  supported_sessions: string[];
+  checker_statuses?: SessionCheckerStatus[];
+  latest_evaluation?: SessionRouterEvaluation | null;
+  updated_at?: string;
+};
+
+export type SessionEvaluateRequest = {
+  timestamp: string;
+  timezone: string;
+  market: string;
+  use_current_time: boolean;
+};
+
+export type SessionEvaluateResponse = {
+  status: "ok" | string;
+  evaluation: SessionRouterEvaluation;
+};
+
+export type SessionRouterLatestResponse = {
+  status: "ok" | string;
+  evaluation: SessionRouterEvaluation | null;
+};
+
 export type IntegrationCheckCatalogEntry = {
   key: string;
   label: string;
@@ -2802,6 +2859,21 @@ export async function getLatestWorkflowRoute(): Promise<WorkflowRouterLatestResp
   return request<WorkflowRouterLatestResponse>("/api/workflow-router/latest");
 }
 
+export async function getSessionRouterStatus(): Promise<SessionRouterStatusResponse> {
+  return request<SessionRouterStatusResponse>("/api/session-router/status");
+}
+
+export async function evaluateSessionRouter(requestBody: SessionEvaluateRequest): Promise<SessionEvaluateResponse> {
+  return request<SessionEvaluateResponse>("/api/session-router/evaluate", {
+    method: "POST",
+    body: JSON.stringify(requestBody),
+  });
+}
+
+export async function getLatestSessionRouterEvaluation(): Promise<SessionRouterLatestResponse> {
+  return request<SessionRouterLatestResponse>("/api/session-router/latest");
+}
+
 export const api = {
   getCommandCenter: () => request<CommandCenterResponse>("/api/command-center"),
   getAccountRisk: () => request<AccountRiskProfile>("/api/account-risk/profile"),
@@ -3094,6 +3166,11 @@ export const api = {
   getWorkflowRouterStatus,
   runWorkflowRoute,
   getLatestWorkflowRoute,
+
+  /** Stage 3 Session Router — session-context visibility/simulation. */
+  getSessionRouterStatus,
+  evaluateSessionRouter,
+  getLatestSessionRouterEvaluation,
 
   /** Catalog of integration matrix checks (Alpaca, data stack, signals, risk, …). */
   getIntegrationChecksCatalog: () => request<IntegrationChecksCatalogResponse>("/api/integration-checks/catalog"),
