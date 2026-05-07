@@ -981,6 +981,16 @@ _UNITS_SPEC: list[tuple[str, list[int] | Literal["all"], str, bool, str, bool, s
         "Read-only end-to-end workflow spine status aggregator for visibility/control.",
         "Add frontend runbook/dashboard visibility after backend endpoints are stable.",
     ),
+    (
+        "Agent Runtime Foundation",
+        "all",
+        "Python Script",
+        True,
+        "present_partial",
+        False,
+        "Phase 0/1 foundation: shared agent contracts, registry, workflow run records, agent run traces, and idempotency. Does not execute tools until Phase 2 wrappers.",
+        "Implement Phase 2 agent wrappers that call stage services safely.",
+    ),
 ]
 
 
@@ -1118,6 +1128,21 @@ def _apply_inventory_overrides(units: list[dict[str, Any]]) -> None:
         route=None,
         endpoint_family="/api/workflow-runbook",
         notes=["Backend runbook endpoints added; frontend dashboard not yet built."],
+    )
+
+    # Agent runtime foundation: backend + tests only; no frontend in this pass.
+    apply(
+        "Agent Runtime Foundation",
+        backend="present",
+        frontend="missing",
+        test="tested",
+        implementation_status="present_partial",
+        route=None,
+        endpoint_family="/api/agent-runtime",
+        notes=[
+            "Phase 0/1 only: contracts + run recording + idempotency. No tool execution until Phase 2.",
+            "No broker calls, no execution submit, no LLM.",
+        ],
     )
 
 

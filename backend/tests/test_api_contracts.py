@@ -1309,6 +1309,82 @@ def test_workflow_runbook_stages_all_uses_llm_false():
     assert all(bool(s["uses_llm"]) is False for s in stages)
 
 
+def test_agent_runtime_status_contract_safety_flags():
+    r = client.get("/api/agent-runtime/status")
+    assert r.status_code == 200
+    payload = r.json()
+    assert payload["status"] == "ok"
+    assert payload["data_mode"] == "agent_runtime_foundation_v1"
+    safety = payload["safety"]
+    assert safety["no_broker_calls"] is True
+    assert safety["no_execution_submit"] is True
+    assert safety["no_llm_calls"] is True
+    assert safety["dry_run_default"] is True
+
+
+def test_agent_runtime_agents_includes_workflow_orchestrator_agent_and_forbidden_actions():
+    r = client.get("/api/agent-runtime/agents")
+    assert r.status_code == 200
+    payload = r.json()
+    assert payload["status"] == "ok"
+    agents = payload["agents"]
+    keys = {a["agent_key"] for a in agents}
+    assert "workflow_orchestrator_agent" in keys
+    for a in agents:
+        fa = set(a.get("forbidden_actions") or [])
+        assert "broker_order_submit" in fa
+        assert "live_trade_submit" in fa
+        assert "auto_promote_live" in fa
+
+
+def test_agent_runtime_workflow_runs_create_and_get():
+    r = client.post("/api/agent-runtime/workflow-runs", json={"workflow_name": "US Stock Day-Trading Paper Workflow v1", "asset_class": "stock", "horizon": "day_trading", "mode": "paper_first", "source": "manual"})
+    assert r.status_code == 200
+    rec = r.json()["workflow_run"]
+    assert rec["workflow_run_id"].startswith("wr_")
+    gid = client.get(f"/api/agent-runtime/workflow-runs/{rec['workflow_run_id']}")
+    assert gid.status_code == 200
+    got = gid.json()["workflow_run"]
+    assert got["workflow_run_id"] == rec["workflow_run_id"]
+
+
+def test_agent_runtime_agent_runs_records_and_idempotency_duplicate():
+    body = {
+        "agent_key": "session_router_agent",
+        "inputs": {"timestamp": "2026-05-07T09:35:00-05:00"},
+        "context": {"source": "phase_0_1_test"},
+        "dry_run": True,
+        "requested_stage": 3,
+        "idempotency_key": "idem_session_router",
+    }
+    r1 = client.post("/api/agent-runtime/agent-runs", json=body)
+    assert r1.status_code == 200
+    run1 = r1.json()["agent_run"]
+    assert run1["status"] == "recorded"
+    assert run1["agent_key"] == "session_router_agent"
+    assert run1["decision"]["phase"] == "foundation_only"
+
+    r2 = client.post("/api/agent-runtime/agent-runs", json=body)
+    assert r2.status_code == 200
+    run2 = r2.json()["agent_run"]
+    assert run2["run_id"] == run1["run_id"]
+    assert run2["status"] == "duplicate"
+
+
+def test_agent_runtime_latest_contract():
+    r = client.get("/api/agent-runtime/latest")
+    assert r.status_code == 200
+    payload = r.json()
+    assert payload["status"] == "ok"
+    assert payload["registered_agents_count"] >= 1
+    assert "latest_agent_runs_by_key" in payload
+
+
+def test_agent_runtime_unknown_agent_key_returns_400():
+    r = client.post("/api/agent-runtime/agent-runs", json={"agent_key": "unknown_agent", "inputs": {}})
+    assert r.status_code in {400, 404}
+
+
 def _patch_market_routes_use_mock(monkeypatch: pytest.MonkeyPatch) -> None:
     """These routes call ``get_market_data_provider()`` with no query override; tests must not depend on workspace runtime_settings.json (e.g. Polygon)."""
     from app.data_providers.mock_provider import MockMarketDataProvider
