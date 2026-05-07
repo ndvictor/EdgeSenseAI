@@ -129,6 +129,84 @@ class ExecutionPlan(BaseModel):
     created_at: str
 
 
+class HandoffPreferences(BaseModel):
+    org_slug: str = "default"
+    source: str = "execution_planner"
+    allow_submit: bool = False
+    require_human_approval: bool = True
+
+
+class ExecutionPlanHandoffInput(BaseModel):
+    """Subset of Stage-9 plan used for safe precheck handoff."""
+
+    plan_id: str
+    symbol: str
+    asset_class: str
+    horizon: str
+    plan_status: str
+    entry: EntryPlan
+    risk: RiskPlan
+    sizing: SizingPlan
+    execution_readiness: ExecutionReadiness
+    blockers: list[str] = Field(default_factory=list)
+    warnings: list[str] = Field(default_factory=list)
+
+
+class ExecutionPrecheckPreview(BaseModel):
+    status: Literal["passed", "blocked", "failed"]
+    steps: list[dict] = Field(default_factory=list)
+
+
+class ExecutionRequestPreview(BaseModel):
+    org_slug: str
+    symbol: str
+    asset_class: str
+    side: str
+    quantity: int
+    order_type: str
+    limit_price: float | None = None
+    time_in_force: str = "day"
+    source: str = "execution_planner"
+    reason: str = "stage_9_execution_plan_precheck"
+    human_approval_confirmed: bool = False
+    metadata: dict = Field(default_factory=dict)
+
+
+class PrecheckHandoffRequest(BaseModel):
+    execution_plan: ExecutionPlanHandoffInput
+    handoff_preferences: HandoffPreferences = Field(default_factory=HandoffPreferences)
+
+
+class ExecutionPlannerHandoff(BaseModel):
+    handoff_id: str
+    stage_number: int = 9
+    handoff_to_stage: int = 10
+    handoff_type: Literal["execution_precheck"] = "execution_precheck"
+    plan_id: str
+    symbol: str
+    precheck_status: Literal["passed", "blocked", "failed"]
+    llm_used: bool = False
+    submitted_order: bool = False
+    broker_called: bool = False
+    execution_request_preview: ExecutionRequestPreview
+    precheck: ExecutionPrecheckPreview
+    blockers: list[str] = Field(default_factory=list)
+    warnings: list[str] = Field(default_factory=list)
+    allowed_next_stages: list[str] = Field(default_factory=list)
+    blocked_next_stages: list[BlockedStage] = Field(
+        default_factory=lambda: [
+            BlockedStage(stage="trade_execution", reason="This handoff only runs precheck. It never submits orders.")
+        ]
+    )
+    next_action: str
+    created_at: str
+
+
+class PrecheckHandoffResponse(BaseModel):
+    status: Literal["ok"]
+    handoff: ExecutionPlannerHandoff
+
+
 class ExecutionPlannerStatusResponse(BaseModel):
     status: Literal["ok"]
     stage: dict

@@ -2,8 +2,8 @@
 
 from fastapi import APIRouter
 
-from app.services.execution_planner.models import ExecutionPlannerPlanRequest
-from app.services.execution_planner.service import build_status, get_latest_plan, plan_execution
+from app.services.execution_planner.models import ExecutionPlannerPlanRequest, PrecheckHandoffRequest
+from app.services.execution_planner.service import build_status, get_latest_plan, plan_execution, precheck_handoff
 
 router = APIRouter(prefix="/execution-planner", tags=["execution-planner"])
 
@@ -16,6 +16,11 @@ def get_execution_planner_status():
 @router.post("/plan")
 def post_execution_planner_plan(request: ExecutionPlannerPlanRequest):
     return plan_execution(request)
+
+
+@router.post("/precheck-handoff")
+def post_execution_planner_precheck_handoff(request: PrecheckHandoffRequest):
+    return precheck_handoff(request)
 
 
 @router.get("/latest")

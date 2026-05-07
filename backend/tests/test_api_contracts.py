@@ -643,6 +643,127 @@ def test_execution_planner_latest_after_planning_contract():
     assert payload["execution_plan"]["plan_id"].startswith("ep_")
 
 
+def _execution_plan_for_handoff(
+    *,
+    plan_status: str = "planned",
+    asset_class: str = "stock",
+    horizon: str = "day_trading",
+    plan_blockers: list[str] | None = None,
+) -> dict:
+    return {
+        "plan_id": "ep_sample",
+        "symbol": "AMD",
+        "asset_class": asset_class,
+        "horizon": horizon,
+        "plan_status": plan_status,
+        "entry": {"order_type": "limit", "side": "buy", "limit_price": 151.15, "reference_price": 151.10},
+        "risk": {
+            "stop_loss": 148.85,
+            "target_price": 155.60,
+            "risk_per_share": 2.25,
+            "reward_per_share": 4.50,
+            "reward_risk_ratio": 2.0,
+            "max_dollar_risk": 100.0,
+        },
+        "sizing": {
+            "planned_quantity": 13,
+            "planned_notional": 1964.95,
+            "position_size_percent": 19.65,
+            "max_allowed_notional": 2000.0,
+            "sizing_status": "capped",
+        },
+        "execution_readiness": {
+            "workflow_enabled": True,
+            "execution_enabled": False,
+            "paper_trading_enabled": True,
+            "live_trading_enabled": False,
+            "broker_execution_enabled": False,
+            "human_approval_required": True,
+            "emergency_stop": False,
+            "force_close_requested": False,
+            "spread_pass": True,
+            "slippage_pass": True,
+        },
+        "blockers": plan_blockers or [],
+        "warnings": ["quantity_capped_by_max_position_size"],
+    }
+
+
+def test_execution_planner_precheck_handoff_blocks_when_execution_disabled_and_no_submit():
+    response = client.post(
+        "/api/execution-planner/precheck-handoff",
+        json={
+            "execution_plan": _execution_plan_for_handoff(),
+            "handoff_preferences": {"org_slug": "default", "source": "execution_planner", "allow_submit": False, "require_human_approval": True},
+        },
+    )
+    assert response.status_code == 200
+    payload = response.json()
+    assert payload["status"] == "ok"
+    handoff = payload["handoff"]
+    assert handoff["submitted_order"] is False
+    assert handoff["broker_called"] is False
+    assert handoff["precheck_status"] == "blocked"
+    assert "execution_disabled_by_master_admin" in handoff["blockers"]
+
+
+def test_execution_planner_precheck_handoff_scope_blocked_crypto():
+    response = client.post(
+        "/api/execution-planner/precheck-handoff",
+        json={"execution_plan": _execution_plan_for_handoff(asset_class="crypto"), "handoff_preferences": {"org_slug": "default"}},
+    )
+    assert response.status_code == 200
+    payload = response.json()
+    assert payload["handoff"]["precheck_status"] == "blocked"
+    assert "asset_class_not_supported" in payload["handoff"]["blockers"]
+
+
+def test_execution_planner_precheck_handoff_blocks_when_plan_has_blockers():
+    response = client.post(
+        "/api/execution-planner/precheck-handoff",
+        json={"execution_plan": _execution_plan_for_handoff(plan_blockers=["spread_too_wide"]), "handoff_preferences": {"org_slug": "default"}},
+    )
+    assert response.status_code == 200
+    payload = response.json()
+    assert payload["handoff"]["precheck_status"] == "blocked"
+    assert "plan_contains_blockers" in payload["handoff"]["blockers"]
+
+
+def test_execution_planner_precheck_handoff_allow_submit_true_still_never_submits():
+    response = client.post(
+        "/api/execution-planner/precheck-handoff",
+        json={
+            "execution_plan": _execution_plan_for_handoff(),
+            "handoff_preferences": {"org_slug": "default", "allow_submit": True, "source": "execution_planner"},
+        },
+    )
+    assert response.status_code == 200
+    payload = response.json()
+    assert payload["handoff"]["submitted_order"] is False
+    assert payload["handoff"]["broker_called"] is False
+
+
+def test_execution_planner_precheck_handoff_plan_status_blocked_returns_blocked():
+    response = client.post(
+        "/api/execution-planner/precheck-handoff",
+        json={"execution_plan": _execution_plan_for_handoff(plan_status="blocked"), "handoff_preferences": {"org_slug": "default"}},
+    )
+    assert response.status_code == 200
+    payload = response.json()
+    assert payload["handoff"]["precheck_status"] == "blocked"
+    assert "plan_not_planned" in payload["handoff"]["blockers"]
+
+
+def test_execution_planner_precheck_handoff_broker_disabled_still_never_calls_broker():
+    response = client.post(
+        "/api/execution-planner/precheck-handoff",
+        json={"execution_plan": _execution_plan_for_handoff(), "handoff_preferences": {"org_slug": "default"}},
+    )
+    assert response.status_code == 200
+    payload = response.json()
+    assert payload["handoff"]["broker_called"] is False
+
+
 def _patch_market_routes_use_mock(monkeypatch: pytest.MonkeyPatch) -> None:
     """These routes call ``get_market_data_provider()`` with no query override; tests must not depend on workspace runtime_settings.json (e.g. Polygon)."""
     from app.data_providers.mock_provider import MockMarketDataProvider
