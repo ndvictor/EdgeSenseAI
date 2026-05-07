@@ -2290,6 +2290,144 @@ export type ClosePositionLatestResponse = {
   result: ClosePositionReviewResult | null;
 };
 
+export type PostTradePnlResult = {
+  realized_pnl: number;
+  realized_pnl_percent: number;
+  gross_entry_notional: number;
+  gross_exit_notional: number;
+};
+
+export type PostTradeRiskResult = {
+  risk_per_share: number;
+  r_multiple: number;
+  planned_reward_risk: number;
+};
+
+export type PostTradeExecutionQualityResult = {
+  entry_slippage_percent: number;
+  exit_slippage_percent: number;
+  slippage_status: "ok" | "warn" | "fail" | string;
+};
+
+export type PostTradeRuleComplianceResult = {
+  compliant: boolean;
+  failed_rules: string[];
+  passed_rules: string[];
+};
+
+export type PostTradeAttribution = {
+  primary_driver: string;
+  secondary_driver?: string | null;
+  session: string;
+  strategy_key: string;
+  trigger_key: string;
+};
+
+export type PostTradeBlockedStage = {
+  stage: number;
+  reason: string;
+};
+
+export type PostTradeChecker = {
+  checker: string;
+  status: "pass" | "warn" | "fail" | "unknown" | string;
+  message?: string;
+  details?: Record<string, unknown>;
+};
+
+export type PostTradeEvaluationResult = {
+  evaluation_id: string;
+  trade_id: string;
+  symbol: string;
+  asset_class: string;
+  horizon: string;
+  outcome_label: string;
+  outcome_status: string;
+  llm_used?: boolean;
+  pnl: PostTradePnlResult;
+  risk_result: PostTradeRiskResult;
+  execution_quality_result: PostTradeExecutionQualityResult;
+  rule_compliance_result: PostTradeRuleComplianceResult;
+  attribution: PostTradeAttribution;
+  blockers?: string[];
+  warnings?: string[];
+  allowed_next_stages?: number[];
+  blocked_next_stages?: PostTradeBlockedStage[];
+  next_action?: string;
+  created_at?: string;
+  checker_results?: PostTradeChecker[];
+};
+
+export type PostTradeEvaluationStatusResponse = {
+  status: "ok" | string;
+  stage: number;
+  evaluator_status: "ready" | "partial" | "not_ready" | "unknown" | string;
+  llm_required: false | boolean;
+  supported_outcome_labels: string[];
+  checker_statuses?: PostTradeChecker[];
+  latest_evaluation?: PostTradeEvaluationResult | null;
+  updated_at?: string;
+  next_action?: string;
+};
+
+export type PostTradeEvaluationRequest = {
+  trade: {
+    trade_id: string;
+    symbol: string;
+    asset_class: string;
+    horizon: string;
+    side: string;
+    quantity: number;
+    planned_entry_price: number;
+    actual_entry_price: number;
+    planned_exit_price: number;
+    actual_exit_price: number;
+    stop_loss: number;
+    target_price: number;
+    opened_at: string;
+    closed_at: string;
+    exit_reason: string;
+  };
+  workflow_context: {
+    selected_workflow: string;
+    strategy_key: string;
+    trigger_key: string;
+    session: string;
+  };
+  thesis_outcome: {
+    thesis_valid_at_exit: boolean;
+    invalidation_hit: boolean;
+    price_above_vwap_at_exit: boolean;
+    volume_confirmed_at_exit: boolean;
+    relative_strength_positive_at_exit: boolean;
+  };
+  execution_quality: {
+    planned_entry_price: number;
+    actual_entry_price: number;
+    planned_exit_price: number;
+    actual_exit_price: number;
+    max_allowed_slippage_percent: number;
+  };
+  rule_compliance: {
+    entered_after_trigger: boolean;
+    used_approved_strategy: boolean;
+    respected_position_size: boolean;
+    respected_stop_loss: boolean;
+    respected_master_admin_gates: boolean;
+    human_approval_obtained: boolean;
+  };
+};
+
+export type PostTradeEvaluationResponse = {
+  status: "ok" | string;
+  result: PostTradeEvaluationResult;
+};
+
+export type PostTradeEvaluationLatestResponse = {
+  status: "ok" | string;
+  result: PostTradeEvaluationResult | null;
+};
+
 export type IntegrationCheckCatalogEntry = {
   key: string;
   label: string;
@@ -3603,6 +3741,21 @@ export async function getLatestClosePositionReview(): Promise<ClosePositionLates
   return request<ClosePositionLatestResponse>("/api/close-position/latest");
 }
 
+export async function getPostTradeEvaluationStatus(): Promise<PostTradeEvaluationStatusResponse> {
+  return request<PostTradeEvaluationStatusResponse>("/api/post-trade-evaluation/status");
+}
+
+export async function evaluatePostTrade(requestBody: PostTradeEvaluationRequest): Promise<PostTradeEvaluationResponse> {
+  return request<PostTradeEvaluationResponse>("/api/post-trade-evaluation/evaluate", {
+    method: "POST",
+    body: JSON.stringify(requestBody),
+  });
+}
+
+export async function getLatestPostTradeEvaluation(): Promise<PostTradeEvaluationLatestResponse> {
+  return request<PostTradeEvaluationLatestResponse>("/api/post-trade-evaluation/latest");
+}
+
 export const api = {
   getCommandCenter: () => request<CommandCenterResponse>("/api/command-center"),
   getAccountRisk: () => request<AccountRiskProfile>("/api/account-risk/profile"),
@@ -3926,6 +4079,11 @@ export const api = {
   getClosePositionStatus,
   reviewClosePosition,
   getLatestClosePositionReview,
+
+  /** Stage 13 Post-Trade Evaluation — outcome visibility (no broker, no LLM). */
+  getPostTradeEvaluationStatus,
+  evaluatePostTrade,
+  getLatestPostTradeEvaluation,
 
   /** Catalog of integration matrix checks (Alpaca, data stack, signals, risk, …). */
   getIntegrationChecksCatalog: () => request<IntegrationChecksCatalogResponse>("/api/integration-checks/catalog"),

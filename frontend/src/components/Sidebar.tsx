@@ -51,6 +51,7 @@ const items = [
   { label: "Live Watchlist", href: "/live-watchlist", icon: Crosshair },
   { label: "Position Monitoring", href: "/position-monitoring", icon: Crosshair },
   { label: "Close Position", href: "/close-position", icon: ClipboardList },
+  { label: "Post-Trade Evaluation", href: "/post-trade-evaluation", icon: Activity },
   { label: "Journal", href: "/journal", icon: BookOpen },
   { label: "Learning Loop", href: "/learning-loop", icon: RefreshCw },
   { label: "Platform Readiness", href: "/platform-readiness", icon: ShieldCheck },
