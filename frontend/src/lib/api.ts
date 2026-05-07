@@ -2167,6 +2167,129 @@ export type PositionMonitoringLatestResponse = {
   result: PositionEvaluationResult | null;
 };
 
+export type CloseOrderPreview = {
+  symbol: string;
+  side: string;
+  quantity: number;
+  order_type: string;
+  limit_price?: number | null;
+  time_in_force?: string;
+  source?: string;
+  reason?: string;
+  human_approval_confirmed?: boolean;
+} & Record<string, unknown>;
+
+export type ClosePositionBlockedStage = {
+  stage: number;
+  reason: string;
+};
+
+export type ClosePositionChecker = {
+  checker: string;
+  status: "pass" | "warn" | "fail" | "unknown" | string;
+  message?: string;
+  details?: Record<string, unknown>;
+};
+
+export type ClosePositionReviewResult = {
+  review_id: string;
+  position_id: string;
+  symbol: string;
+  asset_class: string;
+  horizon: string;
+  review_action: string;
+  review_status: string;
+  llm_used?: boolean;
+  submitted_order: boolean;
+  broker_called: boolean;
+  reason: string;
+  close_order_preview?: CloseOrderPreview | null;
+  blockers?: string[];
+  warnings?: string[];
+  allowed_next_stages?: number[];
+  blocked_next_stages?: ClosePositionBlockedStage[];
+  next_action?: string;
+  created_at?: string;
+  checker_results?: ClosePositionChecker[];
+};
+
+export type ClosePositionStatusResponse = {
+  status: "ok" | string;
+  stage: number;
+  review_status: "ready" | "partial" | "not_ready" | "unknown" | string;
+  llm_required: false | boolean;
+  supported_review_actions: string[];
+  checker_statuses?: ClosePositionChecker[];
+  latest_review?: ClosePositionReviewResult | null;
+  updated_at?: string;
+  next_action?: string;
+};
+
+export type ClosePositionReviewRequest = {
+  position_evaluation: {
+    evaluation_id: string;
+    position_id: string;
+    symbol: string;
+    asset_class: string;
+    horizon: string;
+    position_status: string;
+    recommended_action: string;
+    pnl: {
+      unrealized_pnl: number;
+      unrealized_pnl_percent: number;
+      r_multiple: number;
+    };
+    risk: {
+      risk_per_share: number;
+      current_distance_to_stop: number;
+      distance_to_target: number;
+      position_notional: number;
+      position_size_percent: number;
+      daily_loss_percent: number;
+    };
+    thesis_validity: {
+      valid: boolean;
+      score: number;
+      failed_reasons: string[];
+      passed_reasons: string[];
+    };
+    blockers: string[];
+    warnings: string[];
+  };
+  position: {
+    quantity: number;
+    side: string;
+    current_price: number;
+    entry_price: number;
+  };
+  master_admin: {
+    workflow_enabled: boolean;
+    execution_enabled: boolean;
+    paper_trading_enabled: boolean;
+    live_trading_enabled: boolean;
+    broker_execution_enabled: boolean;
+    human_approval_required: boolean;
+    emergency_stop: boolean;
+    force_close_requested: boolean;
+  };
+  review_preferences: {
+    reduce_percent: number;
+    close_reason: string;
+    order_style: string;
+    allow_submit: boolean;
+  };
+};
+
+export type ClosePositionReviewResponse = {
+  status: "ok" | string;
+  result: ClosePositionReviewResult;
+};
+
+export type ClosePositionLatestResponse = {
+  status: "ok" | string;
+  result: ClosePositionReviewResult | null;
+};
+
 export type IntegrationCheckCatalogEntry = {
   key: string;
   label: string;
@@ -3465,6 +3588,21 @@ export async function getLatestPositionMonitoringEvaluation(): Promise<PositionM
   return request<PositionMonitoringLatestResponse>("/api/position-monitoring/latest");
 }
 
+export async function getClosePositionStatus(): Promise<ClosePositionStatusResponse> {
+  return request<ClosePositionStatusResponse>("/api/close-position/status");
+}
+
+export async function reviewClosePosition(requestBody: ClosePositionReviewRequest): Promise<ClosePositionReviewResponse> {
+  return request<ClosePositionReviewResponse>("/api/close-position/review", {
+    method: "POST",
+    body: JSON.stringify(requestBody),
+  });
+}
+
+export async function getLatestClosePositionReview(): Promise<ClosePositionLatestResponse> {
+  return request<ClosePositionLatestResponse>("/api/close-position/latest");
+}
+
 export const api = {
   getCommandCenter: () => request<CommandCenterResponse>("/api/command-center"),
   getAccountRisk: () => request<AccountRiskProfile>("/api/account-risk/profile"),
@@ -3783,6 +3921,11 @@ export const api = {
   getPositionMonitoringStatus,
   evaluatePositionMonitoring,
   getLatestPositionMonitoringEvaluation,
+
+  /** Stage 12 Close Position — review/preview visibility (no submit). */
+  getClosePositionStatus,
+  reviewClosePosition,
+  getLatestClosePositionReview,
 
   /** Catalog of integration matrix checks (Alpaca, data stack, signals, risk, …). */
   getIntegrationChecksCatalog: () => request<IntegrationChecksCatalogResponse>("/api/integration-checks/catalog"),
