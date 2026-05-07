@@ -528,6 +528,121 @@ def test_trigger_monitoring_latest_after_evaluation_contract():
     assert payload["trigger_evaluation"]["evaluation_id"].startswith("tm_")
 
 
+def _execution_planner_sample_request(
+    *,
+    trigger_state: str = "fired",
+    asset_class: str = "stock",
+    horizon: str = "day_trading",
+    spread_percent: float = 0.07,
+    execution_enabled: bool = False,
+) -> dict:
+    return {
+        "trigger_evaluation": {
+            "trigger_state": trigger_state,
+            "symbol": "AMD",
+            "asset_class": asset_class,
+            "horizon": horizon,
+            "trigger_key": "rvol_vwap_breakout_confirm",
+        },
+        "market_snapshot": {
+            "current_price": 151.10,
+            "vwap": 149.80,
+            "atr": 2.25,
+            "bid": 151.05,
+            "ask": 151.15,
+            "spread_percent": spread_percent,
+            "volume_confirms": True,
+        },
+        "account_state": {
+            "account_equity": 10000,
+            "cash": 10000,
+            "risk_budget_available": True,
+            "max_risk_per_trade_percent": 1.0,
+            "max_position_size_percent": 20.0,
+            "paper_trading_enabled": True,
+            "live_trading_enabled": False,
+            "human_approval_required": True,
+            "execution_enabled": execution_enabled,
+        },
+        "planning_preferences": {
+            "order_style": "limit",
+            "stop_method": "atr",
+            "target_reward_risk": 2.0,
+            "atr_stop_multiplier": 1.0,
+            "max_spread_percent": 0.15,
+        },
+    }
+
+
+def test_execution_planner_status_contract():
+    response = client.get("/api/execution-planner/status")
+    assert response.status_code == 200
+    payload = response.json()
+    assert payload["status"] == "ok"
+    assert payload["stage"]["stage_number"] == 9
+    assert payload["stage"]["stage_key"] == "execution_planner"
+    assert payload["data_mode"] == "rules_v1"
+    assert payload["updated_at"]
+    assert payload["summary"]["planner_status"] == "ready"
+    assert payload["summary"]["llm_required"] is False
+    assert any(c["key"] == "master_admin_gate" for c in payload["checkers"])
+
+
+def test_execution_planner_plan_contract_includes_entry_risk_sizing():
+    response = client.post("/api/execution-planner/plan", json=_execution_planner_sample_request())
+    assert response.status_code == 200
+    payload = response.json()
+    assert payload["status"] == "ok"
+    plan = payload["execution_plan"]
+    assert plan["plan_id"].startswith("ep_")
+    assert plan["symbol"] == "AMD"
+    assert "entry" in plan and "risk" in plan and "sizing" in plan
+    assert plan["llm_used"] is False
+    assert plan["risk"]["reward_risk_ratio"] == 2.0
+
+
+def test_execution_planner_scope_blocked_crypto():
+    response = client.post("/api/execution-planner/plan", json=_execution_planner_sample_request(asset_class="crypto"))
+    assert response.status_code == 200
+    payload = response.json()
+    assert payload["status"] == "ok"
+    assert payload["execution_plan"]["plan_status"] == "blocked"
+
+
+def test_execution_planner_trigger_not_fired_blocked():
+    response = client.post("/api/execution-planner/plan", json=_execution_planner_sample_request(trigger_state="armed"))
+    assert response.status_code == 200
+    payload = response.json()
+    assert payload["status"] == "ok"
+    assert payload["execution_plan"]["plan_status"] == "blocked"
+    assert "trigger_not_fired" in payload["execution_plan"]["blockers"]
+
+
+def test_execution_planner_high_spread_blocked():
+    response = client.post("/api/execution-planner/plan", json=_execution_planner_sample_request(spread_percent=0.50))
+    assert response.status_code == 200
+    payload = response.json()
+    assert payload["execution_plan"]["plan_status"] == "blocked"
+    assert "spread_too_wide" in payload["execution_plan"]["blockers"]
+
+
+def test_execution_planner_execution_enabled_false_returns_master_admin_blocker():
+    response = client.post("/api/execution-planner/plan", json=_execution_planner_sample_request(execution_enabled=False))
+    assert response.status_code == 200
+    payload = response.json()
+    assert payload["execution_plan"]["plan_status"] == "blocked"
+    assert "execution_disabled_by_master_admin" in payload["execution_plan"]["blockers"]
+
+
+def test_execution_planner_latest_after_planning_contract():
+    _ = client.post("/api/execution-planner/plan", json=_execution_planner_sample_request())
+    latest = client.get("/api/execution-planner/latest")
+    assert latest.status_code == 200
+    payload = latest.json()
+    assert payload["status"] == "ok"
+    assert payload["execution_plan"]["plan_id"].startswith("ep_")
+
+
 def _patch_market_routes_use_mock(monkeypatch: pytest.MonkeyPatch) -> None:
     """These routes call ``get_market_data_provider()`` with no query override; tests must not depend on workspace runtime_settings.json (e.g. Polygon)."""
     from app.data_providers.mock_provider import MockMarketDataProvider
