@@ -1125,6 +1125,143 @@ def test_post_trade_evaluation_latest_after_evaluation_contract():
     assert payload["post_trade_evaluation"]["evaluation_id"].startswith("pte_")
 
 
+def _learning_loop_sample_request(
+    *,
+    asset_class: str = "stock",
+    sample_size: int = 12,
+    avg_r_hint: float = 0.42,
+    current_drawdown_r: float = -1.5,
+    outcomes: list[dict] | None = None,
+    min_sample_size_for_promotion: int = 20,
+    min_avg_r_for_promotion: float = 0.35,
+    max_drawdown_r_before_demotion: float = -3.0,
+    max_rule_violation_rate: float = 0.10,
+    max_slippage_fail_rate: float = 0.15,
+) -> dict:
+    if outcomes is None:
+        outcomes = [
+            {
+                "trade_id": "trade_1",
+                "outcome_label": "target_hit",
+                "outcome_status": "positive",
+                "realized_pnl": 55.90,
+                "r_multiple": 1.83,
+                "slippage_status": "pass",
+                "rule_compliant": True,
+            },
+            {
+                "trade_id": "trade_2",
+                "outcome_label": "stopped_out",
+                "outcome_status": "negative",
+                "realized_pnl": -29.90,
+                "r_multiple": -1.0,
+                "slippage_status": "pass",
+                "rule_compliant": True,
+            },
+        ]
+    return {
+        "strategy_key": "regime_aware_momentum_catalyst",
+        "strategy_group": "regime_aware_momentum",
+        "asset_class": asset_class,
+        "horizon": "day_trading",
+        "workflow_key": "baseline_fast_path",
+        "recent_outcomes": outcomes,
+        "current_status": {
+            "promotion_status": "paper_ready",
+            "proof_status": "paper_passed",
+            "sample_size": sample_size,
+            "current_drawdown_r": current_drawdown_r,
+            "last_10_avg_r": avg_r_hint,
+        },
+        "thresholds": {
+            "min_sample_size_for_promotion": min_sample_size_for_promotion,
+            "min_avg_r_for_promotion": min_avg_r_for_promotion,
+            "max_drawdown_r_before_demotion": max_drawdown_r_before_demotion,
+            "max_rule_violation_rate": max_rule_violation_rate,
+            "max_slippage_fail_rate": max_slippage_fail_rate,
+        },
+    }
+
+
+def test_learning_loop_status_contract():
+    r = client.get("/api/learning-loop/status")
+    assert r.status_code == 200
+    payload = r.json()
+    assert payload["status"] == "ok"
+    assert payload["stage"]["stage_number"] == 14
+    assert payload["stage"]["stage_key"] == "learning_loop"
+    assert payload["data_mode"] == "rules_v1"
+
+
+def test_learning_loop_below_sample_size_keeps_monitoring_with_warning():
+    r = client.post("/api/learning-loop/evaluate", json=_learning_loop_sample_request(sample_size=12, min_sample_size_for_promotion=20))
+    assert r.status_code == 200
+    d = r.json()["learning_decision"]
+    assert d["learning_action"] == "keep_monitoring"
+    assert "sample_size_below_threshold" in d["warnings"]
+
+
+def test_learning_loop_strong_metrics_promote_candidate_when_thresholds_met():
+    outcomes = [
+        {"trade_id": "t1", "outcome_label": "target_hit", "outcome_status": "positive", "realized_pnl": 10, "r_multiple": 0.8, "slippage_status": "pass", "rule_compliant": True},
+        {"trade_id": "t2", "outcome_label": "win", "outcome_status": "positive", "realized_pnl": 12, "r_multiple": 0.7, "slippage_status": "pass", "rule_compliant": True},
+    ]
+    r = client.post(
+        "/api/learning-loop/evaluate",
+        json=_learning_loop_sample_request(
+            sample_size=25,
+            outcomes=outcomes,
+            current_drawdown_r=-0.5,
+            min_sample_size_for_promotion=20,
+            min_avg_r_for_promotion=0.35,
+        ),
+    )
+    assert r.status_code == 200
+    d = r.json()["learning_decision"]
+    assert d["learning_action"] == "promote_candidate"
+    assert d["promotion"]["eligible_for_promotion"] is True
+
+
+def test_learning_loop_drawdown_breach_triggers_demotion():
+    r = client.post(
+        "/api/learning-loop/evaluate",
+        json=_learning_loop_sample_request(sample_size=30, current_drawdown_r=-3.5, max_drawdown_r_before_demotion=-3.0),
+    )
+    assert r.status_code == 200
+    d = r.json()["learning_decision"]
+    assert d["learning_action"] in {"demote_to_paper", "demote_to_research"}
+
+
+def test_learning_loop_rule_violation_rate_high_triggers_demotion_to_research():
+    outcomes = [
+        {"trade_id": "t1", "outcome_label": "rule_violation", "outcome_status": "review_needed", "realized_pnl": 0, "r_multiple": 0.0, "slippage_status": "pass", "rule_compliant": False},
+        {"trade_id": "t2", "outcome_label": "flat", "outcome_status": "neutral", "realized_pnl": 0, "r_multiple": 0.0, "slippage_status": "pass", "rule_compliant": True},
+    ]
+    r = client.post(
+        "/api/learning-loop/evaluate",
+        json=_learning_loop_sample_request(sample_size=25, outcomes=outcomes, max_rule_violation_rate=0.10),
+    )
+    assert r.status_code == 200
+    d = r.json()["learning_decision"]
+    assert d["learning_action"] == "demote_to_research"
+
+
+def test_learning_loop_crypto_asset_class_blocks_strategy_or_review_needed():
+    r = client.post("/api/learning-loop/evaluate", json=_learning_loop_sample_request(asset_class="crypto"))
+    assert r.status_code == 200
+    d = r.json()["learning_decision"]
+    assert d["learning_action"] in {"block_strategy", "review_needed"}
+
+
+def test_learning_loop_latest_after_evaluate_contract():
+    _ = client.post("/api/learning-loop/evaluate", json=_learning_loop_sample_request())
+    latest = client.get("/api/learning-loop/latest")
+    assert latest.status_code == 200
+    payload = latest.json()
+    assert payload["status"] == "ok"
+    assert payload["learning_decision"]["decision_id"].startswith("ll_")
+
+
 def _patch_market_routes_use_mock(monkeypatch: pytest.MonkeyPatch) -> None:
     """These routes call ``get_market_data_provider()`` with no query override; tests must not depend on workspace runtime_settings.json (e.g. Polygon)."""
     from app.data_providers.mock_provider import MockMarketDataProvider
