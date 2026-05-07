@@ -15,6 +15,7 @@ import {
   Radar,
   RefreshCw,
   Rocket,
+  Route,
   Settings,
   ShieldCheck,
   SlidersHorizontal,
@@ -44,6 +45,7 @@ const items = [
   { label: "Journal", href: "/journal", icon: BookOpen },
   { label: "Learning Loop", href: "/learning-loop", icon: RefreshCw },
   { label: "Platform Readiness", href: "/platform-readiness", icon: ShieldCheck },
+  { label: "Workflow Router", href: "/workflow-router", icon: Route },
   { label: "Lab Platform", href: "/lab", icon: TestTube2 },
   { label: "Settings", href: "/settings", icon: Settings },
 ];

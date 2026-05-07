@@ -1526,6 +1526,76 @@ export type LabInventoryResponse = {
   component_categories: LabComponentCategory[];
 };
 
+export type WorkflowCheckerResult = {
+  checker: string;
+  status: "pass" | "warn" | "fail" | "unknown" | string;
+  message?: string;
+  details?: Record<string, unknown>;
+};
+
+export type WorkflowDecision = {
+  selected_workflow: string;
+  workflow_mode: string;
+  reason: string;
+  llm_used: boolean;
+  allowed_next_stages: number[];
+  blocked_stages: number[];
+  checker_results: WorkflowCheckerResult[];
+  next_action?: string;
+  created_at?: string;
+};
+
+export type WorkflowRouterStatusResponse = {
+  status: "ok" | string;
+  stage: number;
+  router_status: "ready" | "partial" | "not_ready" | "unknown" | string;
+  llm_required: false | boolean;
+  baseline_workflow_available: boolean;
+  adjusted_workflow_available: boolean;
+  supported_workflows: string[];
+  checker_statuses?: Record<string, WorkflowCheckerResult>;
+  latest_decision?: WorkflowDecision | null;
+  updated_at?: string;
+};
+
+export type WorkflowRouteRequest = {
+  session: string;
+  market_condition: {
+    regime: string;
+    volatility_state: string;
+    liquidity_state: string;
+    data_quality: string;
+    urgency: string;
+  };
+  strategy_or_response_status: {
+    proof_status: string;
+    paper_status: string;
+    requires_backtest: boolean;
+    already_backtested: boolean;
+  };
+  account_state: {
+    risk_budget_available: boolean;
+    paper_trading_enabled: boolean;
+    live_trading_enabled: boolean;
+    human_approval_required: boolean;
+  };
+  execution_state: {
+    broker_ready: boolean;
+    spread_pass: boolean;
+    slippage_pass: boolean;
+  };
+};
+
+export type WorkflowRouteResponse = {
+  status: "ok" | string;
+  decision: WorkflowDecision;
+};
+
+export type WorkflowRouterLatestResponse = {
+  status: "ok" | string;
+  decision: WorkflowDecision | null;
+};
+
 export type IntegrationCheckCatalogEntry = {
   key: string;
   label: string;
@@ -2717,6 +2787,21 @@ export async function getLabInventory(): Promise<LabInventoryResponse> {
   return request<LabInventoryResponse>("/api/lab/inventory");
 }
 
+export async function getWorkflowRouterStatus(): Promise<WorkflowRouterStatusResponse> {
+  return request<WorkflowRouterStatusResponse>("/api/workflow-router/status");
+}
+
+export async function runWorkflowRoute(requestBody: WorkflowRouteRequest): Promise<WorkflowRouteResponse> {
+  return request<WorkflowRouteResponse>("/api/workflow-router/route", {
+    method: "POST",
+    body: JSON.stringify(requestBody),
+  });
+}
+
+export async function getLatestWorkflowRoute(): Promise<WorkflowRouterLatestResponse> {
+  return request<WorkflowRouterLatestResponse>("/api/workflow-router/latest");
+}
+
 export const api = {
   getCommandCenter: () => request<CommandCenterResponse>("/api/command-center"),
   getAccountRisk: () => request<AccountRiskProfile>("/api/account-risk/profile"),
@@ -3004,6 +3089,11 @@ export const api = {
 
   /** Lab Platform — desired workflow inventory (v1 static registry). */
   getLabInventory,
+
+  /** Stage 5 Workflow Router — route-decision visibility/simulation. */
+  getWorkflowRouterStatus,
+  runWorkflowRoute,
+  getLatestWorkflowRoute,
 
   /** Catalog of integration matrix checks (Alpaca, data stack, signals, risk, …). */
   getIntegrationChecksCatalog: () => request<IntegrationChecksCatalogResponse>("/api/integration-checks/catalog"),
