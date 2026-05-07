@@ -409,6 +409,125 @@ def test_strategy_eligibility_latest_after_check_contract():
     assert payload["eligibility"]["check_id"].startswith("se_")
 
 
+def _trigger_monitoring_sample_request(
+    *,
+    asset_class: str = "stock",
+    horizon: str = "day_trading",
+    eligibility_eligible: bool = True,
+    eligibility_status: str = "eligible",
+    evaluated_at: str = "2026-05-07T09:35:00-05:00",
+    expires_at: str = "2026-05-07T09:45:00-05:00",
+    volume_confirms: bool = True,
+    price_above_trigger: bool = True,
+    price_above_vwap: bool = True,
+    spread_pass: bool = True,
+    data_quality: str = "pass",
+    invalidation_hit: bool = False,
+) -> dict:
+    return {
+        "workflow_context": {"selected_workflow": "baseline_fast_path", "workflow_mode": "baseline", "session": "market_open"},
+        "eligibility_context": {
+            "eligible": eligibility_eligible,
+            "eligibility_status": eligibility_status,
+            "strategy_key": "regime_aware_momentum_catalyst",
+            "strategy_group": "regime_aware_momentum",
+        },
+        "trigger_candidate": {
+            "symbol": "AMD",
+            "asset_class": asset_class,
+            "horizon": horizon,
+            "trigger_key": "rvol_vwap_breakout_confirm",
+            "created_at": "2026-05-07T09:30:00-05:00",
+            "expires_at": expires_at,
+            "trigger_price": 150.25,
+            "current_price": 151.10,
+            "vwap": 149.80,
+        },
+        "current_state": {
+            "evaluated_at": evaluated_at,
+            "data_quality": data_quality,
+            "spread_pass": spread_pass,
+            "volume_confirms": volume_confirms,
+            "price_above_trigger": price_above_trigger,
+            "price_above_vwap": price_above_vwap,
+            "invalidation_hit": invalidation_hit,
+        },
+    }
+
+
+def test_trigger_monitoring_status_contract():
+    response = client.get("/api/trigger-monitoring/status")
+    assert response.status_code == 200
+    payload = response.json()
+    assert payload["status"] == "ok"
+    assert payload["stage"]["stage_number"] == 8
+    assert payload["stage"]["stage_key"] == "trigger_monitoring"
+    assert payload["data_mode"] == "rules_v1"
+    assert payload["updated_at"]
+    assert payload["summary"]["monitor_status"] == "ready"
+    assert payload["summary"]["llm_required"] is False
+    assert "fired" in payload["supported_trigger_states"]
+    assert any(c["key"] == "timing_window_checker" for c in payload["checkers"])
+
+
+def test_trigger_monitoring_evaluate_fired_contract():
+    response = client.post("/api/trigger-monitoring/evaluate", json=_trigger_monitoring_sample_request())
+    assert response.status_code == 200
+    payload = response.json()
+    assert payload["status"] == "ok"
+    ev = payload["trigger_evaluation"]
+    assert ev["stage_number"] == 8
+    assert ev["evaluation_id"].startswith("tm_")
+    assert ev["trigger_state"] == "fired"
+    assert ev["llm_used"] is False
+    assert ev["timing"]["is_expired"] is False
+    assert "execution_planner" in ev["allowed_next_stages"]
+
+
+def test_trigger_monitoring_evaluate_expired_contract():
+    response = client.post(
+        "/api/trigger-monitoring/evaluate",
+        json=_trigger_monitoring_sample_request(
+            evaluated_at="2026-05-07T09:46:00-05:00",
+            expires_at="2026-05-07T09:45:00-05:00",
+        ),
+    )
+    assert response.status_code == 200
+    payload = response.json()
+    assert payload["status"] == "ok"
+    assert payload["trigger_evaluation"]["trigger_state"] == "expired"
+    assert payload["trigger_evaluation"]["timing"]["is_expired"] is True
+
+
+def test_trigger_monitoring_evaluate_asset_scope_blocked_contract():
+    response = client.post("/api/trigger-monitoring/evaluate", json=_trigger_monitoring_sample_request(asset_class="crypto"))
+    assert response.status_code == 200
+    payload = response.json()
+    assert payload["status"] == "ok"
+    assert payload["trigger_evaluation"]["trigger_state"] == "blocked"
+    assert "stocks only" in payload["trigger_evaluation"]["reason"].lower()
+
+
+def test_trigger_monitoring_evaluate_eligibility_blocked_contract():
+    response = client.post(
+        "/api/trigger-monitoring/evaluate",
+        json=_trigger_monitoring_sample_request(eligibility_eligible=False, eligibility_status="blocked"),
+    )
+    assert response.status_code == 200
+    payload = response.json()
+    assert payload["status"] == "ok"
+    assert payload["trigger_evaluation"]["trigger_state"] == "blocked"
+
+
+def test_trigger_monitoring_latest_after_evaluation_contract():
+    _ = client.post("/api/trigger-monitoring/evaluate", json=_trigger_monitoring_sample_request())
+    latest = client.get("/api/trigger-monitoring/latest")
+    assert latest.status_code == 200
+    payload = latest.json()
+    assert payload["status"] == "ok"
+    assert payload["trigger_evaluation"]["evaluation_id"].startswith("tm_")
+
+
 def _patch_market_routes_use_mock(monkeypatch: pytest.MonkeyPatch) -> None:
     """These routes call ``get_market_data_provider()`` with no query override; tests must not depend on workspace runtime_settings.json (e.g. Polygon)."""
     from app.data_providers.mock_provider import MockMarketDataProvider
