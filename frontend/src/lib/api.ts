@@ -1505,6 +1505,13 @@ export type LabInventoryUnit = {
   what_it_should_do: string;
   required_components: LabInventoryComponent[];
   next_action: string;
+  implementation_status?: string;
+  backend_status?: string;
+  frontend_status?: string;
+  test_status?: string;
+  route?: string | null;
+  endpoint_family?: string | null;
+  notes?: string[];
 };
 
 export type LabInventorySummary = {
@@ -1517,6 +1524,13 @@ export type LabInventorySummary = {
   tested: number;
   untested: number;
   ready_to_promote: number;
+  backend_present_count?: number;
+  frontend_present_count?: number;
+  tested_count?: number;
+  missing_count?: number;
+  ready_for_frontend_count?: number;
+  needs_backend_count?: number;
+  needs_frontend_count?: number;
   next_action: string;
 };
 

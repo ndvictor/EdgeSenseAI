@@ -920,6 +920,67 @@ _UNITS_SPEC: list[tuple[str, list[int] | Literal["all"], str, bool, str, bool, s
         "Single place to visualize stage state, proofs, and blockers.",
         "Design dashboard layout mapped to the fourteen-stage model.",
     ),
+    # v1 workflow spine support — rankers + Qlib adapters (inventory-only)
+    (
+        "Strategy Ranker",
+        [6, 7],
+        "Python Script",
+        True,
+        "need_to_build",
+        False,
+        "Rank strategy candidates by regime fit, proof status, recent performance, risk, and eligibility.",
+        "Implement deterministic ranking inputs and scoring rubric.",
+    ),
+    (
+        "Model Ranker",
+        "all",
+        "Python Script",
+        False,
+        "need_to_build",
+        False,
+        "Rank models by backtest score, paper performance, drift, confidence, and sample size.",
+        "Implement deterministic model ranking and surface in research workflows.",
+    ),
+    (
+        "Qlib Integration Adapter",
+        "all",
+        "Python Script",
+        False,
+        "need_to_build",
+        False,
+        "Expose Qlib research/backtest/model outputs to the workflow in a stable schema.",
+        "Define adapter contract and mapping for Qlib artifacts.",
+    ),
+    (
+        "Qlib Signal Score Adapter",
+        [6, 7],
+        "Python Script",
+        False,
+        "need_to_build",
+        False,
+        "Convert Qlib model outputs into ranked stock candidates for Stage 6/7 inputs.",
+        "Define candidate score schema and integrate with candidate engine.",
+    ),
+    (
+        "Stage 9 → 10 Safe Precheck Handoff",
+        [9, 10],
+        "Python Script",
+        True,
+        "present_partial",
+        False,
+        "Convert Stage 9 execution plans into Stage 10 precheck-only requests (no submission).",
+        "Keep handoff offline and strictly no-submit; ensure contract tests remain stable.",
+    ),
+    (
+        "Workflow Runbook aggregator",
+        "all",
+        "Python Script",
+        False,
+        "present_partial",
+        False,
+        "Read-only end-to-end workflow spine status aggregator for visibility/control.",
+        "Add frontend runbook/dashboard visibility after backend endpoints are stable.",
+    ),
 ]
 
 
@@ -939,15 +1000,125 @@ def _build_desired_units() -> list[dict[str, Any]]:
                 "needed_for_baseline": baseline,
                 "status": st,
                 "status_label": STATUS_LABELS[st],
+                # legacy fields (kept for UI)
                 "tested_status": "unknown",
                 "promotion_status": "lab",
                 "uses_llm": uses_llm,
                 "what_it_should_do": what,
                 "required_components": [],
                 "next_action": next_action,
+                # new reconciliation fields (v1)
+                "implementation_status": st,
+                "backend_status": "missing",
+                "frontend_status": "missing",
+                "test_status": "untested",
+                "route": None,
+                "endpoint_family": None,
+                "notes": [],
             }
         )
+    _apply_inventory_overrides(out)
     return out
+
+
+def _apply_inventory_overrides(units: list[dict[str, Any]]) -> None:
+    """Patch unit metadata to reflect completed v1 workflow spine reality.
+
+    This is inventory-only reconciliation. It must not probe runtime, call external services, or mutate other state.
+    """
+
+    # Helper to apply per-unit updates by unit name.
+    def apply(
+        name: str,
+        *,
+        backend: str | None = None,
+        frontend: str | None = None,
+        test: str | None = None,
+        implementation_status: str | None = None,
+        route: str | None = None,
+        endpoint_family: str | None = None,
+        notes: list[str] | None = None,
+    ) -> None:
+        u = next((x for x in units if x.get("name") == name), None)
+        if u is None:
+            return
+        if backend is not None:
+            u["backend_status"] = backend
+        if frontend is not None:
+            u["frontend_status"] = frontend
+        if test is not None:
+            u["test_status"] = test
+            u["tested_status"] = "tested" if test == "tested" else "unknown"
+        if implementation_status is not None:
+            u["implementation_status"] = _coerce_status(implementation_status)
+        if route is not None:
+            u["route"] = route
+        if endpoint_family is not None:
+            u["endpoint_family"] = endpoint_family
+        if notes is not None:
+            u["notes"] = notes
+
+    # Completed workflow spine (backend + frontend visibility + contract tests exist).
+    completed_v1 = {
+        "Session time checker": ("/session-router", "/api/session-router"),
+        "Market calendar checker": ("/session-router", "/api/session-router"),
+        "Session Router Agent": ("/session-router", "/api/session-router"),
+        "Workflow Router Agent": ("/workflow-router", "/api/workflow-router"),
+        "Baseline workflow rules": ("/workflow-router", "/api/workflow-router"),
+        "Adjusted workflow rules": ("/workflow-router", "/api/workflow-router"),
+        "Urgency checker": ("/workflow-router", "/api/workflow-router"),
+        "Proof-status checker": ("/workflow-router", "/api/workflow-router"),
+        "Response eligibility checker": ("/strategy-eligibility", "/api/strategy-eligibility"),
+        "Data quality gate": ("/strategy-eligibility", "/api/strategy-eligibility"),
+        "Risk budget gate": ("/strategy-eligibility", "/api/strategy-eligibility"),
+        "Trigger rule registry": ("/trigger-monitoring", "/api/trigger-monitoring"),
+        "Trigger monitor agent": ("/trigger-monitoring", "/api/trigger-monitoring"),
+        "Timing window checker": ("/trigger-monitoring", "/api/trigger-monitoring"),
+        "Signal expiration checker": ("/trigger-monitoring", "/api/trigger-monitoring"),
+        "Execution planner agent": ("/execution-planner", "/api/execution-planner"),
+        "Position sizing calculator": ("/execution-planner", "/api/execution-planner"),
+        "Stop/target calculator": ("/execution-planner", "/api/execution-planner"),
+        "Order type selector": ("/execution-planner", "/api/execution-planner"),
+        "Slippage/spread calculator": ("/execution-planner", "/api/execution-planner"),
+        "Position monitor agent": ("/position-monitoring", "/api/position-monitoring"),
+        "PnL calculator": ("/position-monitoring", "/api/position-monitoring"),
+        "Thesis validity checker": ("/position-monitoring", "/api/position-monitoring"),
+        "Position risk monitor": ("/position-monitoring", "/api/position-monitoring"),
+        "Exit rule evaluator": ("/close-position", "/api/close-position"),
+        "Close position agent": ("/close-position", "/api/close-position"),
+        "Close order builder": ("/close-position", "/api/close-position"),
+        "Outcome labeler": ("/post-trade-evaluation", "/api/post-trade-evaluation"),
+        "Performance attribution calculator": ("/post-trade-evaluation", "/api/post-trade-evaluation"),
+        "Learning metrics updater": ("/learning-loop", "/api/learning-loop"),
+        "Drift detector": ("/learning-loop", "/api/learning-loop"),
+        "Promotion/demotion rules": ("/learning-loop", "/api/learning-loop"),
+        "Learning loop agent": ("/learning-loop", "/api/learning-loop"),
+        "Stage 9 → 10 Safe Precheck Handoff": ("/execution-planner", "/api/execution-planner/precheck-handoff"),
+    }
+
+    for unit_name, (ui_route, ep) in completed_v1.items():
+        apply(
+            unit_name,
+            backend="present",
+            frontend="present",
+            test="tested",
+            implementation_status="present_partial",
+            route=ui_route,
+            endpoint_family=ep,
+            notes=["Reconciled: backend+frontend+contract tests present (v1)."],
+        )
+
+    # Workflow runbook: backend + tests only (frontend not implemented here)
+    apply(
+        "Workflow Runbook aggregator",
+        backend="present",
+        frontend="missing",
+        test="tested",
+        implementation_status="present_partial",
+        route=None,
+        endpoint_family="/api/workflow-runbook",
+        notes=["Backend runbook endpoints added; frontend dashboard not yet built."],
+    )
 
 
 def _summarize_units(units: list[dict[str, Any]]) -> dict[str, Any]:
@@ -958,6 +1129,14 @@ def _summarize_units(units: list[dict[str, Any]]) -> dict[str, Any]:
     tested = sum(1 for u in units if u.get("tested_status") not in (None, "", "unknown"))
     untested = len(units) - tested
     ready_to_promote = sum(1 for u in units if u.get("promotion_status") == "production_ready")
+
+    backend_present_count = sum(1 for u in units if u.get("backend_status") == "present")
+    frontend_present_count = sum(1 for u in units if u.get("frontend_status") == "present")
+    tested_count = sum(1 for u in units if u.get("test_status") == "tested")
+    missing_count = sum(1 for u in units if u.get("backend_status") != "present" and _is_missing_bucket(u["status"]))
+    needs_backend_count = sum(1 for u in units if u.get("backend_status") != "present")
+    needs_frontend_count = sum(1 for u in units if u.get("backend_status") == "present" and u.get("frontend_status") != "present")
+    ready_for_frontend_count = needs_frontend_count
     return {
         "total_stages": 14,
         "total_units": len(units),
@@ -968,7 +1147,15 @@ def _summarize_units(units: list[dict[str, Any]]) -> dict[str, Any]:
         "tested": tested,
         "untested": untested,
         "ready_to_promote": ready_to_promote,
-        "next_action": "Review missing critical workflow units, starting with Stage 5 Workflow Router.",
+        # new summary fields for clearer reconciliation
+        "backend_present_count": backend_present_count,
+        "frontend_present_count": frontend_present_count,
+        "tested_count": tested_count,
+        "missing_count": missing_count,
+        "ready_for_frontend_count": ready_for_frontend_count,
+        "needs_backend_count": needs_backend_count,
+        "needs_frontend_count": needs_frontend_count,
+        "next_action": "Review Strategy Ranker, Model Ranker, Stage 2 data quality integration, Stage 4 market condition scanner, and Stage 6 watchlist builder.",
     }
 
 

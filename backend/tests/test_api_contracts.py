@@ -1343,12 +1343,16 @@ def test_lab_inventory_contract():
     assert payload["updated_at"]
     summary = payload["summary"]
     assert summary["total_stages"] == 14
-    assert summary["total_units"] == 80
-    assert summary["present"] + summary["partial"] + summary["missing"] + summary["backlog"] == 80
-    assert summary["tested"] == 0
-    assert summary["untested"] == 80
+    assert summary["total_units"] >= 80
+    assert summary["present"] + summary["partial"] + summary["missing"] + summary["backlog"] == summary["total_units"]
+    assert "backend_present_count" in summary
+    assert "frontend_present_count" in summary
+    assert "tested_count" in summary
+    assert "needs_backend_count" in summary
+    assert "needs_frontend_count" in summary
     assert summary["ready_to_promote"] == 0
     assert summary["next_action"]
+    assert "Stage 5 Workflow Router" not in summary["next_action"]
 
     stages = payload["stages"]
     assert len(stages) == 14
@@ -1386,6 +1390,16 @@ def test_lab_inventory_contract():
         "backlog",
         "unclear",
     }
+    # New reconciliation fields exist
+    assert "backend_status" in unit
+    assert "frontend_status" in unit
+    assert "test_status" in unit
+
+    # New units exist
+    all_units = [u for st in payload["stages"] for u in st["units"]]
+    names = {u["name"] for u in all_units}
+    assert "Strategy Ranker" in names
+    assert "Model Ranker" in names
 
 
 def test_data_sources_status_contract():

@@ -252,12 +252,12 @@ export default function LabPlatformPage() {
       <div className="mb-6 grid gap-3 sm:grid-cols-2 lg:grid-cols-4 xl:grid-cols-8">
         <SummaryCard label="Total Stages" value={summary.total_stages} />
         <SummaryCard label="Total Units" value={summary.total_units} />
-        <SummaryCard label="Present" value={summary.present} hint="Fully present" />
-        <SummaryCard label="Partial" value={summary.partial} hint="Partial or present/partial" />
-        <SummaryCard label="Missing / Need to Build" value={summary.missing} />
-        <SummaryCard label="Backlog" value={summary.backlog} />
-        <SummaryCard label="Tested" value={summary.tested} hint={`Untested ${summary.untested}`} />
-        <SummaryCard label="Ready to Promote" value={summary.ready_to_promote} />
+        <SummaryCard label="Backend present" value={summary.backend_present_count ?? summary.present} />
+        <SummaryCard label="Frontend present" value={summary.frontend_present_count ?? summary.present} />
+        <SummaryCard label="Tested" value={summary.tested_count ?? summary.tested} hint={`Untested ${summary.untested}`} />
+        <SummaryCard label="Missing" value={summary.missing_count ?? summary.missing} />
+        <SummaryCard label="Needs backend" value={summary.needs_backend_count ?? summary.missing} />
+        <SummaryCard label="Needs frontend" value={summary.needs_frontend_count ?? 0} />
       </div>
 
       <div className="mb-4 rounded-xl border border-amber-400/20 bg-amber-500/5 px-4 py-3 text-sm text-amber-100/90">
