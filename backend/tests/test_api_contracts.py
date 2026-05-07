@@ -6,6 +6,130 @@ from app.main import app
 client = TestClient(app)
 
 
+def test_workflow_router_status_contract():
+    response = client.get("/api/workflow-router/status")
+    assert response.status_code == 200
+    payload = response.json()
+    assert payload["status"] == "ok"
+    assert payload["stage"]["stage_number"] == 5
+    assert payload["stage"]["stage_key"] == "workflow_router"
+    assert payload["data_mode"] == "rules_v1"
+    assert payload["updated_at"]
+    assert payload["summary"]["router_status"] == "ready"
+    assert payload["summary"]["llm_required"] is False
+    assert payload["supported_workflows"]
+    assert any(c["key"] == "urgency_checker" for c in payload["checkers"])
+
+
+def test_workflow_router_route_market_open_fast_path_contract():
+    response = client.post(
+        "/api/workflow-router/route",
+        json={
+            "session": "market_open",
+            "market_condition": {
+                "regime": "risk_on",
+                "volatility_state": "normal",
+                "liquidity_state": "good",
+                "data_quality": "pass",
+                "urgency": "high",
+            },
+            "strategy_or_response_status": {
+                "proof_status": "proven",
+                "paper_status": "passed",
+                "requires_backtest": False,
+                "already_backtested": True,
+            },
+            "account_state": {
+                "risk_budget_available": True,
+                "paper_trading_enabled": True,
+                "live_trading_enabled": False,
+                "human_approval_required": True,
+            },
+            "execution_state": {"broker_ready": True, "spread_pass": True, "slippage_pass": True},
+        },
+    )
+    assert response.status_code == 200
+    payload = response.json()
+    assert payload["status"] == "ok"
+    decision = payload["decision"]
+    assert decision["stage_number"] == 5
+    assert decision["selected_workflow"] == "baseline_fast_path"
+    assert decision["workflow_mode"] == "baseline"
+    assert decision["llm_used"] is False
+    assert decision["decision_id"].startswith("wf_")
+    assert decision["created_at"]
+    assert "session_checker" in decision["checkers"]
+    assert "proof_status_checker" in decision["checkers"]
+
+
+def test_workflow_router_latest_after_route_run_contract():
+    # Ensure at least one decision exists
+    _ = client.post(
+        "/api/workflow-router/route",
+        json={
+            "session": "market_open",
+            "market_condition": {
+                "regime": "risk_on",
+                "volatility_state": "normal",
+                "liquidity_state": "good",
+                "data_quality": "pass",
+                "urgency": "high",
+            },
+            "strategy_or_response_status": {
+                "proof_status": "proven",
+                "paper_status": "passed",
+                "requires_backtest": False,
+                "already_backtested": True,
+            },
+            "account_state": {
+                "risk_budget_available": True,
+                "paper_trading_enabled": True,
+                "live_trading_enabled": False,
+                "human_approval_required": True,
+            },
+            "execution_state": {"broker_ready": True, "spread_pass": True, "slippage_pass": True},
+        },
+    )
+    latest = client.get("/api/workflow-router/latest")
+    assert latest.status_code == 200
+    payload = latest.json()
+    assert payload["status"] == "ok"
+    assert payload["decision"]["decision_id"].startswith("wf_")
+
+
+def test_workflow_router_route_data_quality_fail_contract():
+    response = client.post(
+        "/api/workflow-router/route",
+        json={
+            "session": "market_open",
+            "market_condition": {
+                "regime": "risk_on",
+                "volatility_state": "normal",
+                "liquidity_state": "good",
+                "data_quality": "fail",
+                "urgency": "high",
+            },
+            "strategy_or_response_status": {
+                "proof_status": "proven",
+                "paper_status": "passed",
+                "requires_backtest": False,
+                "already_backtested": True,
+            },
+            "account_state": {
+                "risk_budget_available": True,
+                "paper_trading_enabled": True,
+                "live_trading_enabled": False,
+                "human_approval_required": True,
+            },
+            "execution_state": {"broker_ready": True, "spread_pass": True, "slippage_pass": True},
+        },
+    )
+    assert response.status_code == 200
+    payload = response.json()
+    assert payload["status"] == "ok"
+    assert payload["decision"]["selected_workflow"] == "no_trade_path"
+
+
 def _patch_market_routes_use_mock(monkeypatch: pytest.MonkeyPatch) -> None:
     """These routes call ``get_market_data_provider()`` with no query override; tests must not depend on workspace runtime_settings.json (e.g. Polygon)."""
     from app.data_providers.mock_provider import MockMarketDataProvider
