@@ -881,6 +881,112 @@ def test_position_monitoring_latest_after_evaluation_contract():
     assert payload["position_evaluation"]["evaluation_id"].startswith("pm_")
 
 
+def _close_position_base_request(*, recommended_action: str = "exit_review", asset_class: str = "stock", execution_enabled: bool = False, force_close: bool = False) -> dict:
+    return {
+        "position_evaluation": {
+            "evaluation_id": "pm_sample",
+            "position_id": "pos_sample",
+            "symbol": "AMD",
+            "asset_class": asset_class,
+            "horizon": "day_trading",
+            "position_status": "exit_review" if recommended_action == "exit_review" else "warning",
+            "recommended_action": recommended_action,
+            "pnl": {"unrealized_pnl": -29.90, "unrealized_pnl_percent": -1.52, "r_multiple": -1.0},
+            "risk": {
+                "risk_per_share": 2.30,
+                "current_distance_to_stop": 0.0,
+                "distance_to_target": 6.75,
+                "position_notional": 1935.70,
+                "position_size_percent": 19.36,
+                "daily_loss_percent": 0.7,
+            },
+            "thesis_validity": {"valid": False, "score": 0.25, "failed_reasons": ["invalidation_hit"], "passed_reasons": []},
+            "blockers": [],
+            "warnings": ["thesis_invalidated"],
+        },
+        "position": {"quantity": 13, "side": "long", "current_price": 148.90, "entry_price": 151.15},
+        "master_admin": {
+            "workflow_enabled": True,
+            "execution_enabled": execution_enabled,
+            "paper_trading_enabled": True,
+            "live_trading_enabled": False,
+            "broker_execution_enabled": False,
+            "human_approval_required": True,
+            "emergency_stop": False,
+            "force_close_requested": force_close,
+        },
+        "review_preferences": {"reduce_percent": 50, "close_reason": "stage_11_exit_review", "order_style": "market", "allow_submit": True},
+    }
+
+
+def test_close_position_status_contract():
+    r = client.get("/api/close-position/status")
+    assert r.status_code == 200
+    payload = r.json()
+    assert payload["status"] == "ok"
+    assert payload["stage"]["stage_number"] == 12
+    assert payload["stage"]["stage_key"] == "close_position"
+    assert payload["data_mode"] == "rules_v1"
+    assert "close_review" in payload["supported_review_actions"]
+
+
+def test_close_position_exit_review_returns_close_review_and_no_submit():
+    r = client.post("/api/close-position/review", json=_close_position_base_request(recommended_action="exit_review", execution_enabled=False))
+    assert r.status_code == 200
+    payload = r.json()
+    assert payload["status"] == "ok"
+    review = payload["close_review"]
+    assert review["review_action"] == "close_review"
+    assert review["submitted_order"] is False
+    assert review["broker_called"] is False
+
+
+def test_close_position_reduce_action_returns_reduce_review_and_reduced_quantity():
+    r = client.post("/api/close-position/review", json=_close_position_base_request(recommended_action="reduce", execution_enabled=True))
+    assert r.status_code == 200
+    review = r.json()["close_review"]
+    assert review["review_action"] == "reduce_review"
+    assert review["close_order_preview"]["quantity"] == 6
+
+
+def test_close_position_hold_action_returns_hold_and_no_preview_required():
+    r = client.post("/api/close-position/review", json=_close_position_base_request(recommended_action="hold", execution_enabled=True))
+    assert r.status_code == 200
+    review = r.json()["close_review"]
+    assert review["review_action"] == "hold"
+
+
+def test_close_position_crypto_asset_class_returns_blocked():
+    r = client.post("/api/close-position/review", json=_close_position_base_request(asset_class="crypto"))
+    assert r.status_code == 200
+    review = r.json()["close_review"]
+    assert review["review_action"] == "blocked"
+
+
+def test_close_position_force_close_requested_returns_close_review_and_no_submit():
+    r = client.post("/api/close-position/review", json=_close_position_base_request(recommended_action="hold", force_close=True))
+    assert r.status_code == 200
+    review = r.json()["close_review"]
+    assert review["review_action"] == "close_review"
+    assert review["submitted_order"] is False
+
+
+def test_close_position_execution_disabled_includes_blocker():
+    r = client.post("/api/close-position/review", json=_close_position_base_request(recommended_action="exit_review", execution_enabled=False))
+    assert r.status_code == 200
+    review = r.json()["close_review"]
+    assert "execution_disabled_by_master_admin" in review["blockers"]
+
+
+def test_close_position_latest_after_review_contract():
+    _ = client.post("/api/close-position/review", json=_close_position_base_request(recommended_action="exit_review", execution_enabled=False))
+    latest = client.get("/api/close-position/latest")
+    assert latest.status_code == 200
+    payload = latest.json()
+    assert payload["status"] == "ok"
+    assert payload["close_review"]["review_id"].startswith("cp_")
+
+
 def _patch_market_routes_use_mock(monkeypatch: pytest.MonkeyPatch) -> None:
     """These routes call ``get_market_data_provider()`` with no query override; tests must not depend on workspace runtime_settings.json (e.g. Polygon)."""
     from app.data_providers.mock_provider import MockMarketDataProvider
