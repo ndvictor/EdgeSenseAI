@@ -56,6 +56,7 @@ const items = [
   { label: "Learning Loop", href: "/learning-loop", icon: RefreshCw },
   { label: "Platform Readiness", href: "/platform-readiness", icon: ShieldCheck },
   { label: "Session Router", href: "/session-router", icon: Clock },
+  { label: "Workflow Runbook", href: "/workflow-runbook", icon: Route },
   { label: "Workflow Router", href: "/workflow-router", icon: Route },
   { label: "Lab Platform", href: "/lab", icon: TestTube2 },
   { label: "Settings", href: "/settings", icon: Settings },

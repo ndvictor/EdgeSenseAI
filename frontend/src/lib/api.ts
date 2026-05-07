@@ -2558,6 +2558,91 @@ export type LearningLoopLatestResponse = {
   result: LearningLoopDecisionResult | null;
 };
 
+export type WorkflowRunbookScope = {
+  asset_scope: string;
+  horizon_scope: string;
+  mode_scope: string;
+} & Record<string, unknown>;
+
+export type WorkflowRunbookSummary = {
+  workflow_status: string;
+  total_stages: number;
+  implemented_stages: number;
+  frontend_visible_stages: number;
+  live_trading_enabled: boolean;
+  broker_submission_enabled: boolean;
+  llm_required: boolean;
+  next_action: string;
+} & Record<string, unknown>;
+
+export type WorkflowRunbookMasterGates = {
+  workflow_enabled: boolean;
+  execution_enabled: boolean;
+  paper_trading_enabled: boolean;
+  live_trading_enabled: boolean;
+  broker_execution_enabled: boolean;
+  human_approval_required: boolean;
+  emergency_stop: boolean;
+  force_close_requested: boolean;
+} & Record<string, unknown>;
+
+export type WorkflowRunbookStageHealth = {
+  status: "present" | "partial_existing" | "existing_gated" | "backlog" | "missing" | string;
+  message?: string;
+} & Record<string, unknown>;
+
+export type WorkflowRunbookStage = {
+  stage_number: number;
+  stage_name: string;
+  stage_key: string;
+  implementation_status: string;
+  backend_endpoint_family?: string | null;
+  frontend_route?: string | null;
+  uses_llm?: boolean;
+  submits_orders?: boolean;
+  broker_called?: boolean;
+  action_type?: string | null;
+  safety_notes?: string[] | null;
+  inputs?: string[] | null;
+  outputs?: string[] | null;
+  next_stage_keys?: string[] | null;
+  recommended_operator_action?: string | null;
+  health?: WorkflowRunbookStageHealth | null;
+} & Record<string, unknown>;
+
+export type WorkflowRunbookLatestSnapshot = {
+  session_router?: Record<string, unknown> | null;
+  workflow_router?: Record<string, unknown> | null;
+  strategy_eligibility?: Record<string, unknown> | null;
+  trigger_monitoring?: Record<string, unknown> | null;
+  execution_planner?: Record<string, unknown> | null;
+  position_monitoring?: Record<string, unknown> | null;
+  close_position?: Record<string, unknown> | null;
+  post_trade_evaluation?: Record<string, unknown> | null;
+  learning_loop?: Record<string, unknown> | null;
+} & Record<string, unknown>;
+
+export type WorkflowRunbookStatusResponse = {
+  status: "ok" | string;
+  scope: WorkflowRunbookScope;
+  summary: WorkflowRunbookSummary;
+  master_gates: WorkflowRunbookMasterGates;
+  updated_at?: string;
+} & Record<string, unknown>;
+
+export type WorkflowRunbookStagesResponse = {
+  status: "ok" | string;
+  stages: WorkflowRunbookStage[];
+  count: number;
+  updated_at?: string;
+} & Record<string, unknown>;
+
+export type WorkflowRunbookLatestResponse = {
+  status: "ok" | string;
+  snapshot: WorkflowRunbookLatestSnapshot | null;
+  updated_at?: string;
+} & Record<string, unknown>;
+
 export type IntegrationCheckCatalogEntry = {
   key: string;
   label: string;
@@ -3901,6 +3986,18 @@ export async function getLatestLearningLoopDecision(): Promise<LearningLoopLates
   return request<LearningLoopLatestResponse>("/api/learning-loop/latest");
 }
 
+export async function getWorkflowRunbookStatus(): Promise<WorkflowRunbookStatusResponse> {
+  return request<WorkflowRunbookStatusResponse>("/api/workflow-runbook/status");
+}
+
+export async function getWorkflowRunbookStages(): Promise<WorkflowRunbookStagesResponse> {
+  return request<WorkflowRunbookStagesResponse>("/api/workflow-runbook/stages");
+}
+
+export async function getWorkflowRunbookLatest(): Promise<WorkflowRunbookLatestResponse> {
+  return request<WorkflowRunbookLatestResponse>("/api/workflow-runbook/latest");
+}
+
 export const api = {
   getCommandCenter: () => request<CommandCenterResponse>("/api/command-center"),
   getAccountRisk: () => request<AccountRiskProfile>("/api/account-risk/profile"),
@@ -4234,6 +4331,11 @@ export const api = {
   getLearningLoopStatus,
   evaluateLearningLoop,
   getLatestLearningLoopDecision,
+
+  /** Workflow Runbook — read-only end-to-end dashboard. */
+  getWorkflowRunbookStatus,
+  getWorkflowRunbookStages,
+  getWorkflowRunbookLatest,
 
   /** Catalog of integration matrix checks (Alpaca, data stack, signals, risk, …). */
   getIntegrationChecksCatalog: () => request<IntegrationChecksCatalogResponse>("/api/integration-checks/catalog"),
