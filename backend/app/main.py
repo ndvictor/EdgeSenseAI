@@ -61,6 +61,7 @@ from app.api.routes.trade_quality import router as trade_quality_router
 from app.api.routes.tradenow import router as tradenow_router
 from app.api.routes.execution import router as execution_router
 from app.api.routes.workflow_router import router as workflow_router_router
+from app.api.routes.session_router import router as session_router_router
 from app.api.routes.trigger_rules import router as trigger_rules_router
 from app.api.routes.universe_discovery import router as universe_discovery_router
 from app.api.routes.universe_selection import router as universe_selection_router
@@ -190,6 +191,7 @@ app.include_router(tracing_router, prefix="/api")
 app.include_router(tradenow_router, prefix="/api")
 app.include_router(execution_router, prefix="/api")
 app.include_router(workflow_router_router, prefix="/api")
+app.include_router(session_router_router, prefix="/api")
 
 _ACCOUNT_PROFILE = AccountRiskProfile()
 

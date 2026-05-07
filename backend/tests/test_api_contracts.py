@@ -130,6 +130,89 @@ def test_workflow_router_route_data_quality_fail_contract():
     assert payload["decision"]["selected_workflow"] == "no_trade_path"
 
 
+def test_session_router_status_contract():
+    response = client.get("/api/session-router/status")
+    assert response.status_code == 200
+    payload = response.json()
+    assert payload["status"] == "ok"
+    assert payload["stage"]["stage_number"] == 3
+    assert payload["stage"]["stage_key"] == "session_router"
+    assert payload["data_mode"] == "rules_v1"
+    assert payload["updated_at"]
+    assert payload["summary"]["router_status"] == "ready"
+    assert payload["summary"]["llm_required"] is False
+    assert payload["summary"]["calendar_mode"] == "us_equities_basic"
+    assert payload["supported_sessions"]
+    assert any(c["key"] == "session_time_checker" for c in payload["checkers"])
+
+
+def test_session_router_evaluate_market_open_contract():
+    response = client.post(
+        "/api/session-router/evaluate",
+        json={
+            "timestamp": "2026-05-07T09:35:00-05:00",
+            "timezone": "America/Chicago",
+            "market": "us_equities",
+            "use_current_time": False,
+        },
+    )
+    assert response.status_code == 200
+    payload = response.json()
+    assert payload["status"] == "ok"
+    assert payload["session"]["session"] == "market_open"
+    assert payload["session"]["is_trading_day"] is True
+
+
+def test_session_router_evaluate_pre_market_contract():
+    response = client.post(
+        "/api/session-router/evaluate",
+        json={
+            "timestamp": "2026-05-07T07:15:00-05:00",
+            "timezone": "America/Chicago",
+            "market": "us_equities",
+            "use_current_time": False,
+        },
+    )
+    assert response.status_code == 200
+    payload = response.json()
+    assert payload["status"] == "ok"
+    assert payload["session"]["session"] == "pre_market"
+
+
+def test_session_router_evaluate_weekend_closed_contract():
+    response = client.post(
+        "/api/session-router/evaluate",
+        json={
+            "timestamp": "2026-05-09T10:00:00-05:00",
+            "timezone": "America/Chicago",
+            "market": "us_equities",
+            "use_current_time": False,
+        },
+    )
+    assert response.status_code == 200
+    payload = response.json()
+    assert payload["status"] == "ok"
+    assert payload["session"]["session"] == "closed"
+    assert payload["session"]["is_trading_day"] is False
+
+
+def test_session_router_latest_after_evaluation_contract():
+    _ = client.post(
+        "/api/session-router/evaluate",
+        json={
+            "timestamp": "2026-05-07T09:35:00-05:00",
+            "timezone": "America/Chicago",
+            "market": "us_equities",
+            "use_current_time": False,
+        },
+    )
+    latest = client.get("/api/session-router/latest")
+    assert latest.status_code == 200
+    payload = latest.json()
+    assert payload["status"] == "ok"
+    assert payload["session"]["session_id"].startswith("sr_")
+
+
 def _patch_market_routes_use_mock(monkeypatch: pytest.MonkeyPatch) -> None:
     """These routes call ``get_market_data_provider()`` with no query override; tests must not depend on workspace runtime_settings.json (e.g. Polygon)."""
     from app.data_providers.mock_provider import MockMarketDataProvider
