@@ -196,6 +196,55 @@ def build_stages() -> RunbookStagesResponse:
     )
 
 
+def _build_watchlist_builder_snapshot() -> dict:
+    """Stage 6 visibility snapshot (no HTTP; no evaluation triggers)."""
+    from datetime import datetime, timezone
+
+    from app.services.live_watchlist_service import build_live_candidates
+
+    candidates = build_live_candidates()
+    syms: list[str] = []
+    seen: set[str] = set()
+    for c in candidates:
+        s = (getattr(c, "symbol", "") or "").strip().upper()
+        if s and s not in seen:
+            seen.add(s)
+            syms.append(s)
+
+    return {
+        "data_mode": "live_watchlist_candidates_v1",
+        "summary": {
+            "row_count": len(candidates),
+            "distinct_symbols": len(syms),
+            "last_updated": datetime.now(timezone.utc).isoformat(),
+            "note": "Sourced from Candidate Universe via build_live_candidates (same source as /api/live-watchlist/latest).",
+        },
+        "symbols": syms[:200],
+        "candidates": [c.model_dump() for c in candidates][:100],
+    }
+
+
+def _build_market_condition_scanner_snapshot() -> dict | None:
+    """Stage 4 visibility snapshot: latest market regime model run + trust hints (no HTTP)."""
+    from app.services.market_regime_model_service import get_latest_market_regime
+
+    latest = get_latest_market_regime()
+    if latest is None:
+        return None
+    payload = latest.model_dump()
+    payload["gate_readiness"] = {
+        "approved_as_sole_production_gate": False,
+        "heuristic_operator_trust": bool(
+            payload.get("status") == "pass"
+            and float(payload.get("confidence") or 0) >= 0.65
+            and not (payload.get("blockers") or [])
+        ),
+        "rationale": "Treat market regime as context until confidence + inputs are validated; do not use as sole gate.",
+        "inputs_used": payload.get("inputs_used") or {},
+    }
+    return payload
+
+
 def build_latest() -> RunbookLatestResponse:
     # Import latest getters (no HTTP calls, no evaluation triggers).
     from app.services.session_router.service import get_latest_session
@@ -210,7 +259,9 @@ def build_latest() -> RunbookLatestResponse:
 
     latest = {
         "session_router": get_latest_session().model_dump() if get_latest_session() else None,
+        "market_condition_scanner": _build_market_condition_scanner_snapshot(),
         "workflow_router": get_latest_decision().model_dump() if get_latest_decision() else None,
+        "watchlist_builder": _build_watchlist_builder_snapshot(),
         "strategy_eligibility": get_latest_check().model_dump() if get_latest_check() else None,
         "trigger_monitoring": get_latest_trigger_eval().model_dump() if get_latest_trigger_eval() else None,
         "execution_planner": get_latest_plan().model_dump() if get_latest_plan() else None,
@@ -225,7 +276,7 @@ def build_latest() -> RunbookLatestResponse:
         status="ok",
         data_mode="latest_snapshot_v1",
         latest=latest,
-        message="Latest snapshots are available after each stage is evaluated.",
+        message="Latest snapshots include Stage 6 watchlist builder; other stages populate after each stage is evaluated.",
     )
 
 
@@ -257,6 +308,8 @@ def build_status() -> RunbookStatusResponse:
         latest_key_map = {
             "session_router": "session_router",
             "workflow_router": "workflow_router",
+            "market_condition_scanner": "market_condition_scanner",
+            "watchlist_builder": "watchlist_builder",
             "strategy_eligibility": "strategy_eligibility",
             "trigger_monitoring": "trigger_monitoring",
             "execution_planner": "execution_planner",
@@ -265,7 +318,11 @@ def build_status() -> RunbookStatusResponse:
             "post_trade_evaluation": "post_trade_evaluation",
             "learning_loop": "learning_loop",
         }
-        latest_available = bool(latest.get(latest_key_map.get(key, ""), None)) if key in latest_key_map else True
+        if key == "watchlist_builder":
+            wb = latest.get("watchlist_builder")
+            latest_available = bool(isinstance(wb, dict) and (wb.get("summary") or {}).get("row_count", 0) > 0)
+        else:
+            latest_available = bool(latest.get(latest_key_map.get(key, ""), None)) if key in latest_key_map else True
         stage_health.append(
             StageHealth(
                 stage_number=st.stage_number,

@@ -10,7 +10,9 @@ import type {
 
 const STAGE_LATEST_KEY: Partial<Record<string, keyof WorkflowRunbookLatestSnapshot>> = {
   session_router: "session_router",
+  market_condition_scanner: "market_condition_scanner",
   workflow_router: "workflow_router",
+  watchlist_builder: "watchlist_builder",
   strategy_eligibility: "strategy_eligibility",
   trigger_monitoring: "trigger_monitoring",
   execution_planner: "execution_planner",

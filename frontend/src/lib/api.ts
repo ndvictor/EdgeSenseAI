@@ -143,17 +143,25 @@ export type DataQualityCheckStatus = {
 
 export type DataQualityStatusResponse = {
   status: string;
-  data_mode?: "summary" | string;
+  data_mode?: "summary" | "candidate_rollup_v2" | string;
   updated_at?: string;
   summary?: {
     status?: string;
+    rollup_status?: string;
+    active_candidates_in_universe?: number;
+    symbols_sampled?: number;
     checks_configured?: number;
     symbols_checked_today?: number;
     pass?: number;
     warnings?: number;
     fails?: number;
+    fresh?: number;
+    stale?: number;
+    unknown_freshness?: number;
+    pipeline_blockers?: string[];
   };
   checks?: DataQualityCheckStatus[];
+  symbol_samples?: Array<Record<string, unknown>>;
 };
 
 export type SignalFamilyStatus = {
@@ -2636,6 +2644,8 @@ export type WorkflowRunbookStage = {
 export type WorkflowRunbookLatestSnapshot = {
   session_router?: Record<string, unknown> | null;
   workflow_router?: Record<string, unknown> | null;
+  market_condition_scanner?: Record<string, unknown> | null;
+  watchlist_builder?: Record<string, unknown> | null;
   strategy_eligibility?: Record<string, unknown> | null;
   trigger_monitoring?: Record<string, unknown> | null;
   execution_planner?: Record<string, unknown> | null;

@@ -357,6 +357,7 @@ export default function WorkflowRunbookPage() {
     return [
       ["session_router", snap?.session_router ?? null],
       ["workflow_router", snap?.workflow_router ?? null],
+      ["watchlist_builder", snap?.watchlist_builder ?? null],
       ["strategy_eligibility", snap?.strategy_eligibility ?? null],
       ["trigger_monitoring", snap?.trigger_monitoring ?? null],
       ["execution_planner", snap?.execution_planner ?? null],
@@ -612,10 +613,16 @@ export default function WorkflowRunbookPage() {
           <div className="rounded-2xl border border-emerald-400/15 bg-[#070c12]/95 p-4">
             <h2 className="text-xs font-semibold uppercase tracking-[0.2em] text-slate-500">Run workflow (orchestrator preview)</h2>
             <p className="mt-1 text-xs text-slate-500">
-              Pulls <span className="text-slate-300">session context</span>, <span className="text-slate-300">market regime</span>, and{" "}
-              <span className="text-slate-300">live watchlist symbols</span> (watchlist builder / candidates)—no manual ticker entry. Calls{" "}
-              <code className="text-emerald-200/90">POST /api/workflow-orchestrator/run</code> with <code className="text-emerald-200/90">source=candidate</code>.
-              Deterministic agents; no LLM; no broker submission.
+              This run is <span className="font-semibold text-slate-300">pipeline-derived</span>: it uses the{" "}
+              <span className="text-slate-300">live watchlist symbols</span> (stage 6), attaches{" "}
+              <span className="text-slate-300">session router</span> + <span className="text-slate-300">market regime</span> context (stages 3–4),
+              and submits a <span className="text-slate-300">read-only orchestrator preview</span> request. No manual ticker entry.
+              <br />
+              Calls <code className="text-emerald-200/90">POST /api/workflow-orchestrator/run</code> with{" "}
+              <code className="text-emerald-200/90">source=candidate</code> and locked safety:{" "}
+              <span className="font-mono text-emerald-200/80">dry_run=true</span>,{" "}
+              <span className="font-mono text-emerald-200/80">require_human_approval=true</span>,{" "}
+              <span className="font-mono text-emerald-200/80">allow_submit=false</span>. Deterministic agents; no LLM; no broker submission.
               <Link className="ml-2 text-emerald-300 hover:text-emerald-200" href="/approval-queue">
                 Approval queue →
               </Link>
@@ -644,6 +651,17 @@ export default function WorkflowRunbookPage() {
             </div>
             {pipelineContextError ? (
               <div className="mt-3 rounded-lg border border-amber-500/30 bg-amber-500/10 px-3 py-2 text-xs text-amber-100/90">{pipelineContextError}</div>
+            ) : null}
+            {!pipelineContextError && (!sessionEval || !marketRegime || !watchlistSymbols.length) ? (
+              <div className="mt-3 rounded-lg border border-amber-500/30 bg-amber-500/10 px-3 py-2 text-xs text-amber-100/90">
+                Missing inputs for a fully-contextual preview:
+                <ul className="mt-1 list-disc pl-5">
+                  {!watchlistSymbols.length ? <li>Watchlist symbols missing (stage 6)</li> : null}
+                  {!sessionEval ? <li>Session router latest missing (stage 3)</li> : null}
+                  {!marketRegime ? <li>Market regime latest missing (stage 4)</li> : null}
+                </ul>
+                You can still refresh context, but the preview should be treated as partial until all are present.
+              </div>
             ) : null}
             <div className="mt-4 grid gap-3 lg:grid-cols-3">
               <div className="rounded-xl border border-white/[0.06] bg-[#0a1018]/80 p-3">
@@ -679,7 +697,10 @@ export default function WorkflowRunbookPage() {
                     <div className="text-[11px] text-slate-500">{marketRegime.checked_at}</div>
                   </dl>
                 ) : (
-                  <p className="mt-2 text-xs text-slate-500">No latest regime run. Use Market Regime to populate.</p>
+                  <p className="mt-2 text-xs text-slate-500">
+                    No latest regime model run. Use Market Regime (or Strategy Lab → Run Analysis) to populate{" "}
+                    <code className="text-emerald-200/80">/api/market-regime/model/latest</code>.
+                  </p>
                 )}
               </div>
               <div className="rounded-xl border border-white/[0.06] bg-[#0a1018]/80 p-3">
@@ -689,8 +710,15 @@ export default function WorkflowRunbookPage() {
                   {watchlistMeta?.last_updated ? ` · updated ${watchlistMeta.last_updated}` : ""}
                 </p>
                 <p className="mt-1 text-[11px] text-emerald-200/80">
-                  Run will use the first <span className="font-mono">{symbolsForNextRun.length}</span> symbol(s) (max candidates cap).
+                  Run will use the first <span className="font-mono">{symbolsForNextRun.length}</span> symbol(s) (slice = max candidates).
                 </p>
+                {symbolsForNextRun.length ? (
+                  <p className="mt-2 text-[11px] text-slate-400">
+                    Preview symbols:{" "}
+                    <span className="font-mono text-slate-200">{symbolsForNextRun.slice(0, 12).join(", ")}</span>
+                    {symbolsForNextRun.length > 12 ? <span className="text-slate-500"> …</span> : null}
+                  </p>
+                ) : null}
                 <div className="mt-2 flex max-h-28 flex-wrap gap-1 overflow-y-auto">
                   {watchlistSymbols.length ? (
                     watchlistSymbols.slice(0, 40).map((sym) => (
