@@ -3,6 +3,7 @@
 import React, { useCallback, useEffect, useMemo, useState } from "react";
 import Link from "next/link";
 import {
+  api,
   getWorkflowRunbookLatest,
   getWorkflowRunbookStages,
   getWorkflowRunbookStatus,
@@ -20,8 +21,12 @@ import {
   getQlibStatus,
   getAgentRun,
   getRunbookLatestBlob,
+  getLatestSessionRouterEvaluation,
   type AgentRunResultRecord,
+  type LiveWatchlistResponse,
+  type MarketRegimeModelResponse,
   type OrchestratorRunRecord,
+  type SessionRouterEvaluation,
   type WorkflowRunbookLatestResponse,
   type WorkflowRunbookStage,
   type WorkflowRunbookStagesResponse,
@@ -213,8 +218,6 @@ export default function WorkflowRunbookPage() {
   const [schedStatus, setSchedStatus] = useState<Record<string, unknown> | null>(null);
   const [qlibSt, setQlibSt] = useState<Record<string, unknown> | null>(null);
 
-  const [symbolsText, setSymbolsText] = useState("AMD");
-  const [source, setSource] = useState("manual");
   const [maxCand, setMaxCand] = useState(5);
   const [stopStage, setStopStage] = useState(9);
   const [simPos, setSimPos] = useState(false);
@@ -227,6 +230,14 @@ export default function WorkflowRunbookPage() {
   const [traceErr, setTraceErr] = useState<string | null>(null);
   const [agentTraceByRunId, setAgentTraceByRunId] = useState<Record<string, AgentRunResultRecord | null>>({});
   const [agentTraceLoading, setAgentTraceLoading] = useState<string | null>(null);
+
+  /** Symbols derived from live watchlist (stage 6 pipeline), in priority order. */
+  const [watchlistSymbols, setWatchlistSymbols] = useState<string[]>([]);
+  const [watchlistMeta, setWatchlistMeta] = useState<LiveWatchlistResponse["summary"] | null>(null);
+  const [sessionEval, setSessionEval] = useState<SessionRouterEvaluation | null>(null);
+  const [marketRegime, setMarketRegime] = useState<MarketRegimeModelResponse | null>(null);
+  const [pipelineContextLoading, setPipelineContextLoading] = useState(false);
+  const [pipelineContextError, setPipelineContextError] = useState<string | null>(null);
 
   const summary = status?.summary;
   const gates = status?.master_gates;
@@ -264,6 +275,61 @@ export default function WorkflowRunbookPage() {
     }
   }, []);
 
+  const loadPipelineContextForOrchestrator = useCallback(async () => {
+    setPipelineContextLoading(true);
+    setPipelineContextError(null);
+    try {
+      const [wl, sessLatest, regimeLatest] = await Promise.all([
+        api.getLiveWatchlist().catch(() => null),
+        getLatestSessionRouterEvaluation().catch(() => null),
+        api.getLatestMarketRegime().catch(() => null),
+      ]);
+
+      if (sessLatest && typeof sessLatest === "object" && "status" in sessLatest && sessLatest.status === "not_found") {
+        setSessionEval(null);
+      } else if (sessLatest && typeof sessLatest === "object") {
+        const sl = sessLatest as Record<string, unknown>;
+        const ev = (sl.evaluation ?? sl.result ?? sl.session) as SessionRouterEvaluation | null | undefined;
+        setSessionEval(ev ?? null);
+      } else {
+        setSessionEval(null);
+      }
+
+      if (regimeLatest && typeof regimeLatest === "object" && "regime" in regimeLatest && "run_id" in regimeLatest) {
+        setMarketRegime(regimeLatest as MarketRegimeModelResponse);
+      } else {
+        setMarketRegime(null);
+      }
+
+      if (!wl?.candidates?.length) {
+        setWatchlistSymbols([]);
+        setWatchlistMeta(wl?.summary ?? null);
+        setPipelineContextError(
+          "Live watchlist has no candidates. Build or refresh candidates in Candidate Engine / Live Watchlist so stage 6 has symbols to pull.",
+        );
+        return;
+      }
+      const ordered = wl.candidates
+        .map((c) => String(c.symbol ?? "").trim().toUpperCase())
+        .filter(Boolean);
+      const seen = new Set<string>();
+      const unique: string[] = [];
+      for (const sym of ordered) {
+        if (seen.has(sym)) continue;
+        seen.add(sym);
+        unique.push(sym);
+      }
+      setWatchlistSymbols(unique);
+      setWatchlistMeta(wl.summary ?? null);
+    } catch (e) {
+      setWatchlistSymbols([]);
+      setWatchlistMeta(null);
+      setPipelineContextError(e instanceof Error ? e.message : "Failed to load watchlist / session / regime context");
+    } finally {
+      setPipelineContextLoading(false);
+    }
+  }, []);
+
   async function loadAll(kind: "init" | "refresh") {
     if (kind === "refresh") setRefreshing(true);
     setError(null);
@@ -272,7 +338,7 @@ export default function WorkflowRunbookPage() {
       setStatus(s);
       setStages(st.stages ?? []);
       setLatest(l);
-      await Promise.all([loadOperatorSnapshot(), loadRecentRuns()]);
+      await Promise.all([loadOperatorSnapshot(), loadRecentRuns(), loadPipelineContextForOrchestrator()]);
     } catch (e) {
       setError(e instanceof Error ? e.message : "Failed to load workflow runbook");
     } finally {
@@ -310,20 +376,25 @@ export default function WorkflowRunbookPage() {
     ? (summaryExtra.warnings as string[])
     : undefined;
 
+  const symbolsForNextRun = useMemo(() => {
+    const n = Math.max(1, Math.min(50, maxCand));
+    return watchlistSymbols.slice(0, n);
+  }, [watchlistSymbols, maxCand]);
+
   async function handleRunWorkflow() {
     setOrcBusy(true);
     setError(null);
     try {
-      const syms = symbolsText
-        .split(/[\s,]+/)
-        .map((x) => x.trim().toUpperCase())
-        .filter(Boolean);
+      if (!symbolsForNextRun.length) {
+        setError("No symbols from live watchlist. Refresh pipeline context or build the watchlist first.");
+        return;
+      }
       const res = await runWorkflowOrchestrator({
-        symbols: syms.length ? syms : ["AMD"],
+        symbols: symbolsForNextRun,
         asset_class: "stock",
         horizon: "day_trading",
         mode: "paper_first",
-        source,
+        source: "candidate",
         max_candidates: maxCand,
         stop_at_stage: stopStage,
         dry_run: true,
@@ -331,6 +402,24 @@ export default function WorkflowRunbookPage() {
         allow_submit: false,
         simulated_position: simPos,
         simulated_closed_trade: simClose,
+        metadata: {
+          runbook_preview: true,
+          symbol_source: "live_watchlist_latest",
+          watchlist_distinct_count: watchlistSymbols.length,
+          watchlist_last_updated: watchlistMeta?.last_updated ?? null,
+          session_router: sessionEval
+            ? { session: sessionEval.session, market: sessionEval.market, evaluated_at: sessionEval.evaluated_at }
+            : null,
+          market_regime: marketRegime
+            ? {
+                run_id: marketRegime.run_id,
+                regime: marketRegime.regime,
+                trend_state: marketRegime.trend_state,
+                confidence: marketRegime.confidence,
+                checked_at: marketRegime.checked_at,
+              }
+            : null,
+        },
       });
       setLastRun(res.run);
       setActiveWfId(res.run.workflow_run_id);
@@ -523,38 +612,113 @@ export default function WorkflowRunbookPage() {
           <div className="rounded-2xl border border-emerald-400/15 bg-[#070c12]/95 p-4">
             <h2 className="text-xs font-semibold uppercase tracking-[0.2em] text-slate-500">Run workflow (orchestrator preview)</h2>
             <p className="mt-1 text-xs text-slate-500">
-              Calls <code className="text-emerald-200/90">POST /api/workflow-orchestrator/run</code> only. Deterministic agents; no LLM; no broker submission.
+              Pulls <span className="text-slate-300">session context</span>, <span className="text-slate-300">market regime</span>, and{" "}
+              <span className="text-slate-300">live watchlist symbols</span> (watchlist builder / candidates)—no manual ticker entry. Calls{" "}
+              <code className="text-emerald-200/90">POST /api/workflow-orchestrator/run</code> with <code className="text-emerald-200/90">source=candidate</code>.
+              Deterministic agents; no LLM; no broker submission.
               <Link className="ml-2 text-emerald-300 hover:text-emerald-200" href="/approval-queue">
                 Approval queue →
               </Link>
             </p>
+            <div className="mt-3 flex flex-wrap items-center gap-2">
+              <button
+                type="button"
+                disabled={pipelineContextLoading}
+                onClick={() => loadPipelineContextForOrchestrator()}
+                className="rounded-lg border border-white/10 bg-black/20 px-3 py-1.5 text-xs font-semibold text-slate-200 hover:border-emerald-400/25 disabled:opacity-50"
+              >
+                {pipelineContextLoading ? "Loading pipeline context…" : "Refresh pipeline context"}
+              </button>
+              <Link className="text-xs text-emerald-300 hover:text-emerald-200" href="/session-router">
+                Session router →
+              </Link>
+              <Link className="text-xs text-emerald-300 hover:text-emerald-200" href="/market-regime">
+                Market regime →
+              </Link>
+              <Link className="text-xs text-emerald-300 hover:text-emerald-200" href="/candidate-engine">
+                Candidate engine →
+              </Link>
+              <Link className="text-xs text-emerald-300 hover:text-emerald-200" href="/live-watchlist">
+                Live watchlist →
+              </Link>
+            </div>
+            {pipelineContextError ? (
+              <div className="mt-3 rounded-lg border border-amber-500/30 bg-amber-500/10 px-3 py-2 text-xs text-amber-100/90">{pipelineContextError}</div>
+            ) : null}
+            <div className="mt-4 grid gap-3 lg:grid-cols-3">
+              <div className="rounded-xl border border-white/[0.06] bg-[#0a1018]/80 p-3">
+                <div className="text-[10px] font-semibold uppercase tracking-[0.2em] text-slate-500">Session router (latest)</div>
+                {sessionEval ? (
+                  <dl className="mt-2 space-y-1 text-xs text-slate-400">
+                    <div>
+                      Session: <span className="text-slate-200">{sessionEval.session}</span>
+                    </div>
+                    <div>
+                      Market: <span className="text-slate-200">{sessionEval.market}</span>
+                    </div>
+                    <div className="text-[11px] text-slate-500">{sessionEval.evaluated_at}</div>
+                  </dl>
+                ) : (
+                  <p className="mt-2 text-xs text-slate-500">No latest evaluation yet. Run an evaluation on the Session Router page.</p>
+                )}
+              </div>
+              <div className="rounded-xl border border-white/[0.06] bg-[#0a1018]/80 p-3">
+                <div className="text-[10px] font-semibold uppercase tracking-[0.2em] text-slate-500">Market regime (latest)</div>
+                {marketRegime ? (
+                  <dl className="mt-2 space-y-1 text-xs text-slate-400">
+                    <div>
+                      Regime: <span className="text-slate-200">{marketRegime.regime}</span>
+                    </div>
+                    <div>
+                      Trend: <span className="text-slate-200">{marketRegime.trend_state}</span> · vol:{" "}
+                      <span className="text-slate-200">{marketRegime.volatility_state}</span>
+                    </div>
+                    <div>
+                      Confidence: <span className="text-slate-200">{marketRegime.confidence}</span>
+                    </div>
+                    <div className="text-[11px] text-slate-500">{marketRegime.checked_at}</div>
+                  </dl>
+                ) : (
+                  <p className="mt-2 text-xs text-slate-500">No latest regime run. Use Market Regime to populate.</p>
+                )}
+              </div>
+              <div className="rounded-xl border border-white/[0.06] bg-[#0a1018]/80 p-3">
+                <div className="text-[10px] font-semibold uppercase tracking-[0.2em] text-slate-500">Watchlist symbols (GET /api/live-watchlist/latest)</div>
+                <p className="mt-2 text-xs text-slate-500">
+                  {watchlistSymbols.length} distinct symbol{watchlistSymbols.length === 1 ? "" : "s"} in list
+                  {watchlistMeta?.last_updated ? ` · updated ${watchlistMeta.last_updated}` : ""}
+                </p>
+                <p className="mt-1 text-[11px] text-emerald-200/80">
+                  Run will use the first <span className="font-mono">{symbolsForNextRun.length}</span> symbol(s) (max candidates cap).
+                </p>
+                <div className="mt-2 flex max-h-28 flex-wrap gap-1 overflow-y-auto">
+                  {watchlistSymbols.length ? (
+                    watchlistSymbols.slice(0, 40).map((sym) => (
+                      <span
+                        key={sym}
+                        className={`rounded px-2 py-0.5 font-mono text-[10px] ${
+                          symbolsForNextRun.includes(sym) ? "bg-emerald-500/20 text-emerald-200" : "bg-slate-800/80 text-slate-400"
+                        }`}
+                      >
+                        {sym}
+                      </span>
+                    ))
+                  ) : (
+                    <span className="text-xs text-slate-500">—</span>
+                  )}
+                  {watchlistSymbols.length > 40 ? (
+                    <span className="text-[10px] text-slate-500">+{watchlistSymbols.length - 40} more</span>
+                  ) : null}
+                </div>
+              </div>
+            </div>
             <div className="mt-4 grid gap-3 md:grid-cols-2 lg:grid-cols-3">
               <label className="block text-xs text-slate-400">
-                Symbols
-                <input
-                  className="mt-1 w-full rounded-lg border border-white/10 bg-black/30 px-3 py-2 text-sm text-slate-100"
-                  value={symbolsText}
-                  onChange={(e) => setSymbolsText(e.target.value)}
-                />
-              </label>
-              <label className="block text-xs text-slate-400">
-                Source
-                <select
-                  className="mt-1 w-full rounded-lg border border-white/10 bg-black/30 px-3 py-2 text-sm text-slate-100"
-                  value={source}
-                  onChange={(e) => setSource(e.target.value)}
-                >
-                  {["manual", "scanner", "candidate", "command_center"].map((s) => (
-                    <option key={s} value={s}>
-                      {s}
-                    </option>
-                  ))}
-                </select>
-              </label>
-              <label className="block text-xs text-slate-400">
-                Max candidates
+                Max candidates (slice of watchlist)
                 <input
                   type="number"
+                  min={1}
+                  max={50}
                   className="mt-1 w-full rounded-lg border border-white/10 bg-black/30 px-3 py-2 text-sm text-slate-100"
                   value={maxCand}
                   onChange={(e) => setMaxCand(Number(e.target.value))}
@@ -574,10 +738,10 @@ export default function WorkflowRunbookPage() {
                 <div className="rounded-lg border border-white/10 bg-black/20 px-3 py-2 text-slate-300">
                   asset_class: stock · horizon: day_trading · mode: paper_first
                   <br />
-                  dry_run: true · require_human_approval: true · allow_submit: false
+                  source: candidate (watchlist) · dry_run: true · require_human_approval: true · allow_submit: false
                 </div>
               </div>
-              <div className="flex flex-col gap-3 text-xs">
+              <div className="flex flex-col gap-3 text-xs md:col-span-2 lg:col-span-3">
                 <label className="flex items-center gap-2 text-slate-300">
                   <input type="checkbox" checked={simPos} onChange={(e) => setSimPos(e.target.checked)} />
                   Simulated position path
@@ -590,7 +754,7 @@ export default function WorkflowRunbookPage() {
             </div>
             <button
               type="button"
-              disabled={orcBusy}
+              disabled={orcBusy || !symbolsForNextRun.length || pipelineContextLoading}
               onClick={handleRunWorkflow}
               className="mt-4 rounded-lg border border-emerald-400/60 bg-emerald-500/20 px-4 py-2 text-sm font-bold text-emerald-50 hover:bg-emerald-500/25 disabled:opacity-50"
             >
