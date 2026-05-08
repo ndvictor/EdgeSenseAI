@@ -276,7 +276,7 @@ export default function PostTradeEvaluationPage() {
         const [s, latest] = await Promise.all([getPostTradeEvaluationStatus(), getLatestPostTradeEvaluation()]);
         if (cancelled) return;
         setStatus(s);
-        setResult(latest.result ?? s.latest_evaluation ?? null);
+        setResult(latest.result ?? latest.post_trade_evaluation ?? s.latest_evaluation ?? null);
       } catch (e) {
         if (!cancelled) setError(e instanceof Error ? e.message : "Failed to load post-trade evaluation status");
       } finally {
@@ -317,7 +317,7 @@ export default function PostTradeEvaluationPage() {
     setError(null);
     try {
       const res = await getLatestPostTradeEvaluation();
-      setResult(res.result);
+      setResult(res.result ?? res.post_trade_evaluation ?? null);
     } catch (e) {
       setError(e instanceof Error ? e.message : "Failed to load latest evaluation");
     } finally {

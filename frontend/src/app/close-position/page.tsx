@@ -242,7 +242,7 @@ export default function ClosePositionPage() {
         const [s, latest] = await Promise.all([getClosePositionStatus(), getLatestClosePositionReview()]);
         if (cancelled) return;
         setStatus(s);
-        setResult(latest.result ?? s.latest_review ?? null);
+        setResult(latest.result ?? latest.close_review ?? s.latest_review ?? null);
       } catch (e) {
         if (!cancelled) setError(e instanceof Error ? e.message : "Failed to load close position status");
       } finally {
@@ -286,7 +286,7 @@ export default function ClosePositionPage() {
     setError(null);
     try {
       const res = await getLatestClosePositionReview();
-      setResult(res.result);
+      setResult(res.result ?? res.close_review ?? null);
     } catch (e) {
       setError(e instanceof Error ? e.message : "Failed to load latest review");
     } finally {

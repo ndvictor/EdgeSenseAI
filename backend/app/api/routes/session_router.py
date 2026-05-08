@@ -27,5 +27,7 @@ def get_session_router_latest():
     latest = get_latest_session()
     if latest is None:
         return {"status": "not_found", "message": "No session router evaluation found yet."}
-    return {"status": "ok", "session": latest.model_dump()}
+    payload = latest.model_dump()
+    # Canonical contract: {status, result}. Preserve legacy keys temporarily.
+    return {"status": "ok", "result": payload, "evaluation": payload, "session": payload}
 

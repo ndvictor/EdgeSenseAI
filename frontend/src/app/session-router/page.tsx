@@ -161,7 +161,7 @@ export default function SessionRouterPage() {
         const [s, latest] = await Promise.all([getSessionRouterStatus(), getLatestSessionRouterEvaluation()]);
         if (cancelled) return;
         setStatus(s);
-        setEvaluation(latest.evaluation ?? s.latest_evaluation ?? null);
+        setEvaluation(latest.evaluation ?? latest.result ?? latest.session ?? s.latest_evaluation ?? null);
       } catch (e) {
         if (!cancelled) setError(e instanceof Error ? e.message : "Failed to load session router status");
       } finally {
@@ -204,7 +204,7 @@ export default function SessionRouterPage() {
     setError(null);
     try {
       const res = await getLatestSessionRouterEvaluation();
-      setEvaluation(res.evaluation);
+      setEvaluation(res.evaluation ?? res.result ?? res.session ?? null);
     } catch (e) {
       setError(e instanceof Error ? e.message : "Failed to load latest evaluation");
     } finally {

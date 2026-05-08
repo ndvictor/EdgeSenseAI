@@ -11,6 +11,7 @@ from app.core.settings import settings
 # Uppercase env keys -> Settings attribute name for fallback when env is unset
 _BOOL_ENV_TO_SETTINGS: dict[str, str] = {
     "WORKFLOW_ENABLED": "",
+    "WORKFLOW_RUNNING": "",
     "EXECUTION_ENABLED": "",
     "EMERGENCY_STOP": "",
     "FORCE_CLOSE_REQUESTED": "",

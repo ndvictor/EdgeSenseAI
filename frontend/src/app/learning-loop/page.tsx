@@ -180,7 +180,7 @@ export default function LearningLoopPage() {
       }
 
       setStage14Status(llStatus as LearningLoopStatusResponse);
-      const latestDecision = (llLatest as any)?.result ?? (llStatus as any)?.latest_decision ?? null;
+      const latestDecision = (llLatest as any)?.result ?? (llLatest as any)?.learning_decision ?? (llStatus as any)?.latest_decision ?? null;
       setStage14Decision(latestDecision as LearningLoopDecisionResult | null);
     } catch (err) {
       setError(err instanceof Error ? err.message : "Failed to load data");

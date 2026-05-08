@@ -61,6 +61,7 @@ class RateLimitSettings(BaseModel):
 
 class MasterAdminSettings(BaseModel):
     workflow_enabled: bool
+    workflow_running: bool
     execution_enabled: bool
     emergency_stop: bool
     force_close_requested: bool
@@ -148,6 +149,7 @@ class RiskSettingsUpdate(BaseModel):
 
 class MasterAdminSettingsUpdate(BaseModel):
     workflow_enabled: bool | None = None
+    workflow_running: bool | None = None
     execution_enabled: bool | None = None
     emergency_stop: bool | None = None
     force_close_requested: bool | None = None
@@ -228,6 +230,7 @@ def get_settings() -> SettingsResponse:
         ),
         master_admin=MasterAdminSettings(
             workflow_enabled=bool(runtime.get("WORKFLOW_ENABLED", True)),
+            workflow_running=bool(runtime.get("WORKFLOW_RUNNING", False)),
             execution_enabled=bool(runtime.get("EXECUTION_ENABLED", True)),
             emergency_stop=bool(runtime.get("EMERGENCY_STOP", False)),
             force_close_requested=bool(runtime.get("FORCE_CLOSE_REQUESTED", False)),
@@ -360,6 +363,14 @@ def _apply_master_admin_updates(current: dict, updates: MasterAdminSettingsUpdat
         return
     if updates.workflow_enabled is not None:
         current["WORKFLOW_ENABLED"] = bool(updates.workflow_enabled)
+        # If workflow is disabled, it cannot be "running".
+        if not bool(current["WORKFLOW_ENABLED"]):
+            current["WORKFLOW_RUNNING"] = False
+    if updates.workflow_running is not None:
+        current["WORKFLOW_RUNNING"] = bool(updates.workflow_running)
+        # Starting a workflow implies workflows are enabled.
+        if bool(current["WORKFLOW_RUNNING"]):
+            current["WORKFLOW_ENABLED"] = True
     if updates.execution_enabled is not None:
         current["EXECUTION_ENABLED"] = bool(updates.execution_enabled)
     if updates.emergency_stop is not None:

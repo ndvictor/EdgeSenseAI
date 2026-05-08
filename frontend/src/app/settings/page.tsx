@@ -16,6 +16,10 @@ import {
   type RiskSettings,
   type AlpacaPaperSnapshot,
   type PlatformIntegrationChecksResponse,
+  type WorkflowRunbookStatusResponse,
+  type WorkflowRunbookStagesResponse,
+  type PlatformReadinessStatusResponse,
+  type FinalReadinessHttpResponse,
 } from "@/lib/api";
 import { PageHeader } from "@/components/Cards";
 import { 
@@ -54,16 +58,18 @@ function SettingsPageInner() {
   const [integrationReport, setIntegrationReport] = useState<PlatformIntegrationChecksResponse | null>(null);
   const [integrationRunMs, setIntegrationRunMs] = useState<number | null>(null);
   const [integrationError, setIntegrationError] = useState<string | null>(null);
+  const [runbookStatus, setRunbookStatus] = useState<WorkflowRunbookStatusResponse | null>(null);
+  const [runbookStages, setRunbookStages] = useState<WorkflowRunbookStagesResponse | null>(null);
+  const [platformReadiness, setPlatformReadiness] = useState<PlatformReadinessStatusResponse | null>(null);
+  const [finalReadiness, setFinalReadiness] = useState<FinalReadinessHttpResponse | null>(null);
   const [activeTab, setActiveTab] = useState<
-    "overview" | "trading" | "risk" | "market" | "llm" | "news" | "platform" | "readiness" | "rate_limits" | "master_admin"
+    "overview" | "workflow" | "readiness" | "master_admin"
   >("overview");
 
   useEffect(() => {
     const tab = searchParams.get("tab");
     if (!tab) return;
-    if (tab === "trading" || tab === "risk" || tab === "market" || tab === "llm" || tab === "news" || tab === "platform" || tab === "readiness" || tab === "rate_limits" || tab === "master_admin" || tab === "overview") {
-      setActiveTab(tab);
-    }
+    if (tab === "overview" || tab === "workflow" || tab === "readiness" || tab === "master_admin") setActiveTab(tab);
   }, [searchParams]);
 
   const loadSettings = () => {
@@ -81,6 +87,10 @@ function SettingsPageInner() {
   useEffect(() => {
     loadSettings();
     loadAlpaca();
+    api.getWorkflowRunbookStatus().then(setRunbookStatus).catch(() => setRunbookStatus(null));
+    api.getWorkflowRunbookStages().then(setRunbookStages).catch(() => setRunbookStages(null));
+    api.getPlatformReadiness().then(setPlatformReadiness).catch(() => setPlatformReadiness(null));
+    api.getFinalReadiness().then(setFinalReadiness).catch(() => setFinalReadiness(null));
   }, []);
 
   useEffect(() => {
@@ -449,14 +459,8 @@ function SettingsPageInner() {
             {(
               [
                 ["overview", "Overview"],
-                ["trading", "Trading"],
-                ["risk", "Account risk"],
-                ["market", "Market data"],
-                ["llm", "LLM"],
-                ["news", "News"],
-                ["platform", "Platform"],
+                ["workflow", "Workflow"],
                 ["readiness", "Readiness"],
-                ["rate_limits", "Rate limits"],
                 ["master_admin", "Master Admin"],
               ] as const
             ).map(([id, label]) => (
@@ -479,110 +483,182 @@ function SettingsPageInner() {
         {/* Overview cards */}
         {activeTab === "overview" && settings && (
           <div className="mb-6 grid grid-cols-1 gap-4 md:grid-cols-2 lg:grid-cols-3 xl:grid-cols-4">
-            {/* Account Risk Center Card */}
-            <SettingsCard 
-              title="Account Risk Center" 
-              href="/account-risk" 
-              icon={WalletCards}
-              settings={[
-                { label: "Paper Trading", enabled: settings.trading.paper_trading_enabled },
-                { label: "Live Trading", enabled: settings.trading.live_trading_enabled },
-                { label: "Broker Execution", enabled: settings.trading.broker_execution_enabled },
-                { label: "Human Approval", enabled: settings.trading.require_human_approval },
-              ]}
-            />
+            {/* Stage 1 — Workflow / gates summary */}
+            <div className="rounded-xl border border-emerald-400/15 bg-black/35 p-4 backdrop-blur">
+              <div className="mb-3 flex items-center justify-between gap-3">
+                <div className="flex items-center gap-2">
+                  <Shield className="h-5 w-5 text-emerald-400" />
+                  <h3 className="font-semibold text-emerald-300">Stage 1 — Master Admin</h3>
+                </div>
+                <span
+                  className={`rounded-full border px-2 py-1 text-xs font-semibold ${
+                    settings.master_admin.workflow_running && settings.master_admin.workflow_enabled && !settings.master_admin.emergency_stop
+                      ? "border-emerald-400/40 bg-emerald-500/10 text-emerald-200"
+                      : "border-white/10 bg-white/[0.03] text-slate-300"
+                  }`}
+                >
+                  {settings.master_admin.workflow_running && settings.master_admin.workflow_enabled && !settings.master_admin.emergency_stop ? "Running" : "Stopped"}
+                </span>
+              </div>
 
-            {/* TradeNow Card */}
-            <SettingsCard 
-              title="TradeNow" 
-              href="/tradenow" 
-              icon={Zap}
-              settings={[
-                { label: "Paper Trading", enabled: settings.trading.paper_trading_enabled },
-                { label: "Live Trading", enabled: settings.trading.live_trading_enabled },
-                { label: "Broker Execution", enabled: settings.trading.broker_execution_enabled },
-                { label: "Execution Agent", enabled: settings.trading.execution_agent_enabled },
-              ]}
-            />
+              <div className="space-y-2 text-sm">
+                {[
+                  { label: "Workflow enabled", enabled: settings.master_admin.workflow_enabled },
+                  { label: "Execution enabled", enabled: settings.master_admin.execution_enabled },
+                  { label: "Emergency stop", enabled: settings.master_admin.emergency_stop, invert: true },
+                  { label: "Human approval", enabled: settings.trading.require_human_approval },
+                  { label: "Broker execution", enabled: settings.trading.broker_execution_enabled },
+                  { label: "Paper trading", enabled: settings.trading.paper_trading_enabled },
+                  { label: "Live trading", enabled: settings.trading.live_trading_enabled },
+                ].map((s) => {
+                  const on = s.invert ? !s.enabled : s.enabled;
+                  return (
+                    <div key={s.label} className="flex items-center justify-between">
+                      <span className="text-slate-400">{s.label}</span>
+                      <span className={`flex items-center gap-1 ${on ? "text-emerald-400" : "text-rose-400"}`}>
+                        <span className={`h-2 w-2 rounded-full ${on ? "bg-emerald-500" : "bg-rose-500"}`} />
+                        {on ? "On" : "Off"}
+                      </span>
+                    </div>
+                  );
+                })}
+              </div>
 
-            {/* Trading & Market Data Card */}
-            <SettingsCard 
-              title="Trading & Market Data" 
-              href="/paper-trading" 
-              icon={TrendingUp}
-              settings={[
-                { label: "Paper Trading", enabled: settings.trading.paper_trading_enabled },
-                { label: "Broker Execution", enabled: settings.trading.broker_execution_enabled },
-                { label: "Alpaca Paper", enabled: settings.trading.alpaca_paper_trade },
-                { label: "Market Data", enabled: settings.market_data.alpaca_market_data_enabled },
-              ]}
-            />
-
-            {/* Strategies & Universe Card */}
-            <SettingsCard 
-              title="Strategies & Universe" 
-              href="/strategies" 
-              icon={Brain}
-              settings={[
-                { label: "Execution agent", enabled: settings.trading.execution_agent_enabled },
-                { label: "Vector memory", enabled: settings.platform.vector_memory_enabled },
-                { label: "LLM paid tests", enabled: settings.llm_gateway.llm_gateway_enable_paid_tests },
-                { label: "LangSmith tracing", enabled: settings.platform.langsmith_tracing },
-              ]}
-            />
-
-            {/* Signals & Recommendations Card */}
-            <SettingsCard 
-              title="Signals & Recommendations" 
-              href="/signals" 
-              icon={Radar}
-              settings={[
-                { label: "Alpaca market data", enabled: settings.market_data.alpaca_market_data_enabled },
-                { label: "Execution agent", enabled: settings.trading.execution_agent_enabled },
-                { label: "LLM paid tests", enabled: settings.llm_gateway.llm_gateway_enable_paid_tests },
-                { label: "News provider", enabled: settings.news.news_provider_enabled },
-              ]}
-            />
-
-            {/* AI & Models Card */}
-            <SettingsCard 
-              title="AI & Models" 
-              href="/ai-ops" 
-              icon={BrainCircuit}
-              settings={[
-                { label: "LLM paid tests", enabled: settings.llm_gateway.llm_gateway_enable_paid_tests },
-                { label: "Embedding paid calls", enabled: settings.llm_gateway.embeddings_enable_paid_calls },
-                { label: "Vector memory", enabled: settings.platform.vector_memory_enabled },
-                { label: "LangSmith tracing", enabled: settings.platform.langsmith_tracing },
-              ]}
-            />
-
-            {/* Data & Integrations Card */}
-            <SettingsCard 
-              title="Data & Integrations" 
-              href="/data-sources" 
-              icon={DatabaseZap}
-              settings={[
-                { label: "Alpaca market data", enabled: settings.market_data.alpaca_market_data_enabled },
-                { label: "News provider", enabled: settings.news.news_provider_enabled },
-                { label: "LLM paid tests", enabled: settings.llm_gateway.llm_gateway_enable_paid_tests },
-                { label: "Vector memory", enabled: settings.platform.vector_memory_enabled },
-              ]}
-            />
-
-            {/* Journal & Learning Card */}
-            <SettingsCard 
-              title="Journal & Learning" 
-              href="/journal" 
-              icon={BookOpen}
-              settings={[
-                { label: "Paper Trading", enabled: settings.trading.paper_trading_enabled },
-                { label: "Execution Agent", enabled: settings.trading.execution_agent_enabled },
-                { label: "Human Approval", enabled: settings.trading.require_human_approval },
-                { label: "LangSmith Tracing", enabled: settings.platform.langsmith_tracing },
-              ]}
-            />
+              <div className="mt-4">
+                <Link
+                  href="/settings?tab=master_admin"
+                  className="inline-flex w-full items-center justify-center rounded-xl border border-white/10 bg-white/[0.03] px-3 py-2 text-xs font-bold uppercase text-slate-200 transition hover:bg-white/[0.06]"
+                >
+                  Manage configuration in Master Admin
+                </Link>
+              </div>
+            </div>
+            {(runbookStages?.stages || []).filter((s) => typeof s.stage_number === "number" && s.stage_number >= 1 && s.stage_number <= 14).map((st) => {
+              const impl = String(st.implementation_status || "");
+              const isPresent = impl === "present" || impl === "existing_gated";
+              const isPartial = impl === "partial_existing";
+              const statusLabel = isPresent ? "Configured" : isPartial ? "Partial" : "Backlog";
+              const statusClass = isPresent
+                ? "border-emerald-400/40 bg-emerald-500/10 text-emerald-200"
+                : isPartial
+                  ? "border-amber-400/40 bg-amber-500/10 text-amber-200"
+                  : "border-white/10 bg-white/[0.03] text-slate-300";
+              return (
+                <div key={st.stage_key || st.stage_number} className="rounded-xl border border-emerald-400/15 bg-black/35 p-4 backdrop-blur">
+                  <div className="flex items-start justify-between gap-3">
+                    <div>
+                      <div className="text-xs font-semibold text-slate-500">Stage {st.stage_number}</div>
+                      <div className="mt-1 font-semibold text-white">{st.stage_name || st.stage_key || `Stage ${st.stage_number}`}</div>
+                      <div className="mt-2 text-xs text-slate-500 line-clamp-2">
+                        {st.backend_endpoint_family ? `API: ${st.backend_endpoint_family}` : "API: —"}
+                      </div>
+                      <div className="mt-1 text-xs text-slate-500 line-clamp-1">{st.frontend_route ? `UI: ${st.frontend_route}` : "UI: —"}</div>
+                    </div>
+                    <span className={`shrink-0 rounded-full border px-2 py-1 text-xs font-semibold ${statusClass}`}>{statusLabel}</span>
+                  </div>
+                </div>
+              );
+            })}
           </div>
+        )}
+
+        {activeTab === "workflow" && settings && (
+          <section className="rounded-2xl border border-emerald-400/15 bg-black/35 p-6 backdrop-blur shadow-[0_0_40px_rgba(0,0,0,0.25)]">
+            <div className="mb-4 flex flex-wrap items-start gap-3">
+              <ClipboardList className="mt-1 h-6 w-6 shrink-0 text-emerald-400" />
+              <div className="min-w-0 flex-1">
+                <h2 className="text-xl font-semibold text-emerald-400">Workflow configuration status</h2>
+                <p className="mt-2 text-sm text-slate-400">
+                  This is a read-only rollup across the workflow spine. Make all configuration changes in{" "}
+                  <Link className="text-emerald-300 hover:text-emerald-200 underline" href="/settings?tab=master_admin">
+                    Master Admin
+                  </Link>
+                  .
+                </p>
+              </div>
+            </div>
+
+            <div className="grid grid-cols-1 gap-4 lg:grid-cols-2">
+              <div className="rounded-xl border border-emerald-400/15 bg-black/35 p-4">
+                <div className="flex items-center justify-between gap-3">
+                  <div>
+                    <div className="text-sm font-semibold text-white">Workflow runbook</div>
+                    <div className="mt-1 text-xs text-slate-500">Source: `GET /api/workflow-runbook/status` + `/stages`</div>
+                  </div>
+                  <span className="rounded-full border border-white/10 bg-white/[0.03] px-2 py-1 text-xs font-semibold text-slate-300">
+                    {runbookStatus?.summary?.workflow_status ? String(runbookStatus.summary.workflow_status) : "unknown"}
+                  </span>
+                </div>
+                <div className="mt-3 grid grid-cols-2 gap-2 text-sm">
+                  <div className="rounded-lg border border-white/10 bg-white/[0.02] p-3">
+                    <div className="text-xs text-slate-500">Total stages</div>
+                    <div className="mt-1 font-mono text-slate-200">{String(runbookStatus?.summary?.total_stages ?? "—")}</div>
+                  </div>
+                  <div className="rounded-lg border border-white/10 bg-white/[0.02] p-3">
+                    <div className="text-xs text-slate-500">Implemented</div>
+                    <div className="mt-1 font-mono text-slate-200">{String(runbookStatus?.summary?.implemented_stages ?? "—")}</div>
+                  </div>
+                </div>
+                <div className="mt-3 text-sm text-slate-400">{String(runbookStatus?.summary?.next_action ?? "—")}</div>
+              </div>
+
+              <div className="rounded-xl border border-emerald-400/15 bg-black/35 p-4">
+                <div className="flex items-center justify-between gap-3">
+                  <div>
+                    <div className="text-sm font-semibold text-white">Platform readiness</div>
+                    <div className="mt-1 text-xs text-slate-500">Source: `GET /api/platform-readiness/status`</div>
+                  </div>
+                  <span className="rounded-full border border-white/10 bg-white/[0.03] px-2 py-1 text-xs font-semibold text-slate-300">
+                    {platformReadiness?.status ? String(platformReadiness.status) : "unknown"}
+                  </span>
+                </div>
+                <div className="mt-3 text-sm text-slate-400">{String(platformReadiness?.next_action ?? "—")}</div>
+                {(platformReadiness?.missing_backend_components?.length || 0) > 0 ? (
+                  <div className="mt-3 text-sm text-rose-200">
+                    Missing backend: {platformReadiness?.missing_backend_components?.slice(0, 4).join(", ")}
+                    {(platformReadiness?.missing_backend_components?.length || 0) > 4 ? " …" : ""}
+                  </div>
+                ) : null}
+              </div>
+            </div>
+
+            <div className="mt-6 rounded-xl border border-emerald-400/15 bg-black/35 p-4">
+              <h3 className="text-sm font-semibold text-white">Workflow chain (configured vs gated)</h3>
+              <p className="mt-1 text-sm text-slate-400">
+                This list mirrors your desired flow. “Configured” is derived from readiness endpoints (no execution is triggered).
+              </p>
+              <div className="mt-4 space-y-2">
+                {[
+                  { name: "Market Data", ok: Boolean(finalReadiness?.endpoints?.some((e) => e.path === "/api/qlib/status" && e.present) ?? false) || settings.market_data.market_data_provider !== "mock" },
+                  { name: "Data Quality + Timestamp Validation", ok: Boolean(finalReadiness?.endpoints?.some((e) => e.path === "/api/platform-readiness/status" && e.present) ?? false) },
+                  { name: "Feature Store", ok: Boolean(settings.platform.vector_memory_enabled) },
+                  { name: "Qlib Research Agent", ok: Boolean(finalReadiness?.endpoints?.some((e) => e.path === "/api/qlib/status" && e.present) ?? false) },
+                  { name: "Model Selection Agent", ok: Boolean(finalReadiness?.endpoints?.some((e) => e.path === "/api/model-evidence/status" && e.present) ?? true) },
+                  { name: "Qlib Backtest Validation Agent", ok: Boolean(finalReadiness?.endpoints?.some((e) => e.path === "/api/qlib/status" && e.present) ?? true) },
+                  { name: "Strategy Eligibility Agent", ok: Boolean(runbookStages?.stages?.some((s) => s.stage_key === "strategy_eligibility" && String(s.implementation_status) === "present") ?? true) },
+                  { name: "Signal Ensemble + Ranking", ok: Boolean(finalReadiness?.endpoints?.some((e) => e.path === "/api/agent-runtime/status" && e.present) ?? false) },
+                  { name: "Risk Manager", ok: Boolean(settings.master_admin.execution_enabled) },
+                  { name: "Execution Planner", ok: Boolean(runbookStages?.stages?.some((s) => s.stage_key === "execution_planner" && String(s.implementation_status) === "present") ?? true) },
+                  { name: "Approval Queue", ok: Boolean(finalReadiness?.endpoints?.some((e) => e.path === "/api/approval-queue/status" && e.present) ?? true) },
+                  { name: "Paper Trading", ok: Boolean(settings.trading.paper_trading_enabled && settings.master_admin.execution_enabled) },
+                  { name: "Post-Trade Evaluation", ok: Boolean(runbookStages?.stages?.some((s) => s.stage_key === "post_trade_evaluation" && String(s.implementation_status) === "present") ?? true) },
+                  { name: "Learning Loop", ok: Boolean(runbookStages?.stages?.some((s) => s.stage_key === "learning_loop" && String(s.implementation_status) === "present") ?? true) },
+                  { name: "Strategy Ranking Update", ok: Boolean(finalReadiness?.endpoints?.some((e) => e.path === "/api/strategy-evidence/status" && e.present) ?? true) },
+                ].map((row) => (
+                  <div key={row.name} className="flex items-center justify-between gap-3 rounded-lg border border-white/10 bg-white/[0.02] px-3 py-2">
+                    <div className="text-sm text-slate-300">{row.name}</div>
+                    <span
+                      className={`rounded-full border px-2 py-0.5 text-xs font-semibold ${
+                        row.ok ? "border-emerald-400/40 bg-emerald-500/10 text-emerald-200" : "border-rose-400/40 bg-rose-500/10 text-rose-200"
+                      }`}
+                    >
+                      {row.ok ? "Configured" : "Not configured"}
+                    </span>
+                  </div>
+                ))}
+              </div>
+            </div>
+          </section>
         )}
 
         {message && (
@@ -620,6 +696,7 @@ function SettingsPageInner() {
                   const emergencyStop = settings.master_admin.emergency_stop;
                   const executionEnabled = settings.master_admin.execution_enabled;
                   const workflowEnabled = settings.master_admin.workflow_enabled;
+                  const workflowRunning = Boolean(settings.master_admin.workflow_running);
                   const forceCloseRequested = settings.master_admin.force_close_requested;
                   const humanApproval = settings.trading.require_human_approval;
                   const brokerExecution = settings.trading.broker_execution_enabled;
@@ -639,13 +716,36 @@ function SettingsPageInner() {
                   return (
                     <div className="space-y-6">
                       <div className="grid grid-cols-1 gap-4 lg:grid-cols-2">
-                        <ToggleSwitch
-                          label="Start Workflow"
-                          description="Enable platform workflows (scanner, pipeline runs, etc.)"
-                          enabled={workflowEnabled}
-                          onToggle={() => updateMasterAdmin({ workflow_enabled: !workflowEnabled })}
-                          disabled={disableAll}
-                        />
+                        <div className="rounded-xl border border-emerald-400/15 bg-black/35 p-4 backdrop-blur">
+                          <div className="flex items-start justify-between gap-4">
+                            <div>
+                              <h3 className="font-semibold text-white">Workflow Status</h3>
+                              <p className="text-sm text-slate-400">
+                                {workflowRunning && workflowEnabled && !disabledByEmergency ? "Workflow running." : "Workflow stopped."} This is a runtime switch
+                                (no broker submission).
+                              </p>
+                              <div className="mt-2 text-xs text-slate-500">
+                                Gate: <span className="font-mono text-slate-300">{workflowEnabled ? "WORKFLOW_ENABLED=true" : "WORKFLOW_ENABLED=false"}</span>
+                              </div>
+                            </div>
+                            <button
+                              type="button"
+                              onClick={() =>
+                                updateMasterAdmin(
+                                  workflowRunning ? { workflow_running: false } : { workflow_running: true, workflow_enabled: true },
+                                )
+                              }
+                              disabled={disableAll || disabledByEmergency}
+                              className={`rounded-xl border px-4 py-2 text-sm font-bold uppercase transition disabled:opacity-50 ${
+                                workflowRunning
+                                  ? "border-white/10 bg-white/[0.03] text-slate-200 hover:bg-white/[0.06]"
+                                  : "border-emerald-400/40 bg-emerald-500/10 text-emerald-200 hover:bg-emerald-500/20"
+                              }`}
+                            >
+                              {workflowRunning ? "Stop" : "Start"}
+                            </button>
+                          </div>
+                        </div>
                         <ToggleSwitch
                           label="Disable All Execution"
                           description="Blocks all order submission paths (paper + live)"
@@ -690,6 +790,277 @@ function SettingsPageInner() {
                         />
                       </div>
 
+                      <div className="rounded-xl border border-emerald-400/15 bg-black/35 p-4 backdrop-blur">
+                        <div className="flex items-start justify-between gap-4">
+                          <div>
+                            <h3 className="font-semibold text-white">Workflow Mode</h3>
+                            <p className="text-sm text-slate-400">Select paper vs live trading mode (live remains gated by approval + broker execution).</p>
+                          </div>
+                          <div className="flex items-center gap-2">
+                            <button
+                              type="button"
+                              onClick={() => updateTrading({ paper_trading_enabled: true, live_trading_enabled: false })}
+                              disabled={disableAll || disabledByEmergency || !executionEnabled}
+                              className={`rounded-lg border px-3 py-2 text-xs font-bold uppercase transition disabled:opacity-50 ${
+                                paperTrading && !liveTrading
+                                  ? "border-emerald-400/40 bg-emerald-500/10 text-emerald-200"
+                                  : "border-white/10 bg-white/[0.03] text-slate-200 hover:bg-white/[0.06]"
+                              }`}
+                            >
+                              Paper
+                            </button>
+                            <button
+                              type="button"
+                              onClick={() => updateTrading({ live_trading_enabled: true })}
+                              disabled={liveDisabled}
+                              className={`rounded-lg border px-3 py-2 text-xs font-bold uppercase transition disabled:opacity-50 ${
+                                liveTrading
+                                  ? "border-red-400/40 bg-red-500/10 text-red-200"
+                                  : "border-white/10 bg-white/[0.03] text-slate-200 hover:bg-white/[0.06]"
+                              }`}
+                            >
+                              Live
+                            </button>
+                          </div>
+                        </div>
+                      </div>
+
+                      <div className="rounded-2xl border border-emerald-400/15 bg-black/35 p-5 backdrop-blur">
+                        <h3 className="text-lg font-semibold text-emerald-200">Configuration editor</h3>
+                        <p className="mt-1 text-sm text-slate-400">
+                          Edit all runtime configuration here. Changes are persisted to <span className="font-mono text-slate-300">runtime_settings.json</span>.
+                        </p>
+
+                        <div className="mt-4 grid grid-cols-1 gap-4 lg:grid-cols-2">
+                          <div className="rounded-xl border border-emerald-400/15 bg-black/35 p-4">
+                            <h4 className="font-semibold text-white">Market Data</h4>
+                            <div className="mt-3 space-y-3">
+                              <ToggleSwitch
+                                label="Alpaca Market Data"
+                                description="Use Alpaca for market data feeds"
+                                enabled={settings.market_data.alpaca_market_data_enabled}
+                                onToggle={() => updateMarketData({ alpaca_market_data_enabled: !settings.market_data.alpaca_market_data_enabled })}
+                                disabled={disableAll}
+                              />
+                              <SelectInput
+                                label="Market Data Provider"
+                                description="Primary market data source"
+                                value={settings.market_data.market_data_provider}
+                                onChange={(val) => updateMarketData({ market_data_provider: val })}
+                                options={[
+                                  { value: "mock", label: "Mock Data" },
+                                  { value: "alpaca", label: "Alpaca" },
+                                  { value: "polygon", label: "Polygon.io" },
+                                  { value: "yfinance", label: "YFinance" },
+                                ]}
+                              />
+                              <TextInput
+                                label="Provider Priority"
+                                description="Fallback order (comma-separated)"
+                                value={settings.market_data.market_data_provider_priority}
+                                onChange={(val) => updateMarketData({ market_data_provider_priority: val })}
+                                placeholder="polygon,alpaca,yfinance,mock"
+                              />
+                              <NumberInput
+                                label="Timeout (seconds)"
+                                description="API request timeout"
+                                value={settings.market_data.market_data_provider_timeout_seconds}
+                                onChange={(val) => updateMarketData({ market_data_provider_timeout_seconds: val })}
+                                min={1}
+                                max={60}
+                              />
+                            </div>
+                          </div>
+
+                          <div className="rounded-xl border border-emerald-400/15 bg-black/35 p-4">
+                            <h4 className="font-semibold text-white">LLM Gateway</h4>
+                            <div className="mt-3 space-y-3">
+                              <ToggleSwitch
+                                label="Enable Paid Tests"
+                                description="Allow paid LLM API calls for testing"
+                                enabled={settings.llm_gateway.llm_gateway_enable_paid_tests}
+                                onToggle={() => updateLlmGateway({ llm_gateway_enable_paid_tests: !settings.llm_gateway.llm_gateway_enable_paid_tests })}
+                                disabled={disableAll}
+                              />
+                              <ToggleSwitch
+                                label="Embeddings Paid Calls"
+                                description="Enable paid embedding API calls"
+                                enabled={settings.llm_gateway.embeddings_enable_paid_calls}
+                                onToggle={() => updateLlmGateway({ embeddings_enable_paid_calls: !settings.llm_gateway.embeddings_enable_paid_calls })}
+                                disabled={disableAll}
+                              />
+                              <NumberInput
+                                label="Daily Budget ($)"
+                                description="Maximum daily spend on LLM APIs"
+                                value={settings.llm_gateway.llm_gateway_daily_budget}
+                                onChange={(val) => updateLlmGateway({ llm_gateway_daily_budget: val })}
+                                min={0}
+                                step={1}
+                              />
+                              <TextInput
+                                label="Cheap Model"
+                                description="Default cheap/fast model for simple tasks"
+                                value={settings.llm_gateway.llm_gateway_default_cheap_model}
+                                onChange={(val) => updateLlmGateway({ llm_gateway_default_cheap_model: val })}
+                                placeholder="gpt-4o-mini"
+                              />
+                              <TextInput
+                                label="Reasoning Model"
+                                description="Default model for complex reasoning"
+                                value={settings.llm_gateway.llm_gateway_default_reasoning_model}
+                                onChange={(val) => updateLlmGateway({ llm_gateway_default_reasoning_model: val })}
+                                placeholder="gpt-4o"
+                              />
+                              <TextInput
+                                label="Fallback Model"
+                                description="Fallback when primary models fail"
+                                value={settings.llm_gateway.llm_gateway_default_fallback_model}
+                                onChange={(val) => updateLlmGateway({ llm_gateway_default_fallback_model: val })}
+                                placeholder="local-placeholder"
+                              />
+                            </div>
+                          </div>
+
+                          <div className="rounded-xl border border-emerald-400/15 bg-black/35 p-4">
+                            <h4 className="font-semibold text-white">News</h4>
+                            <div className="mt-3 space-y-3">
+                              <ToggleSwitch
+                                label="News Provider"
+                                description="Enable news feed integration"
+                                enabled={settings.news.news_provider_enabled}
+                                onToggle={() => updateNews({ news_provider_enabled: !settings.news.news_provider_enabled })}
+                                disabled={disableAll}
+                              />
+                              <SelectInput
+                                label="Primary News Source"
+                                description="Main news data provider"
+                                value={settings.news.news_provider_primary}
+                                onChange={(val) => updateNews({ news_provider_primary: val })}
+                                options={[
+                                  { value: "none", label: "None" },
+                                  { value: "newsapi", label: "NewsAPI" },
+                                  { value: "finnhub", label: "Finnhub" },
+                                  { value: "benzinga", label: "Benzinga" },
+                                ]}
+                              />
+                              <NumberInput
+                                label="Timeout (seconds)"
+                                description="News API request timeout"
+                                value={settings.news.news_provider_timeout_seconds}
+                                onChange={(val) => updateNews({ news_provider_timeout_seconds: val })}
+                                min={1}
+                                max={60}
+                              />
+                            </div>
+                          </div>
+
+                          <div className="rounded-xl border border-emerald-400/15 bg-black/35 p-4">
+                            <h4 className="font-semibold text-white">Platform + Limits</h4>
+                            <div className="mt-3 space-y-3">
+                              <ToggleSwitch
+                                label="LangSmith Tracing"
+                                description="Send traces to LangSmith for debugging"
+                                enabled={settings.platform.langsmith_tracing}
+                                onToggle={() => updatePlatform({ langsmith_tracing: !settings.platform.langsmith_tracing })}
+                                disabled={disableAll}
+                              />
+                              <ToggleSwitch
+                                label="Vector Memory"
+                                description="Enable pgvector-based memory storage"
+                                enabled={settings.platform.vector_memory_enabled}
+                                onToggle={() => updatePlatform({ vector_memory_enabled: !settings.platform.vector_memory_enabled })}
+                                disabled={disableAll}
+                              />
+                              <NumberInput
+                                label="Max Daily LLM Cost ($)"
+                                description="Daily spending limit on LLM APIs"
+                                value={settings.rate_limits.max_daily_llm_cost}
+                                onChange={(val) => updateRateLimits({ max_daily_llm_cost: val })}
+                                min={0}
+                                step={1}
+                              />
+                              <NumberInput
+                                label="Max Daily Agent Runs"
+                                description="Maximum agent executions per day"
+                                value={settings.rate_limits.max_daily_agent_runs}
+                                onChange={(val) => updateRateLimits({ max_daily_agent_runs: val })}
+                                min={1}
+                                step={10}
+                              />
+                            </div>
+                          </div>
+                        </div>
+
+                        <div className="mt-4 rounded-xl border border-emerald-400/15 bg-black/35 p-4">
+                          <div className="flex flex-wrap items-center justify-between gap-3">
+                            <div>
+                              <h4 className="font-semibold text-white">Account Risk</h4>
+                              <p className="text-sm text-slate-400">These thresholds drive risk gating across the workflow.</p>
+                            </div>
+                            <div className="flex items-center gap-2">
+                              <button
+                                type="button"
+                                onClick={saveRiskDraft}
+                                disabled={disableAll || !riskDirty}
+                                className="rounded-xl border border-emerald-400/40 bg-emerald-500/10 px-4 py-2 text-sm font-bold uppercase text-emerald-300 hover:bg-emerald-500/20 disabled:opacity-50"
+                              >
+                                Save risk
+                              </button>
+                              <button
+                                type="button"
+                                onClick={() => setRiskDraft(settings?.risk ?? null)}
+                                disabled={disableAll || !riskDirty}
+                                className="rounded-xl border border-white/10 bg-white/[0.03] px-4 py-2 text-sm font-bold uppercase text-slate-300 hover:bg-white/[0.06] disabled:opacity-50"
+                              >
+                                Reset
+                              </button>
+                            </div>
+                          </div>
+                          {!riskDraft ? (
+                            <div className="mt-3 text-sm text-slate-400">Loading risk profile…</div>
+                          ) : (
+                            <div className="mt-4 grid grid-cols-1 gap-4 md:grid-cols-2">
+                              <NumberInput
+                                label="Max risk per trade (%)"
+                                description="Hard cap per-trade risk as a percent of equity"
+                                value={riskDraft.max_risk_per_trade_percent}
+                                onChange={(val) => setRiskDraft((prev) => (prev ? { ...prev, max_risk_per_trade_percent: val } : prev))}
+                                min={0.1}
+                                max={10}
+                                step={0.1}
+                              />
+                              <NumberInput
+                                label="Max daily loss (%)"
+                                description="Stop trading after this daily drawdown"
+                                value={riskDraft.max_daily_loss_percent}
+                                onChange={(val) => setRiskDraft((prev) => (prev ? { ...prev, max_daily_loss_percent: val } : prev))}
+                                min={0.5}
+                                max={10}
+                                step={0.1}
+                              />
+                              <NumberInput
+                                label="Max position size (%)"
+                                description="Max position size as a percent of buying power"
+                                value={riskDraft.max_position_size_percent}
+                                onChange={(val) => setRiskDraft((prev) => (prev ? { ...prev, max_position_size_percent: val } : prev))}
+                                min={1}
+                                max={100}
+                                step={1}
+                              />
+                              <NumberInput
+                                label="Min reward:risk (R)"
+                                description="Reject trades below this reward:risk ratio (e.g. 3R)"
+                                value={riskDraft.min_reward_risk_ratio}
+                                onChange={(val) => setRiskDraft((prev) => (prev ? { ...prev, min_reward_risk_ratio: val } : prev))}
+                                min={1}
+                                max={20}
+                                step={0.5}
+                              />
+                            </div>
+                          )}
+                        </div>
+                      </div>
+
                       <div className="grid grid-cols-1 gap-4 lg:grid-cols-2">
                         <ToggleSwitch
                           label="Emergency Stop"
@@ -718,23 +1089,6 @@ function SettingsPageInner() {
                       </div>
 
                       <div className="grid grid-cols-1 gap-4 lg:grid-cols-2">
-                        <div className="rounded-xl border border-emerald-400/15 bg-black/35 p-4 backdrop-blur">
-                          <div className="flex items-center justify-between gap-4">
-                            <div>
-                              <h3 className="font-semibold text-white">Stop Workflow</h3>
-                              <p className="text-sm text-slate-400">Disables workflow runs. Does not submit orders.</p>
-                            </div>
-                            <button
-                              type="button"
-                              onClick={() => updateMasterAdmin({ workflow_enabled: false })}
-                              disabled={disableAll || disabledByEmergency || !workflowEnabled}
-                              className="rounded-xl border border-white/10 bg-white/[0.03] px-4 py-2 text-sm font-bold uppercase text-slate-200 hover:bg-white/[0.06] disabled:opacity-50"
-                            >
-                              Stop
-                            </button>
-                          </div>
-                        </div>
-
                         <div className="rounded-xl border border-emerald-400/15 bg-black/35 p-4 backdrop-blur">
                           <div className="flex items-center justify-between gap-4">
                             <div>
@@ -768,303 +1122,8 @@ function SettingsPageInner() {
               </section>
             )}
 
-            {/* Trading Settings */}
-            {(activeTab === "trading" || activeTab === "overview") && (
-            <section className="rounded-2xl border border-emerald-400/15 bg-black/35 p-6 backdrop-blur shadow-[0_0_40px_rgba(0,0,0,0.25)]">
-              <h2 className="mb-4 text-xl font-semibold text-emerald-400">Trading Configuration</h2>
-              <div className="grid grid-cols-1 gap-4 lg:grid-cols-2">
-                <ToggleSwitch
-                  label="Paper Trading"
-                  description="Enable Alpaca paper trading simulation"
-                  enabled={settings.trading.paper_trading_enabled}
-                  onToggle={() => updateTrading({ paper_trading_enabled: !settings.trading.paper_trading_enabled })}
-                />
-                <ToggleSwitch
-                  label="Live Trading"
-                  description="⚠️ Enable live trading with real money"
-                  enabled={settings.trading.live_trading_enabled}
-                  onToggle={() => updateTrading({ live_trading_enabled: !settings.trading.live_trading_enabled })}
-                  danger
-                  disabled={!settings.trading.require_human_approval}
-                />
-                <ToggleSwitch
-                  label="Broker Execution"
-                  description="Send orders to broker (Alpaca)"
-                  enabled={settings.trading.broker_execution_enabled}
-                  onToggle={() => updateTrading({ broker_execution_enabled: !settings.trading.broker_execution_enabled })}
-                  danger={settings.trading.broker_execution_enabled}
-                />
-                <ToggleSwitch
-                  label="Require Human Approval"
-                  description="All trades require manual confirmation"
-                  enabled={settings.trading.require_human_approval}
-                  onToggle={() => updateTrading({ require_human_approval: !settings.trading.require_human_approval })}
-                />
-                <ToggleSwitch
-                  label="Execution Agent"
-                  description="Enable autonomous trade execution agent"
-                  enabled={settings.trading.execution_agent_enabled}
-                  onToggle={() => updateTrading({ execution_agent_enabled: !settings.trading.execution_agent_enabled })}
-                  danger
-                />
-                <ToggleSwitch
-                  label="Alpaca Paper Trade"
-                  description="Use Alpaca paper trading environment"
-                  enabled={settings.trading.alpaca_paper_trade}
-                  onToggle={() => updateTrading({ alpaca_paper_trade: !settings.trading.alpaca_paper_trade })}
-                />
-              </div>
-              
-              <div className="mt-4 grid grid-cols-1 gap-4 md:grid-cols-2">
-                <SelectInput
-                  label="Execution Mode"
-                  description="Current trading execution mode"
-                  value={settings.trading.execution_mode}
-                  onChange={(val) => updateTrading({ execution_mode: val })}
-                  options={[
-                    { value: "dry_run", label: "Dry Run (No orders)" },
-                    { value: "paper", label: "Paper Trading" },
-                    { value: "live", label: "Live Trading" }
-                  ]}
-                />
-                <SelectInput
-                  label="Broker Provider"
-                  description="Primary broker for order execution"
-                  value={settings.trading.broker_provider}
-                  onChange={(val) => updateTrading({ broker_provider: val })}
-                  options={[
-                    { value: "alpaca", label: "Alpaca" },
-                    { value: "interactive_brokers", label: "Interactive Brokers" },
-                    { value: "td_ameritrade", label: "TD Ameritrade" }
-                  ]}
-                />
-                <NumberInput
-                  label="Paper Starting Cash"
-                  description="Initial cash for paper trading account"
-                  value={settings.trading.paper_starting_cash}
-                  onChange={(val) => updateTrading({ paper_starting_cash: val })}
-                  min={0}
-                  step={1000}
-                />
-              </div>
-            </section>
-            )}
-
-            {/* Account Risk Controls */}
-            {(activeTab === "risk" || activeTab === "overview") && (
-            <section className="rounded-2xl border border-emerald-400/15 bg-black/35 p-6 backdrop-blur shadow-[0_0_40px_rgba(0,0,0,0.25)]">
-              <div className="mb-4 flex items-center justify-between">
-                <h2 className="text-xl font-semibold text-emerald-400">Account Risk Controls</h2>
-                <Link href="/account-risk" className="text-xs text-emerald-400 underline hover:text-emerald-300">
-                  Open Account Risk Center →
-                </Link>
-              </div>
-              <p className="mb-4 text-sm text-slate-400">
-                These thresholds drive risk gating (including reward:risk checks). They are saved to runtime_settings.json and used across the platform.
-              </p>
-
-              {!riskDraft ? (
-                <div className="rounded-xl border border-emerald-400/15 bg-black/35 p-4 text-sm text-slate-400">Loading account risk profile…</div>
-              ) : (
-                <div className="space-y-4">
-                  <div className="flex flex-wrap items-center gap-2">
-                    <button
-                      type="button"
-                      onClick={saveRiskDraft}
-                      disabled={loading || !riskDirty}
-                      className="rounded-xl border border-emerald-400/40 bg-emerald-500/10 px-4 py-2 text-sm font-bold uppercase text-emerald-300 hover:bg-emerald-500/20 disabled:opacity-50"
-                    >
-                      Save risk settings
-                    </button>
-                    <button
-                      type="button"
-                      onClick={() => setRiskDraft(settings?.risk ?? null)}
-                      disabled={loading || !riskDirty}
-                      className="rounded-xl border border-white/10 bg-white/[0.03] px-4 py-2 text-sm font-bold uppercase text-slate-300 hover:bg-white/[0.06] disabled:opacity-50"
-                    >
-                      Reset
-                    </button>
-                    {riskDirty ? <span className="text-xs text-amber-300">Unsaved changes</span> : <span className="text-xs text-slate-500">Saved</span>}
-                  </div>
-
-                  <div className="grid grid-cols-1 gap-4 md:grid-cols-2">
-                    <NumberInput
-                      label="Max risk per trade (%)"
-                      description="Hard cap per-trade risk as a percent of equity"
-                      value={riskDraft.max_risk_per_trade_percent}
-                      onChange={(val) => setRiskDraft((prev) => (prev ? { ...prev, max_risk_per_trade_percent: val } : prev))}
-                      min={0.1}
-                      max={10}
-                      step={0.1}
-                    />
-                    <NumberInput
-                      label="Max daily loss (%)"
-                      description="Stop trading after this daily drawdown"
-                      value={riskDraft.max_daily_loss_percent}
-                      onChange={(val) => setRiskDraft((prev) => (prev ? { ...prev, max_daily_loss_percent: val } : prev))}
-                      min={0.5}
-                      max={10}
-                      step={0.1}
-                    />
-                    <NumberInput
-                      label="Max position size (%)"
-                      description="Max position size as a percent of buying power"
-                      value={riskDraft.max_position_size_percent}
-                      onChange={(val) => setRiskDraft((prev) => (prev ? { ...prev, max_position_size_percent: val } : prev))}
-                      min={1}
-                      max={100}
-                      step={1}
-                    />
-                    <NumberInput
-                      label="Min reward:risk (R)"
-                      description="Reject trades below this reward:risk ratio (e.g. 3R)"
-                      value={riskDraft.min_reward_risk_ratio}
-                      onChange={(val) => setRiskDraft((prev) => (prev ? { ...prev, min_reward_risk_ratio: val } : prev))}
-                      min={1}
-                      max={20}
-                      step={0.5}
-                    />
-                  </div>
-                </div>
-              )}
-            </section>
-            )}
-
-            {/* LLM Gateway Settings */}
-            {(activeTab === "llm" || activeTab === "overview") && (
-            <section className="rounded-2xl border border-emerald-400/15 bg-black/35 p-6 backdrop-blur shadow-[0_0_40px_rgba(0,0,0,0.25)]">
-              <h2 className="mb-4 text-xl font-semibold text-emerald-400">LLM Gateway</h2>
-              <div className="grid grid-cols-1 gap-4 lg:grid-cols-2">
-                <ToggleSwitch
-                  label="Enable Paid Tests"
-                  description="Allow paid LLM API calls for testing"
-                  enabled={settings.llm_gateway.llm_gateway_enable_paid_tests}
-                  onToggle={() => updateLlmGateway({ llm_gateway_enable_paid_tests: !settings.llm_gateway.llm_gateway_enable_paid_tests })}
-                />
-                <ToggleSwitch
-                  label="Embeddings Paid Calls"
-                  description="Enable paid embedding API calls"
-                  enabled={settings.llm_gateway.embeddings_enable_paid_calls}
-                  onToggle={() => updateLlmGateway({ embeddings_enable_paid_calls: !settings.llm_gateway.embeddings_enable_paid_calls })}
-                />
-              </div>
-              
-              <div className="mt-4 grid grid-cols-1 gap-4 md:grid-cols-2">
-                <NumberInput
-                  label="Daily Budget ($)"
-                  description="Maximum daily spend on LLM APIs"
-                  value={settings.llm_gateway.llm_gateway_daily_budget}
-                  onChange={(val) => updateLlmGateway({ llm_gateway_daily_budget: val })}
-                  min={0}
-                  step={1}
-                />
-                <TextInput
-                  label="Cheap Model"
-                  description="Default cheap/fast model for simple tasks"
-                  value={settings.llm_gateway.llm_gateway_default_cheap_model}
-                  onChange={(val) => updateLlmGateway({ llm_gateway_default_cheap_model: val })}
-                  placeholder="gpt-4o-mini"
-                />
-                <TextInput
-                  label="Reasoning Model"
-                  description="Default model for complex reasoning"
-                  value={settings.llm_gateway.llm_gateway_default_reasoning_model}
-                  onChange={(val) => updateLlmGateway({ llm_gateway_default_reasoning_model: val })}
-                  placeholder="gpt-4o"
-                />
-                <TextInput
-                  label="Fallback Model"
-                  description="Fallback when primary models fail"
-                  value={settings.llm_gateway.llm_gateway_default_fallback_model}
-                  onChange={(val) => updateLlmGateway({ llm_gateway_default_fallback_model: val })}
-                  placeholder="local-placeholder"
-                />
-              </div>
-            </section>
-            )}
-
-            {/* Market Data Settings */}
-            {(activeTab === "market" || activeTab === "overview") && (
-            <section className="rounded-2xl border border-emerald-400/15 bg-black/35 p-6 backdrop-blur shadow-[0_0_40px_rgba(0,0,0,0.25)]">
-              <h2 className="mb-4 text-xl font-semibold text-emerald-400">Market Data</h2>
-              <div className="grid grid-cols-1 gap-4 lg:grid-cols-2">
-                <ToggleSwitch
-                  label="Alpaca Market Data"
-                  description="Use Alpaca for market data feeds"
-                  enabled={settings.market_data.alpaca_market_data_enabled}
-                  onToggle={() => updateMarketData({ alpaca_market_data_enabled: !settings.market_data.alpaca_market_data_enabled })}
-                />
-              </div>
-              
-              <div className="mt-4 grid grid-cols-1 gap-4 md:grid-cols-2">
-                <SelectInput
-                  label="Market Data Provider"
-                  description="Primary market data source"
-                  value={settings.market_data.market_data_provider}
-                  onChange={(val) => updateMarketData({ market_data_provider: val })}
-                  options={[
-                    { value: "mock", label: "Mock Data" },
-                    { value: "alpaca", label: "Alpaca" },
-                    { value: "polygon", label: "Polygon.io" },
-                    { value: "yfinance", label: "YFinance" }
-                  ]}
-                />
-                <TextInput
-                  label="Provider Priority"
-                  description="Fallback order (comma-separated)"
-                  value={settings.market_data.market_data_provider_priority}
-                  onChange={(val) => updateMarketData({ market_data_provider_priority: val })}
-                  placeholder="alpaca,yfinance,mock"
-                />
-                <NumberInput
-                  label="Timeout (seconds)"
-                  description="API request timeout"
-                  value={settings.market_data.market_data_provider_timeout_seconds}
-                  onChange={(val) => updateMarketData({ market_data_provider_timeout_seconds: val })}
-                  min={1}
-                  max={60}
-                />
-              </div>
-            </section>
-            )}
-
-            {/* News Settings */}
-            {(activeTab === "news" || activeTab === "overview") && (
-            <section className="rounded-2xl border border-emerald-400/15 bg-black/35 p-6 backdrop-blur shadow-[0_0_40px_rgba(0,0,0,0.25)]">
-              <h2 className="mb-4 text-xl font-semibold text-emerald-400">News & Sentiment</h2>
-              <div className="grid grid-cols-1 gap-4 lg:grid-cols-2">
-                <ToggleSwitch
-                  label="News Provider"
-                  description="Enable news feed integration"
-                  enabled={settings.news.news_provider_enabled}
-                  onToggle={() => updateNews({ news_provider_enabled: !settings.news.news_provider_enabled })}
-                />
-              </div>
-              
-              <div className="mt-4 grid grid-cols-1 gap-4 md:grid-cols-2">
-                <SelectInput
-                  label="Primary News Source"
-                  description="Main news data provider"
-                  value={settings.news.news_provider_primary}
-                  onChange={(val) => updateNews({ news_provider_primary: val })}
-                  options={[
-                    { value: "none", label: "None" },
-                    { value: "newsapi", label: "NewsAPI" },
-                    { value: "finnhub", label: "Finnhub" },
-                    { value: "benzinga", label: "Benzinga" }
-                  ]}
-                />
-                <NumberInput
-                  label="Timeout (seconds)"
-                  description="News API request timeout"
-                  value={settings.news.news_provider_timeout_seconds}
-                  onChange={(val) => updateNews({ news_provider_timeout_seconds: val })}
-                  min={1}
-                  max={60}
-                />
-              </div>
-            </section>
-            )}
+            {/* Configuration edits are centralized in Master Admin.
+               The Overview/Workflow/Readiness tabs provide source-of-truth summaries. */}
 
             {/* Integration readiness matrix (Alpaca + stack QA) */}
             {activeTab === "readiness" && settings && (
@@ -1075,11 +1134,17 @@ function SettingsPageInner() {
                   <h2 className="text-xl font-semibold text-emerald-400">Integration readiness matrix</h2>
                   <p className="mt-2 text-sm text-slate-400">
                     Runs backend checks against your configured keys (Alpaca paper, Polygon, Finnhub, FRED, etc.), then walks
-                    freshness, universe, scanner, risk, and paper dry-run order flow.{" "}
+                    the workflow spine (data → candidates → risk → execution preview) under the same gates shown in Master Admin.{" "}
                     <span className="text-slate-300">
                       Cursor&apos;s Alpaca MCP only helps agents inside the IDE; it does not replace this report. The platform
                       always tests through the EdgeSenseAI API using the same environment variables as the backend.
                     </span>
+                  </p>
+                  <p className="mt-2 text-sm text-slate-500">
+                    Related source-of-truth endpoints:{" "}
+                    <span className="text-slate-300 font-mono">/api/workflow-runbook/status</span>,{" "}
+                    <span className="text-slate-300 font-mono">/api/platform-readiness/status</span>,{" "}
+                    <span className="text-slate-300 font-mono">/api/final-readiness/status</span>.
                   </p>
                   <p className="mt-2 text-sm text-slate-500">
                     Typical duration: <span className="text-slate-300">quick preset ~15–45s</span>,{" "}
@@ -1259,51 +1324,7 @@ function SettingsPageInner() {
             </section>
             )}
 
-            {/* Platform Features */}
-            {(activeTab === "platform" || activeTab === "overview") && (
-            <section className="rounded-2xl border border-emerald-400/15 bg-black/35 p-6 backdrop-blur shadow-[0_0_40px_rgba(0,0,0,0.25)]">
-              <h2 className="mb-4 text-xl font-semibold text-emerald-400">Platform Features</h2>
-              <div className="grid grid-cols-1 gap-4 lg:grid-cols-2">
-                <ToggleSwitch
-                  label="LangSmith Tracing"
-                  description="Send traces to LangSmith for debugging"
-                  enabled={settings.platform.langsmith_tracing}
-                  onToggle={() => updatePlatform({ langsmith_tracing: !settings.platform.langsmith_tracing })}
-                />
-                <ToggleSwitch
-                  label="Vector Memory"
-                  description="Enable pgvector-based memory storage"
-                  enabled={settings.platform.vector_memory_enabled}
-                  onToggle={() => updatePlatform({ vector_memory_enabled: !settings.platform.vector_memory_enabled })}
-                />
-              </div>
-            </section>
-            )}
-
-            {/* Rate Limits */}
-            {(activeTab === "rate_limits" || activeTab === "overview") && (
-            <section className="rounded-2xl border border-emerald-400/15 bg-black/35 p-6 backdrop-blur shadow-[0_0_40px_rgba(0,0,0,0.25)]">
-              <h2 className="mb-4 text-xl font-semibold text-emerald-400">Rate Limits & Safety</h2>
-              <div className="grid grid-cols-1 gap-4 md:grid-cols-2">
-                <NumberInput
-                  label="Max Daily LLM Cost ($)"
-                  description="Daily spending limit on LLM APIs"
-                  value={settings.rate_limits.max_daily_llm_cost}
-                  onChange={(val) => updateRateLimits({ max_daily_llm_cost: val })}
-                  min={0}
-                  step={1}
-                />
-                <NumberInput
-                  label="Max Daily Agent Runs"
-                  description="Maximum agent executions per day"
-                  value={settings.rate_limits.max_daily_agent_runs}
-                  onChange={(val) => updateRateLimits({ max_daily_agent_runs: val })}
-                  min={1}
-                  step={10}
-                />
-              </div>
-            </section>
-            )}
+            {/* Platform + Rate limit configuration is intentionally managed via Master Admin only. */}
 
             {/* Account snapshot belongs in Account Risk Center. */}
 

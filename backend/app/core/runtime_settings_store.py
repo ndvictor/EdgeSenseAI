@@ -13,6 +13,9 @@ DEFAULT_RUNTIME_SETTINGS: dict[str, Any] = {
     # Master Admin (control-plane) gates
     # These are runtime-only switches used to safely pause/stop workflows and all execution without touching broker APIs.
     "WORKFLOW_ENABLED": True,
+    # Workflow process state (operator-controlled). This is a UI/runtime signal; services may consult it to decide whether
+    # to run background/scheduled workflow loops in this process.
+    "WORKFLOW_RUNNING": False,
     # When false: blocks all order submission paths (paper + live).
     "EXECUTION_ENABLED": True,
     # When true: overrides everything else (blocks execution, disables broker/live, and signals hard stop).

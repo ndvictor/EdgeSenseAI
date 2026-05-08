@@ -23,5 +23,7 @@ def get_close_position_latest():
     latest = get_latest_review()
     if latest is None:
         return {"status": "not_found", "message": "No close position review found yet."}
-    return {"status": "ok", "close_review": latest.model_dump()}
+    payload = latest.model_dump()
+    # Canonical contract: {status, result}. Preserve legacy keys temporarily.
+    return {"status": "ok", "result": payload, "close_review": payload}
 

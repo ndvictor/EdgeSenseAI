@@ -1,4 +1,12 @@
 {
+  "WORKFLOW_ENABLED": true,
+  "WORKFLOW_RUNNING": false,
+  "EXECUTION_ENABLED": true,
+  "EMERGENCY_STOP": false,
+  "FORCE_CLOSE_REQUESTED": false,
+  "MASTER_ADMIN_MODE": false,
+  "LAST_UPDATED_BY": "system",
+  "UPDATED_AT": null,
   "PAPER_TRADING_ENABLED": true,
   "LIVE_TRADING_ENABLED": false,
   "BROKER_EXECUTION_ENABLED": true,

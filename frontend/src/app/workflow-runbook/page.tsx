@@ -19,6 +19,7 @@ import {
   getWorkflowSchedulerStatus,
   getQlibStatus,
   getAgentRun,
+  getRunbookLatestBlob,
   type AgentRunResultRecord,
   type OrchestratorRunRecord,
   type WorkflowRunbookLatestResponse,
@@ -27,6 +28,8 @@ import {
   type WorkflowRunbookStatusResponse,
   type WorkflowOrchestratorTraceResponse,
 } from "@/lib/api";
+import { WorkflowStageTimeline } from "@/components/workflow-runbook/WorkflowStageTimeline";
+import { WorkflowVisibilityPanels } from "@/components/workflow-runbook/WorkflowVisibilityPanels";
 
 function chip(status: string): string {
   const s = status.toLowerCase();
@@ -191,7 +194,7 @@ function StageCard({ stage }: { stage: WorkflowRunbookStage }) {
   );
 }
 
-type MainTab = "operator" | "catalog";
+type MainTab = "operator" | "visibility" | "catalog";
 
 export default function WorkflowRunbookPage() {
   const [status, setStatus] = useState<WorkflowRunbookStatusResponse | null>(null);
@@ -201,6 +204,7 @@ export default function WorkflowRunbookPage() {
   const [refreshing, setRefreshing] = useState(false);
   const [error, setError] = useState<string | null>(null);
   const [mainTab, setMainTab] = useState<MainTab>("operator");
+  const [visibilityPanelTick, setVisibilityPanelTick] = useState(0);
 
   const [prRollup, setPrRollup] = useState<Record<string, unknown> | null>(null);
   const [arStatus, setArStatus] = useState<Record<string, unknown> | null>(null);
@@ -226,6 +230,8 @@ export default function WorkflowRunbookPage() {
 
   const summary = status?.summary;
   const gates = status?.master_gates;
+
+  const latestBlob = useMemo(() => getRunbookLatestBlob(latest), [latest]);
 
   const loadOperatorSnapshot = useCallback(async () => {
     try {
@@ -272,6 +278,7 @@ export default function WorkflowRunbookPage() {
     } finally {
       setLoading(false);
       setRefreshing(false);
+      setVisibilityPanelTick((t) => t + 1);
     }
   }
 
@@ -280,19 +287,28 @@ export default function WorkflowRunbookPage() {
   }, []);
 
   const latestKeys = useMemo(() => {
-    const snap = latest?.snapshot ?? null;
+    const snap = latestBlob;
     return [
       ["session_router", snap?.session_router ?? null],
       ["workflow_router", snap?.workflow_router ?? null],
       ["strategy_eligibility", snap?.strategy_eligibility ?? null],
       ["trigger_monitoring", snap?.trigger_monitoring ?? null],
       ["execution_planner", snap?.execution_planner ?? null],
+      ["execution_precheck_handoff", snap?.execution_precheck_handoff ?? null],
       ["position_monitoring", snap?.position_monitoring ?? null],
       ["close_position", snap?.close_position ?? null],
       ["post_trade_evaluation", snap?.post_trade_evaluation ?? null],
       ["learning_loop", snap?.learning_loop ?? null],
     ] as const;
-  }, [latest]);
+  }, [latestBlob]);
+
+  const summaryExtra = summary as Record<string, unknown> | undefined;
+  const summaryBlockers = Array.isArray(summaryExtra?.blockers)
+    ? (summaryExtra.blockers as string[])
+    : undefined;
+  const summaryWarnings = Array.isArray(summaryExtra?.warnings)
+    ? (summaryExtra.warnings as string[])
+    : undefined;
 
   async function handleRunWorkflow() {
     setOrcBusy(true);
@@ -409,7 +425,8 @@ export default function WorkflowRunbookPage() {
           <div>
             <h1 className="text-3xl font-semibold tracking-tight text-slate-50">Workflow Runbook</h1>
             <p className="mt-2 max-w-3xl text-sm text-slate-400">
-              Agent-driven paper-first workflow control dashboard with trace, approval boundary, safety gates, and operator next actions.
+              Agent-driven <span className="font-medium text-slate-300">paper-first</span> workflow visibility: traces, approval boundary,
+              safety gates, and operator next actions. No broker order submit from this surface; orchestrator calls stay dry-run / gated.
             </p>
             <div className="mt-3 flex flex-wrap gap-2">
               {["US Stocks", "Day Trading", "Paper-First", "Human Approval", "No Broker Submit"].map((t) => (
@@ -436,6 +453,7 @@ export default function WorkflowRunbookPage() {
           {(
             [
               ["operator", "Operator control"],
+              ["visibility", "Pipeline visibility"],
               ["catalog", "Stage catalog (read-only)"],
             ] as const
           ).map(([id, label]) => (
@@ -490,7 +508,11 @@ export default function WorkflowRunbookPage() {
                 </span>
               }
             />
-            <SummaryCard label="Qlib" value={<span className="text-base">{(qlibSt?.status as string) ?? "—"}</span>} />
+            <SummaryCard
+              label="Qlib (metadata)"
+              value={<span className="text-base">{(qlibSt?.status as string) ?? "—"}</span>}
+              hint="Status only — no job execution from runbook"
+            />
             <SummaryCard
               label="Broker submission (gate)"
               value={brokerSubmitGate === true ? "true" : brokerSubmitGate === false ? "false" : String(summary?.broker_submission_enabled ?? "—")}
@@ -753,10 +775,39 @@ export default function WorkflowRunbookPage() {
         </div>
       ) : null}
 
+      {mainTab === "visibility" ? (
+        <div className="mb-10 space-y-6">
+          <div className="rounded-xl border border-white/10 bg-[#0a1018] px-4 py-3 text-sm text-slate-300">
+            End-to-end <span className="text-slate-200">read-only visibility</span>: stage health, latest stage blobs, strategy/model/proof/Qlib
+            panels (parallel loads), and a composed trade-decision view. Qlib automation reflects{" "}
+            <span className="text-amber-100/90">metadata only</span> here. Paper-first; no submit.
+          </div>
+          {latest?.message ? (
+            <div className="rounded-lg border border-white/10 bg-black/20 px-3 py-2 text-xs text-slate-400">
+              Runbook latest: {String(latest.message)}
+              {latest.data_mode ? ` · data_mode ${latest.data_mode}` : ""}
+            </div>
+          ) : null}
+          <WorkflowStageTimeline
+            stages={stages}
+            stageHealth={status?.stage_health}
+            latestBlob={latestBlob}
+            summaryBlockers={summaryBlockers}
+            summaryWarnings={summaryWarnings}
+          />
+          <WorkflowVisibilityPanels
+            latestBlob={latestBlob}
+            orchestratorRun={displayRun}
+            refreshKey={visibilityPanelTick}
+          />
+        </div>
+      ) : null}
+
       {mainTab === "catalog" ? (
         <>
           <div className="mt-3 rounded-xl border border-white/10 bg-[#0a1018] px-4 py-3 text-sm text-slate-300">
-            Stage catalog is read-only. Operator execution uses the Orchestrator tab. No broker APIs and no execution submit from this page.
+            Stage catalog is read-only. Operator execution uses the Operator tab; pipeline snapshots use Pipeline visibility. No broker APIs and
+            no order submit from this page.
           </div>
 
           <div className="mb-6 mt-6 grid gap-3 sm:grid-cols-2 lg:grid-cols-8">
@@ -810,11 +861,11 @@ export default function WorkflowRunbookPage() {
               </div>
 
               <div className="rounded-2xl border border-emerald-400/15 bg-[#070c12] p-4">
-                <h2 className="text-xs font-semibold uppercase tracking-[0.2em] text-slate-500">Latest snapshot</h2>
+                <h2 className="text-xs font-semibold uppercase tracking-[0.2em] text-slate-500">Latest stage blobs</h2>
                 <p className="mt-2 text-sm text-slate-300">
-                  {latest?.snapshot
-                    ? "Latest stage snapshot keys (read-only)."
-                    : "No latest snapshot yet. Run the individual stage page to populate latest state."}
+                  {latestBlob
+                    ? "Keys from GET /api/workflow-runbook/latest (`latest` field). Read-only."
+                    : "No latest blobs yet. Run stage workflows or open stage pages to populate latest state."}
                 </p>
                 <div className="mt-3 space-y-2">
                   {latestKeys.map(([k, v]) => (

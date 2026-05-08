@@ -23,5 +23,7 @@ def get_learning_loop_latest():
     latest = get_latest_decision()
     if latest is None:
         return {"status": "not_found", "message": "No learning loop decision found yet."}
-    return {"status": "ok", "learning_decision": latest.model_dump()}
+    payload = latest.model_dump()
+    # Canonical contract: {status, result}. Preserve legacy keys temporarily.
+    return {"status": "ok", "result": payload, "learning_decision": payload}
 

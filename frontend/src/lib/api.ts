@@ -356,6 +356,7 @@ export type RateLimitSettings = {
 
 export type MasterAdminSettings = {
   workflow_enabled: boolean;
+  workflow_running?: boolean;
   execution_enabled: boolean;
   emergency_stop: boolean;
   force_close_requested: boolean;
@@ -442,6 +443,7 @@ export type RiskSettingsUpdate = {
 
 export type MasterAdminSettingsUpdate = {
   workflow_enabled?: boolean;
+  workflow_running?: boolean;
   execution_enabled?: boolean;
   emergency_stop?: boolean;
   force_close_requested?: boolean;
@@ -1651,6 +1653,7 @@ export type WorkflowRouteResponse = {
 export type WorkflowRouterLatestResponse = {
   status: "ok" | string;
   decision: WorkflowDecision | null;
+  result?: WorkflowDecision | null;
 };
 
 export type SessionCheckerStatus = {
@@ -1708,6 +1711,8 @@ export type SessionEvaluateResponse = {
 export type SessionRouterLatestResponse = {
   status: "ok" | string;
   evaluation: SessionRouterEvaluation | null;
+  result?: SessionRouterEvaluation | null;
+  session?: SessionRouterEvaluation | null;
 };
 
 export type StrategyEligibilityBlockedStage = {
@@ -2317,6 +2322,7 @@ export type ClosePositionReviewResponse = {
 export type ClosePositionLatestResponse = {
   status: "ok" | string;
   result: ClosePositionReviewResult | null;
+  close_review?: ClosePositionReviewResult | null;
 };
 
 export type PostTradePnlResult = {
@@ -2455,6 +2461,7 @@ export type PostTradeEvaluationResponse = {
 export type PostTradeEvaluationLatestResponse = {
   status: "ok" | string;
   result: PostTradeEvaluationResult | null;
+  post_trade_evaluation?: PostTradeEvaluationResult | null;
 };
 
 export type LearningLoopOutcome = {
@@ -2571,6 +2578,7 @@ export type LearningLoopEvaluateResponse = {
 export type LearningLoopLatestResponse = {
   status: "ok" | string;
   result: LearningLoopDecisionResult | null;
+  learning_decision?: LearningLoopDecisionResult | null;
 };
 
 export type WorkflowRunbookScope = {
@@ -2631,17 +2639,32 @@ export type WorkflowRunbookLatestSnapshot = {
   strategy_eligibility?: Record<string, unknown> | null;
   trigger_monitoring?: Record<string, unknown> | null;
   execution_planner?: Record<string, unknown> | null;
+  execution_precheck_handoff?: Record<string, unknown> | null;
   position_monitoring?: Record<string, unknown> | null;
   close_position?: Record<string, unknown> | null;
   post_trade_evaluation?: Record<string, unknown> | null;
   learning_loop?: Record<string, unknown> | null;
 } & Record<string, unknown>;
 
+export type WorkflowRunbookStageHealthRow = {
+  stage_number: number;
+  stage_name: string;
+  stage_key: string;
+  backend_status: string;
+  frontend_status: string;
+  endpoint_family: string;
+  ui_route: string;
+  latest_available: boolean;
+  safety_role: string;
+  next_action: string;
+};
+
 export type WorkflowRunbookStatusResponse = {
   status: "ok" | string;
   scope: WorkflowRunbookScope;
   summary: WorkflowRunbookSummary;
   master_gates: WorkflowRunbookMasterGates;
+  stage_health?: WorkflowRunbookStageHealthRow[];
   updated_at?: string;
 } & Record<string, unknown>;
 
@@ -2654,9 +2677,24 @@ export type WorkflowRunbookStagesResponse = {
 
 export type WorkflowRunbookLatestResponse = {
   status: "ok" | string;
-  snapshot: WorkflowRunbookLatestSnapshot | null;
+  /** Canonical backend field from GET /api/workflow-runbook/latest */
+  latest?: WorkflowRunbookLatestSnapshot | null;
+  /** Legacy alias; prefer `latest` */
+  snapshot?: WorkflowRunbookLatestSnapshot | null;
+  data_mode?: string;
+  message?: string;
   updated_at?: string;
 } & Record<string, unknown>;
+
+/** Normalize runbook latest: backend uses `latest`; older clients used `snapshot`. */
+export function getRunbookLatestBlob(
+  res: WorkflowRunbookLatestResponse | null | undefined,
+): WorkflowRunbookLatestSnapshot | null {
+  if (!res) return null;
+  const raw = res.latest ?? res.snapshot;
+  if (raw && typeof raw === "object") return raw as WorkflowRunbookLatestSnapshot;
+  return null;
+}
 
 /** Phase 5 — workflow orchestrator & operator APIs */
 export type OrchestratorRunRequest = {
@@ -3300,13 +3338,15 @@ export type RankedStrategy = {
   strategy_family: string;
   rank: number;
   strategy_score: number;
-  status: "active" | "conditional" | "disabled";
+  status: "active" | "conditional" | "disabled" | "research_candidate" | string;
   model_stack_hint: string[];
   scanner_needs: string[];
   data_needs: string[];
   reason: string;
   blockers: string[];
   warnings: string[];
+  research_candidate?: boolean;
+  production_approved?: boolean;
 };
 
 export type StrategyRankingResponse = {

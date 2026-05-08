@@ -23,5 +23,7 @@ def get_post_trade_evaluation_latest():
     latest = get_latest_evaluation()
     if latest is None:
         return {"status": "not_found", "message": "No post-trade evaluation found yet."}
-    return {"status": "ok", "post_trade_evaluation": latest.model_dump()}
+    payload = latest.model_dump()
+    # Canonical contract: {status, result}. Preserve legacy keys temporarily.
+    return {"status": "ok", "result": payload, "post_trade_evaluation": payload}
 
