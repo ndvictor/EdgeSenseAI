@@ -6,22 +6,32 @@ from app.services.model_orchestrator_service import ModelRunRequest, run_model_o
 from app.services.model_registry_service import get_model
 from app.services.model_evidence.models import ModelEvidenceCreate
 from app.services.model_evidence.service import save_model_evidence
+from app.services.model_ranker_service import ModelRankerRequest, run_model_ranker
 
 
 def select_models(*, symbol: str, asset_class: str, horizon: str, strategy_key: str | None) -> dict[str, Any]:
-    """Use existing model orchestrator + registry and persist model evidence records."""
+    """Use model registry/orchestrator and attach governed ranking output."""
+    ranker = run_model_ranker(
+        ModelRankerRequest(
+            strategy_key=strategy_key,
+            horizon=horizon,
+            asset_class=asset_class,
+            include_research_candidates=True,
+            require_owner_approved_for_selection=True,
+        )
+    )
+
     req = ModelRunRequest(
         symbols=[symbol.upper()],
         asset_class=asset_class,
         horizon="day_trade" if horizon in {"day_trading", "day_trade"} else horizon,
         source="auto",
         strategy_key=strategy_key,
-        selected_models=None,
+        selected_models=[ranker.selected_model_key] if ranker.selected_model_key else None,
         feature_rows=None,
     )
     resp = run_model_orchestrator(req)
 
-    # Persist evidence for completed + blocked + not_trained at least
     for bucket_name in ["completed_models", "blocked_models", "not_trained_models", "skipped_models"]:
         for item in resp.model_dump().get(bucket_name, []) or []:
             mk = item.get("model_key") or item.get("model") or "unknown"
@@ -49,8 +59,14 @@ def select_models(*, symbol: str, asset_class: str, horizon: str, strategy_key: 
 
     selected_model_keys = [m.get("model_key") or m.get("model") for m in (resp.completed_models or [])]
     selected_model_keys = [k for k in selected_model_keys if k]
+    if not selected_model_keys and ranker.selected_model_key:
+        selected_model_keys = [ranker.selected_model_key]
+
     next_agent = "backtest_validation_agent" if selected_model_keys else "strategy_eligibility_agent"
     return {
+        "model_ranker_run_id": ranker.run_id,
+        "selected_model_key": ranker.selected_model_key,
+        "ranked_models": [m.model_dump() for m in ranker.ranked_models],
         "selected_model_keys": selected_model_keys,
         "completed_models": resp.completed_models,
         "blocked_models": resp.blocked_models,
@@ -59,6 +75,6 @@ def select_models(*, symbol: str, asset_class: str, horizon: str, strategy_key: 
         "model_score_summary": {"completed_count": len(resp.completed_models or []), "blocked_count": len(resp.blocked_models or [])},
         "qlib_artifact_refs": [],
         "next_agent": next_agent,
-        "next_action": "Proceed to backtest/proof validation." if next_agent == "backtest_validation_agent" else "Proceed to eligibility checks (no active model evidence).",
+        "next_action": "Proceed to backtest/proof validation." if next_agent == "backtest_validation_agent" else "Proceed to eligibility checks.",
     }
 
