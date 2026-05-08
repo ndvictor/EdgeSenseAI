@@ -6,8 +6,10 @@ import {
   api,
   type MarketDataSnapshot,
   type ModelRegistryResponse,
+  type ModelSelectionResponse,
   type OrchestratorRunRecord,
   type RankedStrategy,
+  type SelectedModel,
   type StrategyRankingResponse,
   type WorkflowRunbookLatestSnapshot,
 } from "@/lib/api";
@@ -48,10 +50,54 @@ function pickSymbolFromOrchestrator(run: OrchestratorRunRecord | null): string |
   return null;
 }
 
+/** Best-effort “workflow selected” strategy for visibility (not a legal promotion). */
+function deriveWorkflowSelectedStrategy(
+  planRec: Record<string, unknown> | null,
+  modelSel: ModelSelectionResponse | null,
+  orch: OrchestratorRunRecord | null,
+): { key: string; source: string } | null {
+  if (modelSel?.strategy_key?.trim()) {
+    return { key: modelSel.strategy_key.trim(), source: "model-selection/latest → strategy_key" };
+  }
+  if (planRec) {
+    const sk = planRec.strategy_key;
+    if (typeof sk === "string" && sk.trim()) return { key: sk.trim(), source: "runbook execution_planner blob" };
+    const te = asRecord(planRec.trigger_evaluation);
+    const tsk = te?.strategy_key;
+    if (typeof tsk === "string" && tsk.trim()) return { key: tsk.trim(), source: "execution_planner.trigger_evaluation" };
+  }
+  const r = orch as Record<string, unknown> | null;
+  if (r) {
+    const sk = r.strategy_key;
+    if (typeof sk === "string" && sk.trim()) return { key: sk.trim(), source: "orchestrator run" };
+    const meta = asRecord(r.metadata);
+    const msk = meta?.strategy_key;
+    if (typeof msk === "string" && msk.trim()) return { key: msk.trim(), source: "orchestrator.metadata.strategy_key" };
+  }
+  return null;
+}
+
+function collectChosenModels(ms: ModelSelectionResponse): SelectedModel[] {
+  const buckets = [ms.selected_scanner_models, ms.selected_scoring_models, ms.selected_validation_models];
+  const out: SelectedModel[] = [];
+  for (const b of buckets) {
+    for (const m of b ?? []) {
+      if (m.selected) out.push(m);
+    }
+  }
+  return out;
+}
+
 function isStrategyRankingPayload(
   x: StrategyRankingResponse | { message: string; status: string },
 ): x is StrategyRankingResponse {
   return "ranked_strategies" in x && Array.isArray((x as StrategyRankingResponse).ranked_strategies);
+}
+
+function isModelSelectionPayload(
+  x: ModelSelectionResponse | { message: string; status: string },
+): x is ModelSelectionResponse {
+  return "strategy_key" in x && "selected_scanner_models" in x;
 }
 
 function JsonPeek({ label, data, max = 2800 }: { label: string; data: unknown; max?: number }) {
@@ -83,6 +129,8 @@ export function WorkflowVisibilityPanels({
   const [loading, setLoading] = useState(false);
   const [strategyRanking, setStrategyRanking] = useState<StrategyRankingResponse | null>(null);
   const [strategyMsg, setStrategyMsg] = useState<string | null>(null);
+  const [modelSelection, setModelSelection] = useState<ModelSelectionResponse | null>(null);
+  const [modelSelectionMsg, setModelSelectionMsg] = useState<string | null>(null);
   const [modelRegistry, setModelRegistry] = useState<ModelRegistryResponse | null>(null);
   const [modelEvidence, setModelEvidence] = useState<Record<string, unknown> | null>(null);
   const [proofStatus, setProofStatus] = useState<Record<string, unknown> | null>(null);
@@ -101,6 +149,7 @@ export function WorkflowVisibilityPanels({
       try {
         const [
           sr,
+          msel,
           mr,
           me,
           ps,
@@ -110,6 +159,7 @@ export function WorkflowVisibilityPanels({
           qsig,
         ] = await Promise.all([
           api.getLatestStrategyRanking().catch(() => null),
+          api.getLatestModelSelection().catch(() => null),
           api.getModelRunRegistry().catch(() => null),
           api.getLatestModelEvidenceRecord().catch(() => null),
           api.getProofRegistryStatus().catch(() => null),
@@ -128,6 +178,16 @@ export function WorkflowVisibilityPanels({
         } else {
           setStrategyRanking(null);
           setStrategyMsg(null);
+        }
+        if (msel && isModelSelectionPayload(msel)) {
+          setModelSelection(msel);
+          setModelSelectionMsg(null);
+        } else if (msel && "message" in msel) {
+          setModelSelection(null);
+          setModelSelectionMsg(String((msel as { message?: string }).message ?? "No model selection"));
+        } else {
+          setModelSelection(null);
+          setModelSelectionMsg(null);
         }
         setModelRegistry(mr);
         setModelEvidence(me?.record ?? null);
@@ -149,6 +209,18 @@ export function WorkflowVisibilityPanels({
   const planRec = asRecord(plan);
 
   const topRanked: RankedStrategy | undefined = strategyRanking?.ranked_strategies?.[0];
+
+  const workflowStrategy = useMemo(
+    () => deriveWorkflowSelectedStrategy(planRec, modelSelection, orchestratorRun),
+    [planRec, modelSelection, orchestratorRun],
+  );
+
+  const rankingAligns =
+    workflowStrategy && topRanked
+      ? workflowStrategy.key.toLowerCase() === topRanked.strategy_key.toLowerCase()
+      : null;
+
+  const chosenModels = modelSelection ? collectChosenModels(modelSelection) : [];
 
   const resolvedSymbol = useMemo(() => {
     const fromPlan = pickSymbolFromPlan(planRec);
@@ -193,6 +265,26 @@ export function WorkflowVisibilityPanels({
           {strategyMsg && !strategyRanking ? <p className="mt-2 text-sm text-slate-400">{strategyMsg}</p> : null}
           {strategyRanking ? (
             <div className="mt-3 space-y-2 text-sm text-slate-300">
+              <div className="rounded-lg border border-sky-500/25 bg-sky-500/10 p-3 text-xs">
+                <div className="font-semibold uppercase tracking-wide text-sky-200/90">Workflow-selected strategy (derived)</div>
+                {workflowStrategy ? (
+                  <div className="mt-2 text-slate-200">
+                    <span className="font-mono text-emerald-200/90">{workflowStrategy.key}</span>
+                    <div className="mt-1 text-[11px] text-slate-500">Source: {workflowStrategy.source}</div>
+                    {rankingAligns === true ? (
+                      <div className="mt-1 text-[11px] text-emerald-200/80">Matches top ranked strategy.</div>
+                    ) : rankingAligns === false ? (
+                      <div className="mt-1 text-[11px] text-amber-200/90">
+                        Differs from top rank ({topRanked?.strategy_key ?? "—"}); ranking is latest snapshot, not necessarily same run.
+                      </div>
+                    ) : null}
+                  </div>
+                ) : (
+                  <p className="mt-2 text-slate-500">
+                    No strategy_key yet from model-selection/latest, planner blob, or orchestrator run — see ranking below.
+                  </p>
+                )}
+              </div>
               <div className="text-xs text-slate-500">
                 run_id <span className="font-mono text-slate-400">{strategyRanking.run_id}</span> · status{" "}
                 <span className="text-slate-200">{strategyRanking.status}</span>
@@ -217,11 +309,56 @@ export function WorkflowVisibilityPanels({
         </div>
 
         <div className={panelClass}>
-          <h3 className="text-xs font-semibold uppercase tracking-[0.2em] text-slate-500">Model registry & evidence</h3>
+          <h3 className="text-xs font-semibold uppercase tracking-[0.2em] text-slate-500">Model selection, registry & evidence</h3>
           <p className="mt-1 text-xs text-slate-500">
-            Registry: <code className="text-emerald-200/80">GET /api/model-runs/registry</code> · Latest evidence:{" "}
+            Selection: <code className="text-emerald-200/80">GET /api/model-selection/latest</code> · Registry:{" "}
+            <code className="text-emerald-200/80">GET /api/model-runs/registry</code> · Evidence:{" "}
             <code className="text-emerald-200/80">GET /api/model-evidence/latest</code>
           </p>
+          {modelSelectionMsg && !modelSelection ? (
+            <p className="mt-2 text-xs text-slate-500">{modelSelectionMsg}</p>
+          ) : null}
+          {modelSelection ? (
+            <div className="mt-3 space-y-2 rounded-lg border border-violet-500/20 bg-violet-500/10 p-3 text-xs">
+              <div className="text-[10px] font-semibold uppercase tracking-wide text-violet-200/90">Latest model selection</div>
+              <div>
+                <span className="text-slate-500">strategy_key</span>{" "}
+                <span className="font-mono text-slate-200">{modelSelection.strategy_key}</span> ·{" "}
+                <span className="text-slate-500">status</span> <span className="text-slate-200">{modelSelection.status}</span>
+              </div>
+              <div className="text-slate-400">{modelSelection.reason}</div>
+              {(modelSelection.blockers?.length ?? 0) > 0 ? (
+                <div className="text-[11px] text-red-200/90">Blockers: {modelSelection.blockers.join("; ")}</div>
+              ) : null}
+              <div className="text-[11px] text-slate-500">
+                Selected models (selected=true):{" "}
+                {chosenModels.length ? (
+                  <ul className="mt-1 list-inside list-disc text-slate-300">
+                    {chosenModels.map((m) => (
+                      <li key={`${m.model_key}-${m.model_type}`}>
+                        <span className="font-mono text-emerald-200/80">{m.model_key}</span> ({m.model_type}) — {m.reason}
+                      </li>
+                    ))}
+                  </ul>
+                ) : (
+                  <span className="text-slate-500">none flagged selected in payload.</span>
+                )}
+              </div>
+              {(modelSelection.skipped_models?.length ?? 0) > 0 ? (
+                <details className="text-[11px] text-slate-500">
+                  <summary className="cursor-pointer text-slate-400">Skipped models ({modelSelection.skipped_models.length})</summary>
+                  <ul className="mt-1 max-h-32 overflow-auto font-mono text-[10px] text-slate-400">
+                    {modelSelection.skipped_models.map((m) => (
+                      <li key={`skip-${m.model_key}`}>
+                        {m.model_key}: {m.skip_reason ?? m.reason}
+                      </li>
+                    ))}
+                  </ul>
+                </details>
+              ) : null}
+              <JsonPeek label="Full model-selection JSON" data={modelSelection} max={2400} />
+            </div>
+          ) : null}
           {modelRegistry ? (
             <div className="mt-3 text-xs text-slate-400">
               <span className="text-slate-300">{modelRegistry.available_model_count ?? modelRegistry.models?.length ?? 0}</span>{" "}
@@ -284,7 +421,8 @@ export function WorkflowVisibilityPanels({
       <div className={panelClass}>
         <h3 className="text-xs font-semibold uppercase tracking-[0.2em] text-slate-500">Final trade decision (read-only composer)</h3>
         <p className="mt-1 text-xs text-slate-500">
-          Composed from execution planner latest blob, top strategy ranking, model evidence summary, and a market snapshot.{" "}
+          Composed from execution planner latest blob, derived workflow strategy (model-selection / planner / orchestrator), strategy ranking,
+          model stack, evidence, and a market snapshot.{" "}
           <span className="font-medium text-slate-300">Paper-first; no order submit</span> from this page.
         </p>
         <div className="mt-4 grid gap-3 md:grid-cols-2">
