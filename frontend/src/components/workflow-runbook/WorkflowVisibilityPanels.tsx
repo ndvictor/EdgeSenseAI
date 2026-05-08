@@ -135,7 +135,7 @@ function isModelSelectionPayload(
 function JsonPeek({ label, data, max = 2800 }: { label: string; data: unknown; max?: number }) {
   const raw = useMemo(() => {
     try {
-      return JSON.stringify(data, null, 2);
+      return JSON.stringify(data, null, 2) ?? "";
     } catch {
       return String(data);
     }
