@@ -165,7 +165,11 @@ def run_wrapped_agent(*, agent_key: str, inputs: dict[str, Any], context: dict[s
         from app.services.strategy_eligibility.service import check_strategy_eligibility
 
         default_req = {
-            "workflow_context": {"selected_workflow": "baseline_fast_path", "workflow_mode": "baseline"},
+            "workflow_context": {
+                "selected_workflow": "baseline_fast_path",
+                "workflow_mode": "baseline",
+                "session": "market_open",
+            },
             "strategy_candidate": {
                 "strategy_key": "regime_aware_momentum_catalyst",
                 "strategy_group": "regime_aware_momentum",
@@ -182,9 +186,30 @@ def run_wrapped_agent(*, agent_key: str, inputs: dict[str, Any], context: dict[s
                 "urgency": "high",
             },
             "account_state": {"risk_budget_available": True, "paper_trading_enabled": True, "live_trading_enabled": False, "human_approval_required": True},
-            "features": {"has_news_catalyst": True, "relative_volume": 2.2, "atr_percent": 2.1},
+            "features": {
+                "rvol_elevated": True,
+                "price_above_vwap": True,
+                "vwap_reclaiming": False,
+                "relative_strength_positive": True,
+                "catalyst_confirmed": True,
+                "volume_confirms": False,
+                "spread_pass": True,
+                "risk_reward_pass": True,
+            },
         }
-        req = StrategyEligibilityCheckRequest.model_validate(s.get("request", default_req) if isinstance(s.get("request"), dict) else default_req)
+        raw = s.get("request") if isinstance(s.get("request"), dict) else None
+        if raw:
+            merged = {**default_req, **raw}
+            dwc = dict(default_req.get("workflow_context") or {})
+            rwc = raw.get("workflow_context") if isinstance(raw.get("workflow_context"), dict) else {}
+            merged["workflow_context"] = {**dwc, **rwc}
+            df = dict(default_req.get("features") or {})
+            rf = raw.get("features") if isinstance(raw.get("features"), dict) else {}
+            merged["features"] = {**df, **rf}
+            req_payload = merged
+        else:
+            req_payload = default_req
+        req = StrategyEligibilityCheckRequest.model_validate(req_payload)
         resp = check_strategy_eligibility(req)
         return {
             "tool_name": "strategy_eligibility.check_strategy_eligibility",
@@ -198,28 +223,54 @@ def run_wrapped_agent(*, agent_key: str, inputs: dict[str, Any], context: dict[s
         from app.services.trigger_monitoring.models import TriggerMonitoringEvaluateRequest
         from app.services.trigger_monitoring.service import evaluate_trigger
 
+        sym = "AMD"
+        if isinstance(s.get("symbols"), list) and s["symbols"]:
+            sym = str(s["symbols"][0]).upper()
+
         default_req = {
-            "strategy_eligibility": {
+            "workflow_context": {
+                "selected_workflow": "baseline_fast_path",
+                "workflow_mode": "baseline",
+                "session": "market_open",
+            },
+            "eligibility_context": {
                 "eligible": True,
                 "eligibility_status": "eligible",
-                "reason": "phase2_default",
-                "blockers": [],
-                "warnings": [],
+                "strategy_key": "regime_aware_momentum_catalyst",
+                "strategy_group": "regime_aware_momentum",
             },
-            "trigger": {
-                "trigger_key": "rvol_vwap_breakout_confirm",
-                "symbol": "AMD",
+            "trigger_candidate": {
+                "symbol": sym,
                 "asset_class": "stock",
                 "horizon": "day_trading",
-                "armed_at": "2026-05-07T09:55:00-05:00",
+                "trigger_key": "rvol_vwap_breakout_confirm",
+                "created_at": "2026-05-07T09:55:00-05:00",
                 "expires_at": "2026-05-07T10:30:00-05:00",
-                "current_time": "2026-05-07T10:00:00-05:00",
-                "fired": True,
-                "invalidated": False,
+                "trigger_price": 150.0,
+                "current_price": 151.20,
+                "vwap": 150.5,
             },
-            "market_snapshot": {"price": 151.20, "spread_bps": 2.0, "data_quality": "pass"},
+            "current_state": {
+                "evaluated_at": "2026-05-07T10:00:00-05:00",
+                "data_quality": "pass",
+                "spread_pass": True,
+                "volume_confirms": True,
+                "price_above_trigger": True,
+                "price_above_vwap": True,
+                "invalidation_hit": False,
+            },
         }
-        req = TriggerMonitoringEvaluateRequest.model_validate(s.get("request", default_req) if isinstance(s.get("request"), dict) else default_req)
+        raw = s.get("request") if isinstance(s.get("request"), dict) else None
+        if raw:
+            merged = {**default_req, **raw}
+            for key in ("workflow_context", "eligibility_context", "trigger_candidate", "current_state"):
+                d = dict(default_req.get(key) or {})
+                r = raw.get(key) if isinstance(raw.get(key), dict) else {}
+                merged[key] = {**d, **r}
+            req_payload = merged
+        else:
+            req_payload = default_req
+        req = TriggerMonitoringEvaluateRequest.model_validate(req_payload)
         resp = evaluate_trigger(req)
         # If fired, proceed to execution planner
         fired = False
@@ -238,48 +289,57 @@ def run_wrapped_agent(*, agent_key: str, inputs: dict[str, Any], context: dict[s
         from app.services.execution_planner.models import ExecutionPlannerPlanRequest
         from app.services.execution_planner.service import plan_execution
 
+        sym = "AMD"
+        if isinstance(s.get("symbols"), list) and s["symbols"]:
+            sym = str(s["symbols"][0]).upper()
+
         default_req = {
             "trigger_evaluation": {
-                "evaluation_id": "tm_sample",
-                "symbol": "AMD",
+                "trigger_state": "fired",
+                "symbol": sym,
                 "asset_class": "stock",
                 "horizon": "day_trading",
                 "trigger_key": "rvol_vwap_breakout_confirm",
-                "trigger_state": "fired",
-                "trigger_fired_at": "2026-05-07T10:00:00-05:00",
-                "eligibility": {"eligible": True, "eligibility_status": "eligible", "reason": "phase2_default", "blockers": [], "warnings": []},
-                "blockers": [],
-                "warnings": [],
-                "allowed_next_stages": ["execution_planner"],
-                "blocked_next_stages": [],
-                "next_action": "Plan execution.",
-                "created_at": "2026-05-07T10:00:00-05:00",
             },
             "market_snapshot": {
-                "symbol": "AMD",
-                "price": 151.20,
+                "current_price": 151.20,
+                "vwap": 150.5,
                 "atr": 2.3,
-                "spread_bps": 2.0,
-                "data_quality": "pass",
+                "bid": 151.15,
+                "ask": 151.25,
+                "spread_percent": 0.02,
+                "volume_confirms": True,
             },
             "account_state": {
-                "account_equity": 10000,
-                "buying_power": 10000,
-                "paper_trading_enabled": True,
-                "live_trading_enabled": False,
+                "account_equity": 10000.0,
+                "cash": 10000.0,
                 "risk_budget_available": True,
                 "max_risk_per_trade_percent": 1.0,
                 "max_position_size_percent": 20.0,
-                "min_reward_risk_ratio": 1.5,
-                "execution_enabled": True,
-                "broker_execution_enabled": False,
+                "paper_trading_enabled": True,
+                "live_trading_enabled": False,
                 "human_approval_required": True,
-                "emergency_stop": False,
-                "force_close_requested": False,
+                "execution_enabled": True,
             },
-            "planning_preferences": {"order_style": "market", "allow_submit": False},
+            "planning_preferences": {
+                "order_style": "limit",
+                "stop_method": "atr",
+                "target_reward_risk": 2.0,
+                "atr_stop_multiplier": 1.0,
+                "max_spread_percent": 0.15,
+            },
         }
-        req = ExecutionPlannerPlanRequest.model_validate(s.get("request", default_req) if isinstance(s.get("request"), dict) else default_req)
+        raw = s.get("request") if isinstance(s.get("request"), dict) else None
+        if raw:
+            merged = {**default_req, **raw}
+            for key in ("trigger_evaluation", "market_snapshot", "account_state", "planning_preferences"):
+                d = dict(default_req.get(key) or {})
+                r = raw.get(key) if isinstance(raw.get(key), dict) else {}
+                merged[key] = {**d, **r}
+            req_payload = merged
+        else:
+            req_payload = default_req
+        req = ExecutionPlannerPlanRequest.model_validate(req_payload)
         resp = plan_execution(req)
         return {
             "tool_name": "execution_planner.plan_execution",

@@ -415,6 +415,6 @@ def get_platform_readiness_status() -> dict[str, Any]:
         "updated_at": datetime.now(timezone.utc).isoformat(),
         "systems": systems,
         "missing_backend_components": missing_backend_components,
-        "missing_frontend_components": ["workflow_dashboard_phase5", "approval_queue_ui_phase5"],
-        "next_action": "Phase 5: build frontend dashboards for orchestrator, approvals, audit, scheduler.",
+        "missing_frontend_components": [],
+        "next_action": "Core operator UIs shipped (Phase 5–6). Use GET /api/final-readiness/status for completion rollup.",
     }

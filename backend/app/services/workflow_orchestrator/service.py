@@ -192,6 +192,8 @@ def run_workflow(body: OrchestratorRunRequest) -> OrchestratorRunResponse:
             break
 
         req_inputs: dict[str, Any] = {"asset_class": body.asset_class, "horizon": body.horizon, "symbols": body.symbols}
+        # Dry-run orchestrator: deterministic mock market data only (no yfinance/broker; avoids CI rate limits).
+        req_inputs["source"] = "mock" if body.dry_run else (body.source or "auto")
         if body.strategy_key:
             req_inputs["strategy_key"] = body.strategy_key
         # Hard safety overrides

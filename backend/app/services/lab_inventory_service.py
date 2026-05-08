@@ -461,7 +461,7 @@ _UNITS_SPEC: list[tuple[str, list[int] | Literal["all"], str, bool, str, bool, s
         "Validate universe filters with discovery and selection services.",
     ),
     (
-        "Watchlist builder agent",
+        "Watchlist Builder Agent",
         [6],
         "AI-Agent no LLM",
         True,
@@ -991,6 +991,276 @@ _UNITS_SPEC: list[tuple[str, list[int] | Literal["all"], str, bool, str, bool, s
         "Phase 0/1 foundation: shared agent contracts, registry, workflow run records, agent run traces, and idempotency. Does not execute tools until Phase 2 wrappers.",
         "Implement Phase 2 agent wrappers that call stage services safely.",
     ),
+    (
+        "Agent Wrapper Runtime",
+        "all",
+        "Python Script",
+        True,
+        "present_partial",
+        False,
+        "Phase 2 deterministic wrappers calling Stage 3–14 services via agent-runtime with safety enforcement.",
+        "Tracked with Agent Runtime Foundation and /agent-runtime UI.",
+    ),
+    (
+        "Agent Runtime Persistence",
+        "all",
+        "Python Script",
+        True,
+        "present_partial",
+        False,
+        "Postgres source of truth when available; Redis hot state; memory fallback.",
+        "See agent-runtime persistence_mode in status.",
+    ),
+    (
+        "Glue Agent Runtime",
+        "all",
+        "Orchestrator",
+        True,
+        "present_partial",
+        False,
+        "Phase 3 glue agents (data readiness, market condition, watchlist, strategy/model selection, backtest validation, Qlib research) dispatched via agent-runtime.",
+        "Inventory rollup for glue layer; individual agents also listed.",
+    ),
+    (
+        "Data Readiness Agent",
+        "all",
+        "AI-Agent no LLM",
+        True,
+        "present_partial",
+        False,
+        "Validate upstream data and readiness gates before strategy and execution stages.",
+        "Phase 3 glue agent; deterministic tool calls via agent-runtime.",
+    ),
+    (
+        "Market Condition Agent",
+        "all",
+        "AI-Agent no LLM",
+        True,
+        "present_partial",
+        False,
+        "Summarize regime and session context for routing and selection.",
+        "Phase 3 glue agent; deterministic tool calls via agent-runtime.",
+    ),
+    (
+        "Strategy Selection Agent",
+        "all",
+        "AI-Agent no LLM",
+        True,
+        "present_partial",
+        False,
+        "Choose strategy candidates using rules and evidence (no LLM).",
+        "Phase 3 glue agent; deterministic tool calls via agent-runtime.",
+    ),
+    (
+        "Model Selection Agent",
+        "all",
+        "AI-Agent no LLM",
+        True,
+        "present_partial",
+        False,
+        "Select model candidates for scoring and validation steps.",
+        "Phase 3 glue agent; deterministic tool calls via agent-runtime.",
+    ),
+    (
+        "Backtest Validation Agent",
+        "all",
+        "AI-Agent no LLM",
+        True,
+        "present_partial",
+        False,
+        "Validate backtest artifacts and proof requirements.",
+        "Phase 3 glue agent; deterministic tool calls via agent-runtime.",
+    ),
+    (
+        "Qlib Research Agent",
+        "all",
+        "AI-Agent no LLM",
+        True,
+        "present_partial",
+        False,
+        "Orchestrate Qlib research tasks; artifacts only (no order submission).",
+        "Phase 3 glue agent; safe when Qlib runtime is unavailable.",
+    ),
+    (
+        "Proof Registry",
+        "all",
+        "Python Script",
+        True,
+        "present_partial",
+        False,
+        "Register and query workflow proof artifacts for gating.",
+        "Research and audit visibility; no execution authority.",
+    ),
+    (
+        "Model Evidence Registry",
+        "all",
+        "Python Script",
+        True,
+        "present_partial",
+        False,
+        "Store model evidence metadata for strategy and research review.",
+        "Research-only artifacts; no live promotion automation.",
+    ),
+    (
+        "Strategy Evidence Registry",
+        "all",
+        "Python Script",
+        True,
+        "present_partial",
+        False,
+        "Store strategy evidence metadata for eligibility and review.",
+        "Research-only artifacts; no live promotion automation.",
+    ),
+    (
+        "WorkflowOrchestratorAgent",
+        "all",
+        "Orchestrator",
+        True,
+        "present_partial",
+        False,
+        "Coordinates stage agents with dry-run defaults, governance, and approval boundaries.",
+        "Paper-first; no default broker submit; no LLM decisioning.",
+    ),
+    (
+        "Workflow Run Backend",
+        "all",
+        "Python Script",
+        True,
+        "present_partial",
+        False,
+        "POST /api/workflow-orchestrator/run and related run control endpoints.",
+        "Execution gated; human approval at boundary when required.",
+    ),
+    (
+        "Approval Queue Backend",
+        "all",
+        "Python Script",
+        True,
+        "present_partial",
+        False,
+        "Persist and resolve human approvals at execution boundaries.",
+        "Approve/reject does not submit broker orders.",
+    ),
+    (
+        "Audit Log Backend",
+        "all",
+        "Python Script",
+        True,
+        "present_partial",
+        False,
+        "Append-only workflow audit events for operator review.",
+        "Source of truth in Postgres when configured.",
+    ),
+    (
+        "Workflow Scheduler Backend",
+        "all",
+        "Python Script",
+        True,
+        "present_partial",
+        False,
+        "Schedule and run-once orchestrator invocations with safe defaults.",
+        "Run-once forces dry_run and blocks submit paths.",
+    ),
+    (
+        "Workflow Governance Backend",
+        "all",
+        "Python Script",
+        True,
+        "present_partial",
+        False,
+        "Central governance checks (asset class, live trading, submit gates).",
+        "Blocks crypto and unsafe submit in default configuration.",
+    ),
+    (
+        "Platform Readiness Backend",
+        "all",
+        "Python Script",
+        True,
+        "present_partial",
+        False,
+        "Aggregated readiness for DB, agent runtime, orchestrator, Qlib, and evidence services.",
+        "See /api/platform-readiness/status and /api/final-readiness/status.",
+    ),
+    (
+        "UI Workflow Dashboard",
+        "all",
+        "UI Component",
+        True,
+        "present_partial",
+        False,
+        "Operator workflow runbook: safe orchestrator preview, trace, and run controls (no broker submit).",
+        "Phase 6: Next.js /workflow-runbook.",
+    ),
+    (
+        "Workflow Run Frontend",
+        "all",
+        "UI Component",
+        True,
+        "present_partial",
+        False,
+        "Same surface as UI Workflow Dashboard; orchestrator run panel and stage catalog.",
+        "Shipped under /workflow-runbook.",
+    ),
+    (
+        "Approval Queue Frontend",
+        "all",
+        "UI Component",
+        True,
+        "present_partial",
+        False,
+        "Human approval queue UI (handoff only; no order submit).",
+        "Phase 5: /approval-queue.",
+    ),
+    (
+        "Audit Log Frontend",
+        "all",
+        "UI Component",
+        True,
+        "present_partial",
+        False,
+        "Workflow audit visibility.",
+        "Phase 5: /audit-log.",
+    ),
+    (
+        "Workflow Scheduler Frontend",
+        "all",
+        "UI Component",
+        True,
+        "present_partial",
+        False,
+        "Dry-run scheduler UI.",
+        "Phase 5: /workflow-scheduler.",
+    ),
+    (
+        "Workflow Governance Frontend",
+        "all",
+        "UI Component",
+        True,
+        "present_partial",
+        False,
+        "Governance check UI.",
+        "Phase 5: /workflow-governance.",
+    ),
+    (
+        "Platform Readiness Frontend",
+        "all",
+        "UI Component",
+        True,
+        "present_partial",
+        False,
+        "Environment + Phase 4 operational spine UI.",
+        "Phase 5–6: /platform-readiness.",
+    ),
+    (
+        "Research Evidence Frontend",
+        "all",
+        "UI Component",
+        True,
+        "present_partial",
+        False,
+        "Qlib + evidence registries UI (research only).",
+        "Phase 5: /research-evidence.",
+    ),
 ]
 
 
@@ -1060,7 +1330,10 @@ def _apply_inventory_overrides(units: list[dict[str, Any]]) -> None:
             u["test_status"] = test
             u["tested_status"] = "tested" if test == "tested" else "unknown"
         if implementation_status is not None:
-            u["implementation_status"] = _coerce_status(implementation_status)
+            st_impl = _coerce_status(implementation_status)
+            u["implementation_status"] = st_impl
+            u["status"] = st_impl
+            u["status_label"] = STATUS_LABELS[st_impl]
         if route is not None:
             u["route"] = route
         if endpoint_family is not None:
@@ -1118,26 +1391,26 @@ def _apply_inventory_overrides(units: list[dict[str, Any]]) -> None:
             notes=["Reconciled: backend+frontend+contract tests present (v1)."],
         )
 
-    # Workflow runbook: backend + tests only (frontend not implemented here)
+    # Workflow runbook: backend + operator UI (Phase 5–6).
     apply(
         "Workflow Runbook aggregator",
         backend="present",
-        frontend="missing",
+        frontend="present",
         test="tested",
         implementation_status="present_partial",
-        route=None,
+        route="/workflow-runbook",
         endpoint_family="/api/workflow-runbook",
-        notes=["Backend runbook endpoints added; frontend dashboard not yet built."],
+        notes=["Backend runbook + Next.js /workflow-runbook operator UI."],
     )
 
-    # Agent runtime foundation: backend + tests only; no frontend in this pass.
+    # Agent runtime: operator UI Phase 5 (/agent-runtime).
     apply(
         "Agent Runtime Foundation",
         backend="present",
-        frontend="missing",
+        frontend="present",
         test="tested",
         implementation_status="present_partial",
-        route=None,
+        route="/agent-runtime",
         endpoint_family="/api/agent-runtime",
         notes=[
             "Phase 0/1/2: contracts + deterministic tool-calling wrappers + traces + idempotency.",
@@ -1150,10 +1423,10 @@ def _apply_inventory_overrides(units: list[dict[str, Any]]) -> None:
     apply(
         "Agent Wrapper Runtime",
         backend="present",
-        frontend="missing",
+        frontend="present",
         test="tested",
         implementation_status="present_partial",
-        route=None,
+        route="/agent-runtime",
         endpoint_family="/api/agent-runtime",
         notes=[
             "Phase 2: wraps Stage 3/5/7/8/9/11/12/13/14 services as tool-calling deterministic agents.",
@@ -1198,8 +1471,46 @@ def _apply_inventory_overrides(units: list[dict[str, Any]]) -> None:
             test="tested",
             implementation_status="present_partial",
             route=None,
-            endpoint_family="/api/agent-runtime" if "Agent" in name else ("/api/qlib" if "Qlib" in name else None),
-            notes=["Phase 3: backend adapters/registries added; frontend deferred."],
+            endpoint_family="/api/proof-registry"
+            if "Proof" in name
+            else "/api/model-evidence"
+            if "Model Evidence" in name
+            else "/api/strategy-evidence"
+            if "Strategy Evidence" in name
+            else ("/api/qlib" if "Qlib" in name else "/api/agent-runtime"),
+            notes=["Phase 3 backend complete; research UI covered by /research-evidence (Phase 5)."],
+        )
+
+    apply(
+        "Glue Agent Runtime",
+        backend="present",
+        frontend="present",
+        test="tested",
+        implementation_status="present_partial",
+        route="/agent-runtime",
+        endpoint_family="/api/agent-runtime",
+        notes=["Phase 3 glue agents registered and dispatched via agent-runtime wrappers."],
+    )
+
+    for ui_name, ui_route in [
+        ("UI Workflow Dashboard", "/workflow-runbook"),
+        ("Workflow Run Frontend", "/workflow-runbook"),
+        ("Approval Queue Frontend", "/approval-queue"),
+        ("Audit Log Frontend", "/audit-log"),
+        ("Workflow Scheduler Frontend", "/workflow-scheduler"),
+        ("Workflow Governance Frontend", "/workflow-governance"),
+        ("Platform Readiness Frontend", "/platform-readiness"),
+        ("Research Evidence Frontend", "/research-evidence"),
+    ]:
+        apply(
+            ui_name,
+            backend="present",
+            frontend="present",
+            test="tested",
+            implementation_status="present_partial",
+            route=ui_route,
+            endpoint_family=None,
+            notes=["Phase 5 Next.js operator surface (paper-first; no broker submit from these pages)."],
         )
 
     # Phase 4 backend platform units
@@ -1260,7 +1571,7 @@ def _summarize_units(units: list[dict[str, Any]]) -> dict[str, Any]:
         "ready_for_frontend_count": ready_for_frontend_count,
         "needs_backend_count": needs_backend_count,
         "needs_frontend_count": needs_frontend_count,
-        "next_action": "Review Strategy Ranker, Model Ranker, Stage 2 data quality integration, Stage 4 market condition scanner, and Stage 6 watchlist builder.",
+        "next_action": "Core AI-agent workflow platform is complete for paper-first operation. Review production deployment, live-broker certification, and optional scale hardening before enabling live trading.",
     }
 
 
