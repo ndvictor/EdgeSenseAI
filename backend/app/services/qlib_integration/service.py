@@ -1,6 +1,10 @@
 from __future__ import annotations
 
+import os
+import shutil
+import subprocess
 from datetime import datetime, timezone
+from typing import Any
 
 from app.services.qlib_integration.models import (
     QlibArtifactCreate,
@@ -14,6 +18,7 @@ from app.services.qlib_integration.models import (
 )
 
 _MEMORY: dict[str, QlibArtifactOut] = {}
+_JOB_MEMORY: dict[str, dict[str, Any]] = {}
 
 
 def _db_session():
@@ -36,7 +41,6 @@ def _dt_to_iso(dt: datetime | None) -> str:
 
 
 def _probe_qlib() -> tuple[bool, str | None, list[str]]:
-    """Detect Qlib availability without requiring it for startup/tests."""
     try:
         import importlib
 
@@ -47,14 +51,53 @@ def _probe_qlib() -> tuple[bool, str | None, list[str]]:
         return False, None, [f"qlib_unavailable: {exc}"]
 
 
-def get_qlib_status() -> QlibStatusResponse:
+def _qlib_runner_status() -> dict[str, Any]:
     available, version, blockers = _probe_qlib()
+    qrun_path = shutil.which("qrun")
+    config_path = os.getenv("QLIB_DEFAULT_CONFIG_PATH")
+    provider_uri = os.getenv("QLIB_PROVIDER_URI")
+    execution_enabled = os.getenv("QLIB_EXECUTION_ENABLED", "false").lower() in {"1", "true", "yes", "on"}
+
+    runner_blockers = list(blockers)
+    if not execution_enabled:
+        runner_blockers.append("qlib_execution_disabled")
+    if not qrun_path:
+        runner_blockers.append("qrun_not_found")
+    if not config_path:
+        runner_blockers.append("qlib_default_config_path_missing")
+    elif not os.path.exists(config_path):
+        runner_blockers.append("qlib_default_config_path_not_found")
+    if not provider_uri:
+        runner_blockers.append("qlib_provider_uri_missing")
+
+    return {
+        "qlib_available": available,
+        "qlib_version": version,
+        "qrun_path": qrun_path,
+        "default_config_path": config_path,
+        "provider_uri": provider_uri,
+        "execution_enabled": execution_enabled,
+        "execution_ready": bool(available and qrun_path and config_path and os.path.exists(config_path) and provider_uri and execution_enabled),
+        "blockers": runner_blockers,
+    }
+
+
+def get_qlib_status() -> QlibStatusResponse:
+    runner = _qlib_runner_status()
     return QlibStatusResponse(
         updated_at=iso_utc_now(),
-        qlib_available=bool(available),
-        qlib_version=version,
-        summary={"artifacts_cached": len(_MEMORY)},
-        blockers=blockers,
+        qlib_available=bool(runner["qlib_available"]),
+        qlib_version=runner["qlib_version"],
+        summary={
+            "artifacts_cached": len(_MEMORY),
+            "jobs_cached": len(_JOB_MEMORY),
+            "execution_ready": runner["execution_ready"],
+            "execution_enabled": runner["execution_enabled"],
+            "qrun_path": runner["qrun_path"],
+            "default_config_path": runner["default_config_path"],
+            "provider_uri_configured": bool(runner["provider_uri"]),
+        },
+        blockers=list(runner["blockers"]),
         warnings=[],
     )
 
@@ -199,9 +242,59 @@ def save_signal_scores(body: QlibSignalScoreCreate) -> QlibArtifactOut:
     )
 
 
+def _proof_status_from_metrics(metrics: dict[str, Any], blockers: list[str]) -> str:
+    if blockers:
+        return "blocked"
+    sharpe = metrics.get("sharpe") or metrics.get("sharpe_ratio") or metrics.get("net_sharpe")
+    max_dd = metrics.get("max_drawdown_r") or metrics.get("max_drawdown")
+    try:
+        sharpe_ok = float(sharpe) >= 0.5 if sharpe is not None else False
+    except Exception:
+        sharpe_ok = False
+    try:
+        dd_ok = abs(float(max_dd)) <= 3.0 if max_dd is not None else True
+    except Exception:
+        dd_ok = True
+    return "passed" if sharpe_ok and dd_ok else "needs_review"
+
+
+def _link_backtest_to_proof(artifact: QlibArtifactOut) -> dict[str, Any] | None:
+    try:
+        from app.services.proof_registry.models import ProofRegistryRecordCreate
+        from app.services.proof_registry.service import save_proof_record
+
+        metrics = artifact.metrics or {}
+        proof = save_proof_record(
+            ProofRegistryRecordCreate(
+                symbol=artifact.symbol or "MULTI",
+                asset_class=artifact.asset_class,
+                horizon=artifact.horizon,
+                strategy_key=artifact.strategy_key or "unknown_strategy",
+                model_key=artifact.model_key,
+                proof_type="qlib_backtest",
+                proof_status=_proof_status_from_metrics(metrics, artifact.blockers),
+                sample_size=int(metrics.get("sample_size") or metrics.get("trades") or 0),
+                win_rate=float(metrics.get("win_rate") or 0.0),
+                avg_r_multiple=float(metrics.get("avg_r_multiple") or 0.0),
+                sharpe_ratio=metrics.get("sharpe_ratio") or metrics.get("sharpe") or metrics.get("net_sharpe"),
+                max_drawdown_r=metrics.get("max_drawdown_r") or metrics.get("max_drawdown"),
+                slippage_fail_rate=metrics.get("slippage_fail_rate"),
+                rule_violation_rate=metrics.get("rule_violation_rate"),
+                backtest_run_id=artifact.artifact_id,
+                source="qlib_integration",
+                evidence={"qlib_artifact_id": artifact.artifact_id, "artifact_path": artifact.artifact_path, "metadata": artifact.metadata},
+                blockers=artifact.blockers,
+                warnings=artifact.warnings,
+            )
+        )
+        return proof.model_dump()
+    except Exception as exc:
+        return {"status": "proof_link_failed", "error": str(exc)}
+
+
 def record_backtest_artifact(body: QlibBacktestRecordCreate) -> QlibArtifactOut:
     available, version, blockers = _probe_qlib()
-    return record_artifact(
+    artifact = record_artifact(
         QlibArtifactCreate(
             artifact_id=body.artifact_id or new_artifact_id("qb"),
             artifact_type="backtest",
@@ -221,6 +314,10 @@ def record_backtest_artifact(body: QlibBacktestRecordCreate) -> QlibArtifactOut:
             warnings=[],
         )
     )
+    proof = _link_backtest_to_proof(artifact)
+    if proof:
+        artifact.metadata["proof_record"] = proof
+    return artifact
 
 
 def register_model_artifact(body: QlibModelArtifactRegisterCreate) -> QlibArtifactOut:
@@ -247,34 +344,126 @@ def register_model_artifact(body: QlibModelArtifactRegisterCreate) -> QlibArtifa
     )
 
 
-# -----------------------------
-# Phase 4 controlled automation
-# -----------------------------
 def get_qlib_automation_status() -> dict[str, Any]:
     st = get_qlib_status()
+    summary = dict(st.summary or {})
     return {
         "status": "ok",
         "qlib_available": bool(st.qlib_available),
         "qlib_version": st.qlib_version,
-        "message": "Qlib automation is metadata-only in Phase 4 (no heavy jobs).",
+        "execution_mode": "ready" if summary.get("execution_ready") else "blocked",
+        "execution_ready": bool(summary.get("execution_ready")),
+        "execution_enabled": bool(summary.get("execution_enabled")),
+        "jobs_cached": len(_JOB_MEMORY),
         "blockers": st.blockers,
         "warnings": st.warnings,
     }
 
 
+def _new_job_id(prefix: str = "qjob") -> str:
+    return f"{prefix}_{datetime.now(timezone.utc).strftime('%Y%m%d%H%M%S')}_{len(_JOB_MEMORY)+1}"
+
+
+def list_qlib_jobs(limit: int = 50) -> list[dict[str, Any]]:
+    return list(_JOB_MEMORY.values())[-limit:]
+
+
+def get_qlib_job(job_id: str) -> dict[str, Any] | None:
+    return _JOB_MEMORY.get(job_id)
+
+
+def _blocked_job(job_type: str, payload: dict[str, Any], blockers: list[str]) -> dict[str, Any]:
+    job_id = _new_job_id("qblocked")
+    job = {
+        "job_id": job_id,
+        "job_type": job_type,
+        "status": "blocked",
+        "execution_mode": "blocked",
+        "payload": payload,
+        "blockers": blockers,
+        "warnings": [],
+        "artifact": None,
+        "proof_record": None,
+        "created_at": iso_utc_now(),
+        "completed_at": iso_utc_now(),
+    }
+    _JOB_MEMORY[job_id] = job
+    return job
+
+
+def _run_qrun_job(job_type: str, payload: dict[str, Any]) -> dict[str, Any]:
+    runner = _qlib_runner_status()
+    if not runner["execution_ready"]:
+        return _blocked_job(job_type, payload, list(runner["blockers"]))
+
+    config_path = str(payload.get("config_path") or runner["default_config_path"])
+    timeout_seconds = int(payload.get("timeout_seconds") or os.getenv("QLIB_JOB_TIMEOUT_SECONDS", "300"))
+    job_id = _new_job_id("qrun")
+    started_at = iso_utc_now()
+    job = {
+        "job_id": job_id,
+        "job_type": job_type,
+        "status": "running",
+        "execution_mode": "qrun",
+        "payload": payload,
+        "blockers": [],
+        "warnings": [],
+        "artifact": None,
+        "proof_record": None,
+        "created_at": started_at,
+        "completed_at": None,
+    }
+    _JOB_MEMORY[job_id] = job
+
+    try:
+        proc = subprocess.run(
+            [str(runner["qrun_path"]), config_path],
+            capture_output=True,
+            text=True,
+            timeout=timeout_seconds,
+            check=False,
+        )
+        metrics = {
+            "returncode": proc.returncode,
+            "stdout_tail": (proc.stdout or "")[-4000:],
+            "stderr_tail": (proc.stderr or "")[-4000:],
+        }
+        artifact_status = "completed" if proc.returncode == 0 else "failed"
+        artifact = record_artifact(
+            QlibArtifactCreate(
+                artifact_id=payload.get("artifact_id") or new_artifact_id("qj"),
+                artifact_type="backtest" if job_type == "backtest" else "signal_scores",
+                model_key=payload.get("model_key"),
+                strategy_key=payload.get("strategy_key"),
+                symbol=payload.get("symbol"),
+                asset_class=payload.get("asset_class") or "stock",
+                horizon=payload.get("horizon") or "day_trading",
+                qlib_available=True,
+                qlib_version=runner["qlib_version"],
+                artifact_status=artifact_status,
+                artifact_path=payload.get("artifact_path"),
+                metrics=metrics if job_type == "backtest" else {},
+                scores=payload.get("scores") or {},
+                metadata={"job_id": job_id, "config_path": config_path, "source": "qrun"},
+                blockers=[] if proc.returncode == 0 else ["qrun_failed"],
+                warnings=[],
+            )
+        )
+        proof = _link_backtest_to_proof(artifact) if job_type == "backtest" else None
+        job.update({"status": artifact_status, "artifact": artifact.model_dump(), "proof_record": proof, "completed_at": iso_utc_now()})
+    except subprocess.TimeoutExpired:
+        job.update({"status": "failed", "blockers": ["qrun_timeout"], "completed_at": iso_utc_now()})
+    except Exception as exc:
+        job.update({"status": "failed", "blockers": [f"qrun_error: {exc}"], "completed_at": iso_utc_now()})
+    _JOB_MEMORY[job_id] = job
+    return job
+
+
 def automation_backtest(*, payload: dict[str, Any]) -> dict[str, Any]:
-    st = get_qlib_status()
-    if not st.qlib_available:
-        return {"status": "unavailable", "qlib_available": False, "blockers": st.blockers, "message": "Qlib unavailable; cannot run automation backtest. Record external artifacts via /backtests/record."}
-    # Phase 4: do not run heavy backtests; only record metadata as artifact.
-    art = record_backtest_artifact(QlibBacktestRecordCreate(**payload))
-    return {"status": "ok", "artifact": art.model_dump(), "message": "Recorded backtest metadata (no job executed)."}
+    job = _run_qrun_job("backtest", payload)
+    return {"status": job["status"], "job": job, "artifact": job.get("artifact"), "proof_record": job.get("proof_record")}
 
 
 def automation_score(*, payload: dict[str, Any]) -> dict[str, Any]:
-    st = get_qlib_status()
-    if not st.qlib_available:
-        return {"status": "unavailable", "qlib_available": False, "blockers": st.blockers, "message": "Qlib unavailable; cannot run automation score. Record external scores via /signals/score."}
-    art = save_signal_scores(QlibSignalScoreCreate(**payload))
-    return {"status": "ok", "artifact": art.model_dump(), "message": "Recorded signal score metadata (no job executed)."}
-
+    job = _run_qrun_job("score", payload)
+    return {"status": job["status"], "job": job, "artifact": job.get("artifact")}
