@@ -45,6 +45,10 @@ class MarketDataProvider:
         if current_price is not None and previous_close is not None:
             change = current_price - previous_close
 
+        tradable = values.get("tradable")
+        if tradable is None and current_price is not None and data_quality not in {"unavailable", "not_configured"}:
+            tradable = True
+
         return {
             "symbol": symbol.upper(),
             "current_price": current_price,
@@ -59,6 +63,7 @@ class MarketDataProvider:
             "bid": values.get("bid"),
             "ask": values.get("ask"),
             "bid_ask_spread": values.get("bid_ask_spread"),
+            "tradable": tradable,
             "market_cap": values.get("market_cap"),
             "fifty_two_week_high": values.get("fifty_two_week_high"),
             "fifty_two_week_low": values.get("fifty_two_week_low"),

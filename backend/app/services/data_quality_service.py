@@ -78,6 +78,10 @@ def check_market_data_quality(
     if spread_required and snapshot.get("bid_ask_spread") is None and (snapshot.get("bid") is None or snapshot.get("ask") is None):
         missing_fields.append("spread")
         warnings.append("Spread fields are missing; tradability and spread-quality checks are limited.")
+    elif snapshot.get("spread_synthetic"):
+        warnings.append(
+            "Bid/ask were not in the feed; using a small synthetic spread around last price for liquidity metrics only (not exchange NBBO)."
+        )
 
     if asset_class == "option":
         option_fields = ["expiration", "strike", "option_type", "open_interest", "implied_volatility"]

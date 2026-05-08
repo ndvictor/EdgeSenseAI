@@ -5,6 +5,11 @@ import { usePathname } from "next/navigation";
 import {
   BookOpen,
   BrainCircuit,
+  Database,
+  Import,
+  Layers2,
+  ListChecks,
+  Rss,
   Settings,
   ShieldCheck,
   SlidersHorizontal,
@@ -14,13 +19,20 @@ import {
   BriefcaseBusiness,
 } from "lucide-react";
 
-type NavItem = { label: string; href: string; icon: any };
+type NavItem = { label: string; href: string; icon: any; activeAlso?: string[] };
 
 const MAIN_ITEMS: NavItem[] = [
   { label: "Command Center", href: "/command-center", icon: SlidersHorizontal },
+  { label: "Agent Runtime", href: "/agent-runtime", icon: BrainCircuit },
   { label: "Market Radar", href: "/market-radar", icon: Radar },
+  { label: "Data source", href: "/datasource", icon: Database, activeAlso: ["/data-sources"] },
+  { label: "Data ingestion", href: "/data-ingestion", icon: Import },
+  { label: "Data feed", href: "/data-feed", icon: Rss },
+  { label: "Data validation", href: "/data-quality", icon: ListChecks },
+  { label: "Feature pipeline", href: "/feature-pipeline", icon: Layers2 },
   { label: "Research Lab", href: "/research-lab", icon: FlaskConical },
   { label: "Strategy Workflow", href: "/strategy-workflow", icon: Workflow },
+  { label: "Workflow Runbook", href: "/workflow-runbook", icon: BookOpen },
   { label: "Trading Desk", href: "/trading-desk", icon: BriefcaseBusiness },
   { label: "Performance & Governance", href: "/performance-governance", icon: ShieldCheck },
   { label: "Settings", href: "/settings", icon: Settings },
@@ -45,7 +57,8 @@ export function Sidebar() {
       <nav className="flex-1 space-y-1.5 overflow-y-auto pr-1">
         {MAIN_ITEMS.map((item) => {
           const Icon = item.icon;
-          const active = pathname === item.href || pathname.startsWith(`${item.href}/`);
+          const activeAlso = item.activeAlso?.some((p) => pathname === p || pathname.startsWith(`${p}/`)) ?? false;
+          const active = pathname === item.href || pathname.startsWith(`${item.href}/`) || activeAlso;
           return (
             <Link
               key={item.href}

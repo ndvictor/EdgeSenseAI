@@ -1,10 +1,12 @@
 "use client";
 
-import { useEffect, useMemo, useState } from "react";
-import { api, type DataQualityCheckStatus, type DataQualityStatusResponse } from "@/lib/api";
+import { useCallback, useEffect, useMemo, useState } from "react";
+import { api, type DataQualityCheckStatus, type DataQualityReport, type DataQualityStatusResponse } from "@/lib/api";
 import { MetricCard, PageHeader } from "@/components/Cards";
 
 const cardShell = "rounded-2xl border border-emerald-400/15 bg-black/35 p-4 shadow-[0_0_40px_rgba(0,0,0,0.25)] backdrop-blur";
+const field =
+  "w-full rounded-xl border border-emerald-400/20 bg-black/40 px-3 py-2 text-sm text-white placeholder:text-slate-500 focus:border-emerald-400/50 focus:outline-none";
 
 function formatNumber(value: number | null | undefined) {
   if (value == null) return "—";
@@ -43,13 +45,48 @@ function safeList(value: unknown): string[] {
 export default function DataQualityPage() {
   const [data, setData] = useState<DataQualityStatusResponse | null>(null);
   const [error, setError] = useState<string | null>(null);
+  const [rollupLoading, setRollupLoading] = useState(false);
+
+  const [manualSymbol, setManualSymbol] = useState("AMD");
+  const [manualAssetClass, setManualAssetClass] = useState("stock");
+  const [manualSource, setManualSource] = useState<string>("auto");
+  const [manualReport, setManualReport] = useState<DataQualityReport | null>(null);
+  const [manualLoading, setManualLoading] = useState(false);
+  const [manualError, setManualError] = useState<string | null>(null);
+
+  const loadRollup = useCallback(async () => {
+    setError(null);
+    setRollupLoading(true);
+    try {
+      setData(await api.getDataQualityStatus());
+    } catch (err: unknown) {
+      setError(err instanceof Error ? err.message : "Failed to load data quality status");
+    } finally {
+      setRollupLoading(false);
+    }
+  }, []);
 
   useEffect(() => {
-    api
-      .getDataQualityStatus()
-      .then(setData)
-      .catch((err: unknown) => setError(err instanceof Error ? err.message : "Failed to load data quality status"));
-  }, []);
+    void loadRollup();
+  }, [loadRollup]);
+
+  async function runSymbolCheck() {
+    setManualError(null);
+    setManualLoading(true);
+    setManualReport(null);
+    try {
+      const sym = manualSymbol.trim().toUpperCase();
+      if (!sym) {
+        setManualError("Enter a symbol");
+        return;
+      }
+      setManualReport(await api.getDataQuality(sym, manualAssetClass, manualSource));
+    } catch (e: unknown) {
+      setManualError(e instanceof Error ? e.message : "Quality check failed");
+    } finally {
+      setManualLoading(false);
+    }
+  }
 
   const checks: DataQualityCheckStatus[] = data?.checks ?? [];
 

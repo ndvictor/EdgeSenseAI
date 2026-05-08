@@ -13,7 +13,7 @@ from app.services.workflow_governance.models import WorkflowGovernanceCheckReque
 from app.services.workflow_governance.service import check_governance
 from app.services.workflow_orchestrator.models import OrchestratorRunRequest, OrchestratorRunResponse, OrchestratorStatusResponse, iso_utc_now, new_orchestrator_id
 from app.services.workflow_orchestrator.safety import enforce_orchestrator_safety
-from app.services.workflow_orchestrator.stage_plan import default_stage_plan
+from app.services.workflow_orchestrator.stage_plan import default_stage_plan, orchestrator_pipeline_agent_count
 
 _MEMORY: dict[str, OrchestratorRunResponse] = {}
 
@@ -194,6 +194,7 @@ def run_workflow(body: OrchestratorRunRequest) -> OrchestratorRunResponse:
     write_event(AuditEventCreate(workflow_run_id=wr.workflow_run_id, orchestrator_run_id=orchestrator_run_id, event_type="orchestrator_run_started", actor="system", severity="info", message="Orchestrator run started", metadata=body.model_dump()))
 
     plan = default_stage_plan(simulated_position=body.simulated_position, simulated_closed_trade=body.simulated_closed_trade)
+    stage_cap = max(0, int(body.stop_at_stage or orchestrator_pipeline_agent_count()))
     stage_timeline: list[dict[str, Any]] = []
     agent_run_ids: list[str] = []
     blockers: list[str] = []
@@ -210,8 +211,8 @@ def run_workflow(body: OrchestratorRunRequest) -> OrchestratorRunResponse:
         current_agent = agent_key
         write_event(AuditEventCreate(workflow_run_id=wr.workflow_run_id, orchestrator_run_id=orchestrator_run_id, event_type="agent_run_started", actor="system", severity="info", message=f"Agent started: {agent_key}", metadata={"agent_key": agent_key, "stage": idx}))
 
-        # Stop at requested stage boundary
-        if idx > int(body.stop_at_stage or 9):
+        # Stop at requested stage boundary (1-based index into plan)
+        if idx > stage_cap:
             break
 
         req_inputs: dict[str, Any] = {"asset_class": body.asset_class, "horizon": body.horizon, "symbols": body.symbols}
@@ -247,7 +248,7 @@ def run_workflow(body: OrchestratorRunRequest) -> OrchestratorRunResponse:
         if agent_result.warnings:
             warnings.extend(agent_result.warnings)
 
-        # Execution boundary: stop after execution approval boundary agent.
+        # Execution boundary marker (approval queue); do not stop — later agents still run in preview.
         if agent_key == "execution_approval_agent":
             execution_boundary_reached = True
             write_event(
@@ -262,7 +263,6 @@ def run_workflow(body: OrchestratorRunRequest) -> OrchestratorRunResponse:
                 )
             )
             if approval_required:
-                # Prefer approval_id from agent result if present.
                 try:
                     approval_payload = (agent_result.decision or {}).get("result") or {}
                     approval = approval_payload.get("approval") if isinstance(approval_payload, dict) else None
@@ -270,7 +270,6 @@ def run_workflow(body: OrchestratorRunRequest) -> OrchestratorRunResponse:
                         approval_id = str(approval.get("approval_id"))
                 except Exception:
                     approval_id = approval_id
-            break
 
         if agent_result.status in {"blocked", "failed"}:
             write_event(AuditEventCreate(workflow_run_id=wr.workflow_run_id, orchestrator_run_id=orchestrator_run_id, event_type="workflow_blocked", actor="system", severity="warn", message="Workflow blocked by agent", metadata={"agent_key": agent_key, "blockers": agent_result.blockers}))
@@ -284,7 +283,7 @@ def run_workflow(body: OrchestratorRunRequest) -> OrchestratorRunResponse:
         next_action = "Await human approval in approval queue."
     elif execution_boundary_reached:
         status = "completed_preview"
-        next_action = "Preview completed at execution boundary; use approval queue + separate execution subsystem."
+        next_action = "Full agent pipeline preview completed (including post-approval stages). Check approval queue if execution_approval created an item."
     else:
         status = "completed_preview"
         next_action = "Preview completed."

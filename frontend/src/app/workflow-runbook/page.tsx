@@ -219,7 +219,7 @@ export default function WorkflowRunbookPage() {
   const [qlibSt, setQlibSt] = useState<Record<string, unknown> | null>(null);
 
   const [maxCand, setMaxCand] = useState(5);
-  const [stopStage, setStopStage] = useState(9);
+  const [stopStage, setStopStage] = useState(100);
   const [simPos, setSimPos] = useState(false);
   const [simClose, setSimClose] = useState(false);
   const [orcBusy, setOrcBusy] = useState(false);
@@ -319,7 +319,16 @@ export default function WorkflowRunbookPage() {
         seen.add(sym);
         unique.push(sym);
       }
-      setWatchlistSymbols(unique);
+      const realSymbols = unique.filter((s) => !LIVE_WATCHLIST_PLACEHOLDER_SYMBOLS.has(s));
+      if (!realSymbols.length) {
+        setWatchlistSymbols([]);
+        setWatchlistMeta(wl.summary ?? null);
+        setPipelineContextError(
+          "Candidate Universe is empty. The API returned the placeholder symbol CANDIDATE_UNIVERSE_EMPTY (not a ticker). Add active candidates in Candidate Engine / Live Watchlist before running the orchestrator.",
+        );
+        return;
+      }
+      setWatchlistSymbols(realSymbols);
       setWatchlistMeta(wl.summary ?? null);
     } catch (e) {
       setWatchlistSymbols([]);
@@ -386,8 +395,11 @@ export default function WorkflowRunbookPage() {
     setOrcBusy(true);
     setError(null);
     try {
-      if (!symbolsForNextRun.length) {
-        setError("No symbols from live watchlist. Refresh pipeline context or build the watchlist first.");
+      if (
+        !symbolsForNextRun.length ||
+        symbolsForNextRun.some((s) => LIVE_WATCHLIST_PLACEHOLDER_SYMBOLS.has(String(s).toUpperCase()))
+      ) {
+        setError("No real symbols from live watchlist (empty Candidate Universe or placeholder only). Refresh context and add tickers in Candidate Engine.");
         return;
       }
       const res = await runWorkflowOrchestrator({
@@ -613,10 +625,12 @@ export default function WorkflowRunbookPage() {
           <div className="rounded-2xl border border-emerald-400/15 bg-[#070c12]/95 p-4">
             <h2 className="text-xs font-semibold uppercase tracking-[0.2em] text-slate-500">Run workflow (orchestrator preview)</h2>
             <p className="mt-1 text-xs text-slate-500">
-              This run is <span className="font-semibold text-slate-300">pipeline-derived</span>: it uses the{" "}
-              <span className="text-slate-300">live watchlist symbols</span> (stage 6), attaches{" "}
-              <span className="text-slate-300">session router</span> + <span className="text-slate-300">market regime</span> context (stages 3–4),
-              and submits a <span className="text-slate-300">read-only orchestrator preview</span> request. No manual ticker entry.
+              This run is <span className="font-semibold text-slate-300">pipeline-derived</span>: orchestrator symbols come only from{" "}
+              <span className="text-slate-300">live watchlist</span> (Candidate Universe → stage 6). Latest session-router and market-regime{" "}
+              <span className="text-slate-300">model</span> snapshots are attached as <span className="text-slate-300">metadata</span> only; they do not
+              supply tickers. The agent-runtime step <span className="font-mono text-emerald-200/80">market_condition_agent</span> uses the market{" "}
+              <span className="text-slate-300">condition scanner</span> with those symbols — it does not run the regime model for you.
+              Submit a <span className="text-slate-300">read-only orchestrator preview</span>. No manual ticker entry here.
               <br />
               Calls <code className="text-emerald-200/90">POST /api/workflow-orchestrator/run</code> with{" "}
               <code className="text-emerald-200/90">source=candidate</code> and locked safety:{" "}

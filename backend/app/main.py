@@ -86,6 +86,7 @@ from app.api.routes.universe_discovery import router as universe_discovery_route
 from app.api.routes.universe_selection import router as universe_selection_router
 from app.api.routes.upper_workflow import router as upper_workflow_router
 from app.api.routes.watchlists import router as watchlists_router
+from app.api.routes.pipeline_automation import router as pipeline_automation_router
 from app.core.effective_runtime import effective_str
 from app.core.settings import settings
 from app.data_providers.base import MarketCandlesResponse, MarketSnapshot
@@ -226,6 +227,7 @@ app.include_router(model_evidence_router, prefix="/api")
 app.include_router(strategy_evidence_router, prefix="/api")
 app.include_router(qlib_integration_router, prefix="/api")
 app.include_router(workflow_orchestrator_router, prefix="/api")
+app.include_router(pipeline_automation_router, prefix="/api")
 app.include_router(workflow_governance_router, prefix="/api")
 app.include_router(approval_queue_router, prefix="/api")
 app.include_router(audit_log_router, prefix="/api")

@@ -44,8 +44,26 @@ def run_glue_agent(*, agent_key: str, inputs: dict[str, Any], context: dict[str,
         return {"tool_name": "market_scanner.scan", "tool_request": {"symbols": symbols}, "tool_response": out, "next_agent": next_agent, "safety": safety}
 
     if agent_key == "watchlist_builder_agent":
-        out = build_watchlist(asset_class=asset_class, horizon=horizon, max_symbols=int(s.get("max_symbols", 10)))
-        return {"tool_name": "candidate_universe.list", "tool_request": {"asset_class": asset_class, "horizon": horizon}, "tool_response": out, "next_agent": "strategy_selection_agent" if out.get("symbols") else None, "safety": safety}
+        orch = context.get("source") == "workflow_orchestrator"
+        data_source = str(s.get("source", "auto"))
+        include_mock = data_source == "mock"
+        out = build_watchlist(
+            asset_class=asset_class,
+            horizon=horizon,
+            max_symbols=int(s.get("max_symbols", 10)),
+            seed_symbols=symbols if orch else None,
+            orchestrator_mode=orch,
+            data_source=data_source,
+            include_mock=include_mock,
+        )
+        tool = "universe_selection.run_universe_selection" if orch else "candidate_universe.list"
+        return {
+            "tool_name": tool,
+            "tool_request": {"asset_class": asset_class, "horizon": horizon, "source": data_source, "seeds": symbols if orch else None},
+            "tool_response": out,
+            "next_agent": "strategy_selection_agent" if out.get("symbols") else None,
+            "safety": safety,
+        }
 
     if agent_key == "strategy_selection_agent":
         out = select_strategy(

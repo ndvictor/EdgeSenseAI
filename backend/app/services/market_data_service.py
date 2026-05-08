@@ -192,6 +192,28 @@ class MarketDataService:
         except Exception as exc:
             return self._get_unavailable_history(symbol, period, interval, error=str(exc))
 
+    def _ensure_quotes_for_quality(self, snapshot: Dict[str, Any]) -> None:
+        """If the feed has last price but no NBBO, synthesize a tiny spread around mid so QC/features can run.
+
+        Yahoo/chart and many delayed feeds omit bid/ask. Real execution still needs a live quote source (e.g. Alpaca).
+        """
+        price = snapshot.get("price")
+        if price is None:
+            return
+        if snapshot.get("bid") is not None and snapshot.get("ask") is not None:
+            return
+        try:
+            mid = float(price)
+        except (TypeError, ValueError):
+            return
+        if mid <= 0:
+            return
+        half_spread = max(mid * 0.0001, 0.01)
+        snapshot["bid"] = mid - half_spread
+        snapshot["ask"] = mid + half_spread
+        snapshot["bid_ask_spread"] = (2 * half_spread / mid) * 100
+        snapshot["spread_synthetic"] = True
+
     def get_market_snapshot(self, symbol: str, source: str | None = None) -> Dict[str, Any]:
         provider_statuses = []
 
@@ -211,6 +233,7 @@ class MarketDataService:
             })
 
             if snapshot.get("price") is not None and snapshot.get("data_quality") not in {"unavailable", "not_configured"}:
+                self._ensure_quotes_for_quality(snapshot)
                 snapshot["provider_statuses"] = provider_statuses
                 return snapshot
 

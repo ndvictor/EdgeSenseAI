@@ -2,7 +2,7 @@
 
 import { useEffect, useState } from "react";
 import Link from "next/link";
-import { api, type CommandCenterResponse } from "@/lib/api";
+import { api, getAgentRuntimeAgents, getAgentRuntimeLatest, type AgentRuntimeAgentDescriptor, type AgentRunResultRecord, type CommandCenterResponse } from "@/lib/api";
 import { EdgeSignalGrid, MetricCard, RecommendationTable } from "@/components/Cards";
 import { LiveWatchlistPanel } from "@/components/LiveWatchlistPanel";
 import { Gauge, Users, TrendingUp, AlertTriangle, Play, Clock } from "lucide-react";
@@ -19,6 +19,125 @@ function percent(value: number) {
 
 export default function CommandCenterPage() {
   return <CommandCenterPanel />;
+}
+
+function extractSessionNotes(value: unknown): string | null {
+  const visited = new Set<unknown>();
+
+  function walk(v: unknown): string | null {
+    if (v == null) return null;
+    if (typeof v === "string") return null;
+    if (typeof v !== "object") return null;
+    if (visited.has(v)) return null;
+    visited.add(v);
+
+    if (Array.isArray(v)) {
+      for (const item of v) {
+        const found = walk(item);
+        if (found) return found;
+      }
+      return null;
+    }
+
+    const obj = v as Record<string, unknown>;
+    const direct = obj.session_notes ?? obj.sessionNotes;
+    if (typeof direct === "string" && direct.trim()) return direct;
+    if (Array.isArray(direct) && direct.length) return direct.map((x) => String(x)).join("; ");
+
+    for (const key of Object.keys(obj)) {
+      const found = walk(obj[key]);
+      if (found) return found;
+    }
+    return null;
+  }
+
+  return walk(value);
+}
+
+function AgentRuntimeRunCard() {
+  const [agents, setAgents] = useState<AgentRuntimeAgentDescriptor[]>([]);
+  const [latestRun, setLatestRun] = useState<AgentRunResultRecord | null>(null);
+  const [loading, setLoading] = useState(true);
+  const [error, setError] = useState<string | null>(null);
+
+  async function load() {
+    setLoading(true);
+    setError(null);
+    try {
+      const [latest, ag] = await Promise.all([getAgentRuntimeLatest(), getAgentRuntimeAgents()]);
+      const agentList = ag.agents ?? [];
+      setAgents(agentList);
+
+      const byKey = (latest as any)?.latest_agent_runs_by_key as Record<string, AgentRunResultRecord | null> | undefined;
+      const first = agentList.find((a) => byKey?.[a.agent_key])?.agent_key;
+      const chosen = (first ? byKey?.[first] : null) ?? null;
+      setLatestRun(chosen);
+    } catch (e) {
+      setError(e instanceof Error ? e.message : "Failed to load agent runtime");
+    } finally {
+      setLoading(false);
+    }
+  }
+
+  useEffect(() => {
+    load();
+  }, []);
+
+  const descriptor = latestRun ? agents.find((a) => a.agent_key === latestRun.agent_key) : null;
+  const stageName = descriptor?.display_name ?? "—";
+  const status = latestRun?.status ?? (loading ? "loading" : "—");
+  const sessionNotes = latestRun ? extractSessionNotes(latestRun.decision) : null;
+  const nextAction = latestRun?.next_action ?? "—";
+
+  return (
+    <section className={cardShell}>
+      <div className="flex flex-wrap items-start justify-between gap-3">
+        <div>
+          <div className="text-xs font-semibold uppercase tracking-[0.22em] text-emerald-300/80">Agent Runtime</div>
+          <h2 className="mt-1 text-2xl font-black text-white">Latest agent run</h2>
+          <p className="mt-2 max-w-4xl text-sm text-slate-400">
+            Pulled from <code className="text-emerald-200/80">/api/agent-runtime/latest</code>. Shows stage name, agent key, status, session notes, and next action.
+          </p>
+        </div>
+        <div className="flex items-center gap-2">
+          <button
+            type="button"
+            onClick={load}
+            className="rounded-xl border border-emerald-400/30 bg-emerald-500/10 px-4 py-2 text-sm font-semibold text-emerald-200 hover:bg-emerald-500/15"
+          >
+            Refresh
+          </button>
+          <Link
+            href="/agent-runtime"
+            className="rounded-xl border border-white/10 bg-white/[0.04] px-4 py-2 text-sm font-semibold text-slate-200 hover:bg-white/[0.06]"
+          >
+            Open Agent Runtime →
+          </Link>
+        </div>
+      </div>
+
+      {error ? (
+        <div className="mt-4 rounded-xl border border-rose-500/30 bg-rose-500/10 px-4 py-3 text-sm text-rose-200">{error}</div>
+      ) : null}
+
+      <div className="mt-5 grid grid-cols-1 gap-3 md:grid-cols-2 lg:grid-cols-5">
+        {[
+          ["stage_name", stageName],
+          ["agent_key", latestRun?.agent_key ?? "—"],
+          ["status", status],
+          ["session_notes", sessionNotes ?? "—"],
+          ["next_action", nextAction],
+        ].map(([k, v]) => (
+          <div key={k} className="rounded-xl border border-emerald-400/15 bg-[#05080d] p-4">
+            <div className="text-[10px] font-semibold uppercase tracking-[0.2em] text-slate-500">{k}</div>
+            <div className={`mt-1 text-sm font-semibold ${k === "agent_key" ? "font-mono text-emerald-200/90" : "text-slate-100"}`}>
+              {loading && k !== "agent_key" && k !== "stage_name" ? "Loading…" : String(v)}
+            </div>
+          </div>
+        ))}
+      </div>
+    </section>
+  );
 }
 
 function CommandCenterPanel() {
@@ -96,7 +215,10 @@ function CommandCenterPanel() {
         {tab === "live_watch" ? (
           <LiveWatchlistPanel showHeader={false} mode="watchlist" />
         ) : tab === "agents" ? (
-          <LiveWatchlistPanel showHeader={false} mode="agents" />
+          <div className="space-y-4">
+            <AgentRuntimeRunCard />
+            <LiveWatchlistPanel showHeader={false} mode="agents" />
+          </div>
         ) : !data ? (
           <div className="py-8 text-center text-sm text-slate-400">Loading candidates...</div>
         ) : (

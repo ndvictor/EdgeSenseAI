@@ -9,6 +9,7 @@ from app.services.agent_runtime.wrappers.glue_agents import GLUE_AGENT_KEYS, run
 WRAPPED_AGENT_KEYS = frozenset(
     {
         "account_owner_policy_agent",
+        "workflow_orchestrator_agent",
         # Phase 3 glue agents
         "data_readiness_agent",
         "market_condition_agent",
@@ -104,6 +105,23 @@ def run_wrapped_agent(*, agent_key: str, inputs: dict[str, Any], context: dict[s
 
     if agent_key in GLUE_AGENT_KEYS:
         return run_glue_agent(agent_key=agent_key, inputs=inputs, context=context, safety=safety)
+
+    if agent_key == "workflow_orchestrator_agent":
+        # Registered for discovery/tests; multi-step execution is the HTTP orchestrator entrypoint.
+        return {
+            "tool_name": "workflow_orchestrator.documentation",
+            "tool_request": {"entrypoint": "POST /api/workflow-orchestrator/run"},
+            "tool_response": {
+                "status": "ok",
+                "decision": {
+                    "blockers": [],
+                    "warnings": [],
+                    "next_action": "Run the staged plan via POST /api/workflow-orchestrator/run (or Workflow Runbook). Single agent-runs do not recurse into the full plan.",
+                },
+            },
+            "next_agent": None,
+            "safety": safety,
+        }
 
     if agent_key == "account_owner_policy_agent":
         from app.services.account_owner_policy.models import AccountOwnerPolicyRequest

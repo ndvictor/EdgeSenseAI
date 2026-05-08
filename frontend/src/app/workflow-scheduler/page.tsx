@@ -21,7 +21,7 @@ const DEFAULT_WF_JSON = `{
   "dry_run": true,
   "allow_submit": false,
   "require_human_approval": true,
-  "stop_at_stage": 9
+  "stop_at_stage": 100
 }`;
 
 export default function WorkflowSchedulerPage() {

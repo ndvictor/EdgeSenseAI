@@ -25,7 +25,7 @@ class OrchestratorRunRequest(BaseModel):
     symbols: list[str] = Field(default_factory=lambda: ["AMD"])
     strategy_key: str | None = None
     max_candidates: int = 5
-    stop_at_stage: int = 9
+    stop_at_stage: int = 100
     dry_run: bool = True
     require_human_approval: bool = True
     allow_submit: bool = False
