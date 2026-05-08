@@ -8,6 +8,7 @@ import {
   type PlatformReadinessStatusResponse,
   type TracingStatusResponse,
   type ExecutionSummaryResponse,
+  type FinalReadinessHttpResponse,
 } from "@/lib/api";
 
 const statusColors = {
@@ -27,6 +28,7 @@ export default function PlatformReadinessPage() {
   const [tracing, setTracing] = useState<TracingStatusResponse | null>(null);
   const [execution, setExecution] = useState<ExecutionSummaryResponse | null>(null);
   const [executionErr, setExecutionErr] = useState<string | null>(null);
+  const [finalReadiness, setFinalReadiness] = useState<FinalReadinessHttpResponse | null>(null);
   const [loading, setLoading] = useState(true);
   const [error, setError] = useState<string | null>(null);
   const [refreshKey, setRefreshKey] = useState(0);
@@ -36,14 +38,16 @@ export default function PlatformReadinessPage() {
       setLoading(true);
       setError(null);
       try {
-        const [readinessData, spineData, tracingData] = await Promise.all([
+        const [readinessData, spineData, tracingData, finalReadinessData] = await Promise.all([
           api.getPlatformReadiness(),
           getPlatformReadinessStatus().catch(() => null),
           api.getTracingStatus(),
+          api.getFinalReadiness().catch(() => null),
         ]);
         setReadiness(readinessData);
         setSpine(spineData);
         setTracing(tracingData);
+        setFinalReadiness(finalReadinessData);
         setExecutionErr(null);
         try {
           setExecution(await api.getExecutionSummary());
@@ -112,6 +116,23 @@ export default function PlatformReadinessPage() {
 
   return (
     <div className="mx-auto w-full max-w-7xl p-4 lg:p-8">
+      {finalReadiness ? (
+        <div className="mb-6 rounded-xl border border-emerald-500/30 bg-emerald-950/20 p-5 shadow">
+          <div className="flex flex-wrap items-center justify-between gap-3">
+            <h2 className="text-lg font-semibold text-emerald-200">Final readiness (Phase 6)</h2>
+            <div className="text-sm text-slate-300">
+              status: <span className="font-mono text-slate-200">{finalReadiness.status}</span>
+            </div>
+          </div>
+          <div className="mt-3 text-sm text-slate-300">{finalReadiness.next_action}</div>
+          {finalReadiness.blockers?.length ? (
+            <div className="mt-3 text-sm text-rose-200">Blockers: {finalReadiness.blockers.join(", ")}</div>
+          ) : null}
+          {finalReadiness.warnings?.length ? (
+            <div className="mt-2 text-sm text-amber-200">Warnings: {finalReadiness.warnings.join(", ")}</div>
+          ) : null}
+        </div>
+      ) : null}
       {/* Header */}
       <div className="mb-8 flex items-center justify-between">
         <div>

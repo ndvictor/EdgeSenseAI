@@ -16,11 +16,13 @@ def init_db() -> dict[str, Any]:
     if engine is None:
         return {"status": "not_configured", "created": False, "message": "No database engine available."}
     try:
+        health = check_database_health()
+        if not health.get("connected"):
+            return {"created": False, **health}
         with _init_lock:
             if not _schema_initialized:
                 Base.metadata.create_all(bind=engine)
                 _schema_initialized = True
-                health = check_database_health()
                 return {"status": "configured", "created": True, **health}
         return {"status": "configured", "created": False, "message": "Schema already ensured for this process."}
     except Exception as exc:

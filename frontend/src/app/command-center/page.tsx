@@ -21,7 +21,7 @@ export default function CommandCenterPage() {
   return <CommandCenterPanel />;
 }
 
-export function CommandCenterPanel() {
+function CommandCenterPanel() {
   const [data, setData] = useState<CommandCenterResponse | null>(null);
   const [error, setError] = useState<string | null>(null);
   const [isRunning, setIsRunning] = useState(false);

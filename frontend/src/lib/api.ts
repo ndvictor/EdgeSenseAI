@@ -1484,6 +1484,21 @@ export type PlatformReadinessResponse = {
   generated_at: string;
 };
 
+export type FinalReadinessHttpResponse = {
+  status: "ok" | "warning" | "blocked";
+  data_mode: "final_readiness_v1";
+  updated_at?: string;
+  platform_completion: Record<string, boolean>;
+  safety: Record<string, boolean>;
+  storage: Record<string, string | boolean | null>;
+  endpoints: { path: string; present: boolean }[];
+  frontend_routes: { route: string; present: boolean }[];
+  missing_core_units: string[];
+  warnings: string[];
+  blockers: string[];
+  next_action: string;
+};
+
 export type LabInventoryComponent = {
   component_name: string;
   component_type: string;
@@ -4499,6 +4514,7 @@ export const api = {
   getDataQualityStatus: () => request<DataQualityStatusResponse>("/api/data-quality/status"),
   getSignalsStatus: () => request<SignalsStatusResponse>("/api/signals/status"),
   getCandidatesStatus: () => request<CandidatesStatusResponse>("/api/candidates/status"),
+  getFinalReadiness: () => request<FinalReadinessHttpResponse>("/api/final-readiness/status"),
   getMarketDataSnapshot: (symbol: string, source: MarketDataSource = "auto") => request<MarketDataSnapshot>(`/api/market-data/snapshot/${symbol}?source=${source}`),
   getMarketDataHistory: (symbol: string, period = "6mo", interval = "1d", source: MarketDataSource = "auto") => request<PriceHistory>(`/api/market-data/history/${symbol}?period=${period}&interval=${interval}&source=${source}`),
   getMarketSnapshots: () => request<MarketSnapshot[]>("/api/market/snapshots"),

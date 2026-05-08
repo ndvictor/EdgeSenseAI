@@ -12,7 +12,7 @@ const AiOpsPanel = dynamic(
   () => import("@/components/AiOps").then((m) => ({ default: m.AiOpsOverviewPage })),
   { ssr: false, loading: () => <LoadingCard label="Loading Agent OpsCenter…" /> },
 );
-const CommandCenterPanel = dynamic(() => import("@/app/command-center/page").then((m) => ({ default: m.CommandCenterPanel })), {
+const CommandCenterPanel = dynamic(() => import("@/app/command-center/page"), {
   ssr: false,
   loading: () => <LoadingCard label="Loading Command Center…" />,
 });
