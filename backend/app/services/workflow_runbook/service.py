@@ -247,6 +247,8 @@ def _build_market_condition_scanner_snapshot() -> dict | None:
 
 def build_latest() -> RunbookLatestResponse:
     # Import latest getters (no HTTP calls, no evaluation triggers).
+    from app.services.account_owner_policy.models import AccountOwnerPolicyRequest
+    from app.services.account_owner_policy.service import evaluate_owner_policy
     from app.services.session_router.service import get_latest_session
     from app.services.workflow_router.service import get_latest_decision
     from app.services.strategy_eligibility.service import get_latest_check
@@ -258,6 +260,7 @@ def build_latest() -> RunbookLatestResponse:
     from app.services.learning_loop.service import get_latest_decision as get_latest_learning_decision
 
     latest = {
+        "account_owner_policy": evaluate_owner_policy(AccountOwnerPolicyRequest()).model_dump(),
         "session_router": get_latest_session().model_dump() if get_latest_session() else None,
         "market_condition_scanner": _build_market_condition_scanner_snapshot(),
         "workflow_router": get_latest_decision().model_dump() if get_latest_decision() else None,
@@ -306,6 +309,7 @@ def build_status() -> RunbookStatusResponse:
     for st in stages:
         key = st.stage_key
         latest_key_map = {
+            "master_admin": "account_owner_policy",
             "session_router": "session_router",
             "workflow_router": "workflow_router",
             "market_condition_scanner": "market_condition_scanner",

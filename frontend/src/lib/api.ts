@@ -2642,6 +2642,7 @@ export type WorkflowRunbookStage = {
 } & Record<string, unknown>;
 
 export type WorkflowRunbookLatestSnapshot = {
+  account_owner_policy?: Record<string, unknown> | null;
   session_router?: Record<string, unknown> | null;
   workflow_router?: Record<string, unknown> | null;
   market_condition_scanner?: Record<string, unknown> | null;

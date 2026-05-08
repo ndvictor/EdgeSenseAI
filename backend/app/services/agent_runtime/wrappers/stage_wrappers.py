@@ -8,6 +8,7 @@ from app.services.agent_runtime.wrappers.glue_agents import GLUE_AGENT_KEYS, run
 
 WRAPPED_AGENT_KEYS = frozenset(
     {
+        "account_owner_policy_agent",
         # Phase 3 glue agents
         "data_readiness_agent",
         "market_condition_agent",
@@ -22,6 +23,8 @@ WRAPPED_AGENT_KEYS = frozenset(
         "strategy_eligibility_agent",
         "trigger_monitor_agent",
         "execution_planner_agent",
+        "execution_approval_agent",
+        "narrative_review_agent",
         "position_monitor_agent",
         "close_review_agent",
         "post_trade_evaluator_agent",
@@ -101,6 +104,26 @@ def run_wrapped_agent(*, agent_key: str, inputs: dict[str, Any], context: dict[s
 
     if agent_key in GLUE_AGENT_KEYS:
         return run_glue_agent(agent_key=agent_key, inputs=inputs, context=context, safety=safety)
+
+    if agent_key == "account_owner_policy_agent":
+        from app.services.account_owner_policy.models import AccountOwnerPolicyRequest
+        from app.services.account_owner_policy.service import evaluate_owner_policy
+
+        req = AccountOwnerPolicyRequest.model_validate(
+            {
+                "workflow_run_id": context.get("workflow_run_id"),
+                "mode": s.get("mode"),
+                "actor": s.get("actor"),
+            }
+        )
+        resp = evaluate_owner_policy(req)
+        return {
+            "tool_name": "account_owner_policy.evaluate_owner_policy",
+            "tool_request": req.model_dump(),
+            "tool_response": resp.model_dump(),
+            "next_agent": "data_readiness_agent" if resp.decision == "allow" else None,
+            "safety": safety,
+        }
 
     if agent_key == "session_router_agent":
         from app.services.session_router.models import SessionEvaluateRequest
@@ -345,7 +368,59 @@ def run_wrapped_agent(*, agent_key: str, inputs: dict[str, Any], context: dict[s
             "tool_name": "execution_planner.plan_execution",
             "tool_request": req.model_dump(),
             "tool_response": resp,
-            "next_agent": "position_monitor_agent",
+            "next_agent": "execution_approval_agent",
+            "safety": safety,
+        }
+
+    if agent_key == "execution_approval_agent":
+        from app.services.approval_queue.models import ApprovalItemCreate
+        from app.services.approval_queue.service import create_item
+
+        workflow_run_id = context.get("workflow_run_id") or inputs.get("workflow_run_id") or ""
+        orchestrator_run_id = context.get("orchestrator_run_id") or inputs.get("orchestrator_run_id")
+        agent_run_id = context.get("agent_run_id")
+
+        if not isinstance(workflow_run_id, str) or not workflow_run_id.strip():
+            return {
+                "tool_name": "approval_queue.create_item",
+                "tool_request": {"workflow_run_id": workflow_run_id, "orchestrator_run_id": orchestrator_run_id},
+                "tool_response": {"status": "blocked", "blockers": ["missing_workflow_run_id"], "warnings": [], "next_action": "Run via orchestrator so workflow_run_id is set."},
+                "next_agent": None,
+                "safety": safety,
+            }
+
+        body = ApprovalItemCreate(
+            workflow_run_id=workflow_run_id,
+            orchestrator_run_id=str(orchestrator_run_id) if orchestrator_run_id else None,
+            agent_run_id=str(agent_run_id) if agent_run_id else None,
+            approval_type="execution_boundary",
+            status="pending",
+            requested_action={"action": "approve_execution_handoff", "note": "paper-first; no submit performed"},
+            risk_summary={"note": "Stage 10 approval boundary. Orders are never submitted by this agent."},
+            required_approver="owner",
+        )
+        out = create_item(body)
+        return {
+            "tool_name": "approval_queue.create_item",
+            "tool_request": body.model_dump(),
+            "tool_response": {"status": "ok", "approval": out.model_dump()},
+            "next_agent": None,
+            "safety": safety,
+        }
+
+    if agent_key == "narrative_review_agent":
+        # v1 policy: narrative review is optional/deferred and must not call LLMs by default.
+        return {
+            "tool_name": "narrative_review.skipped_by_policy",
+            "tool_request": {"policy": "deferred_v1_no_llm"},
+            "tool_response": {
+                "status": "ok",
+                "narrative": None,
+                "blockers": [],
+                "warnings": ["narrative_review_deferred_by_policy"],
+                "next_action": "Narrative review is optional; enable LLM policy later if desired.",
+            },
+            "next_agent": None,
             "safety": safety,
         }
 

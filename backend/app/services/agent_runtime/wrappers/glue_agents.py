@@ -54,7 +54,19 @@ def run_glue_agent(*, agent_key: str, inputs: dict[str, Any], context: dict[str,
             regime=str(s.get("regime", "risk_on")),
             horizon="day_trade",
         )
-        return {"tool_name": "strategy_ranking.run_strategy_ranking", "tool_request": {"market_phase": s.get("market_phase"), "regime": s.get("regime")}, "tool_response": out, "next_agent": "model_selection_agent" if out.get("selected_strategy_key") else None, "safety": safety}
+        return {
+            "tool_name": "strategy_ranking.run_strategy_ranking",
+            "tool_request": {
+                "market_phase": s.get("market_phase"),
+                "active_loop": s.get("active_loop"),
+                "regime": s.get("regime"),
+                "workflow_run_id": context.get("workflow_run_id"),
+                "orchestrator_run_id": context.get("orchestrator_run_id"),
+            },
+            "tool_response": out,
+            "next_agent": "model_selection_agent" if out.get("selected_strategy_key") else None,
+            "safety": safety,
+        }
 
     if agent_key == "model_selection_agent":
         symbol = str(s.get("symbol") or (symbols[0] if symbols else "AMD"))

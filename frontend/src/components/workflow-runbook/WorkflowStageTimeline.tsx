@@ -9,6 +9,7 @@ import type {
 } from "@/lib/api";
 
 const STAGE_LATEST_KEY: Partial<Record<string, keyof WorkflowRunbookLatestSnapshot>> = {
+  master_admin: "account_owner_policy",
   session_router: "session_router",
   market_condition_scanner: "market_condition_scanner",
   workflow_router: "workflow_router",

@@ -258,6 +258,11 @@ export function WorkflowVisibilityPanels({
 
   const chosenModels = modelSelection ? collectChosenModels(modelSelection) : [];
 
+  const orchRec = asRecord(orchestratorRun);
+  const orchTimeline = (orchRec?.stage_timeline as Array<Record<string, unknown>> | undefined) ?? [];
+  const orchWorkflowRunId = typeof orchRec?.workflow_run_id === "string" ? (orchRec.workflow_run_id as string) : null;
+  const orchOrchestratorRunId = typeof orchRec?.orchestrator_run_id === "string" ? (orchRec.orchestrator_run_id as string) : null;
+
   const resolvedSymbol = useMemo(() => {
     const fromPlan = pickSymbolFromPlan(planRec);
     if (fromPlan) return fromPlan;
@@ -325,6 +330,62 @@ export function WorkflowVisibilityPanels({
 
   return (
     <div className="space-y-6">
+      <div className={panelClass}>
+        <h3 className="text-xs font-semibold uppercase tracking-[0.2em] text-slate-500">Run correlation (Phase 3)</h3>
+        <p className="mt-1 text-xs text-slate-500">
+          Use <span className="text-slate-300">workflow_run_id</span> as the spine. Orchestrator + agent run IDs are the canonical trace for “this run”.
+        </p>
+        <dl className="mt-3 grid gap-2 text-xs text-slate-400 sm:grid-cols-2">
+          <div>
+            workflow_run_id: <span className="font-mono text-emerald-200/90">{orchWorkflowRunId ?? "—"}</span>
+          </div>
+          <div>
+            orchestrator_run_id: <span className="font-mono text-slate-200/90">{orchOrchestratorRunId ?? "—"}</span>
+          </div>
+          <div>
+            execution_plan_id:{" "}
+            <span className="font-mono text-slate-200/90">{typeof planRec?.plan_id === "string" ? String(planRec.plan_id) : "—"}</span>
+          </div>
+          <div>
+            strategy_ranking_run_id (latest):{" "}
+            <span className="font-mono text-slate-200/90">{strategyRanking?.run_id ?? "—"}</span>
+          </div>
+          <div>
+            model_selection_run_id (latest): <span className="font-mono text-slate-200/90">{modelSelection?.run_id ?? "—"}</span>
+          </div>
+          <div>
+            trace:{" "}
+            {orchWorkflowRunId ? (
+              <Link className="text-sky-300 hover:text-sky-200" href={`/workflow-runbook?workflow_run_id=${encodeURIComponent(orchWorkflowRunId)}`}>
+                open trace tools →
+              </Link>
+            ) : (
+              <span className="text-slate-500">—</span>
+            )}
+          </div>
+        </dl>
+
+        {orchTimeline.length ? (
+          <details className="mt-3 rounded-lg border border-white/[0.06] bg-black/25">
+            <summary className="cursor-pointer px-2 py-1.5 text-[11px] text-slate-400">Stage → agent_run_id map</summary>
+            <div className="border-t border-white/[0.06] p-2">
+              <ul className="max-h-48 space-y-1 overflow-auto text-[11px] text-slate-400">
+                {orchTimeline.slice(0, 18).map((row, i) => (
+                  <li key={i} className="flex items-center justify-between gap-3">
+                    <span className="truncate">
+                      stage {String(row.stage ?? "—")} · {String(row.agent_key ?? "—")}
+                    </span>
+                    <span className="font-mono text-emerald-200/80">{String(row.run_id ?? "—")}</span>
+                  </li>
+                ))}
+              </ul>
+            </div>
+          </details>
+        ) : (
+          <p className="mt-2 text-xs text-slate-500">No orchestrator stage timeline loaded yet. Run a workflow preview to populate.</p>
+        )}
+      </div>
+
       <div className={panelClass}>
         <h3 className="text-xs font-semibold uppercase tracking-[0.2em] text-slate-500">Watchlist builder (stage 6 blob)</h3>
         <p className="mt-1 text-xs text-slate-500">

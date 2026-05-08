@@ -46,6 +46,8 @@ def select_strategy(*, market_phase: str, active_loop: str, regime: str, horizon
 
     return {
         "selected_strategy_key": top,
+        "strategy_ranking_run_id": resp.run_id,
+        "strategy_debate_run_id": resp.debate_run_id,
         "ranked_strategies": ranked,
         "active_strategies": resp.active_strategies,
         "research_candidates": resp.recommended_research_candidate_keys,

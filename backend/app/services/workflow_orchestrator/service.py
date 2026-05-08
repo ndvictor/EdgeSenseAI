@@ -96,9 +96,20 @@ def _persist_run(resp: OrchestratorRunResponse, *, req: OrchestratorRunRequest) 
 def run_workflow(body: OrchestratorRunRequest) -> OrchestratorRunResponse:
     safety = enforce_orchestrator_safety(body.model_dump())
     if safety.blockers:
+        # Even blocked runs should emit a workflow_run_id so operators can trace/audit the attempt.
+        wr = create_workflow_run(
+            WorkflowRunCreateRequest(
+                workflow_name=body.workflow_name,
+                asset_class=body.asset_class,
+                horizon=body.horizon,
+                mode=body.mode,
+                source=body.source,
+                metadata=body.metadata,
+            )
+        )
         resp = OrchestratorRunResponse(
             orchestrator_run_id=new_orchestrator_id(),
-            workflow_run_id="",
+            workflow_run_id=wr.workflow_run_id,
             status="blocked",
             current_stage=None,
             current_agent_key=None,
@@ -115,6 +126,7 @@ def run_workflow(body: OrchestratorRunRequest) -> OrchestratorRunResponse:
             updated_at=iso_utc_now(),
         )
         _MEMORY[resp.orchestrator_run_id] = resp
+        _persist_run(resp, req=body)
         return resp
 
     # Governance pre-check
@@ -133,9 +145,19 @@ def run_workflow(body: OrchestratorRunRequest) -> OrchestratorRunResponse:
     )
     write_event(AuditEventCreate(event_type="governance_check_completed", actor="system", severity="info", message="Governance check completed", metadata=gov.model_dump()))
     if gov.decision == "blocked":
+        wr = create_workflow_run(
+            WorkflowRunCreateRequest(
+                workflow_name=body.workflow_name,
+                asset_class=body.asset_class,
+                horizon=body.horizon,
+                mode=body.mode,
+                source=body.source,
+                metadata={**(body.metadata or {}), "governance_blocked": True},
+            )
+        )
         resp = OrchestratorRunResponse(
             orchestrator_run_id=new_orchestrator_id(),
-            workflow_run_id="",
+            workflow_run_id=wr.workflow_run_id,
             status="blocked",
             current_stage=None,
             current_agent_key=None,
@@ -152,6 +174,7 @@ def run_workflow(body: OrchestratorRunRequest) -> OrchestratorRunResponse:
             updated_at=iso_utc_now(),
         )
         _MEMORY[resp.orchestrator_run_id] = resp
+        _persist_run(resp, req=body)
         return resp
 
     # Create workflow run
@@ -204,7 +227,11 @@ def run_workflow(body: OrchestratorRunRequest) -> OrchestratorRunResponse:
                 workflow_run_id=wr.workflow_run_id,
                 agent_key=agent_key,
                 inputs=req_inputs,
-                context={"source": "workflow_orchestrator", "orchestrator_run_id": orchestrator_run_id},
+                context={
+                    "source": "workflow_orchestrator",
+                    "workflow_run_id": wr.workflow_run_id,
+                    "orchestrator_run_id": orchestrator_run_id,
+                },
                 dry_run=True,
                 requested_stage=None,
                 idempotency_key=f"orc:{orchestrator_run_id}:{agent_key}",
@@ -220,25 +247,30 @@ def run_workflow(body: OrchestratorRunRequest) -> OrchestratorRunResponse:
         if agent_result.warnings:
             warnings.extend(agent_result.warnings)
 
-        # Execution boundary: stop after execution planner (or earlier stop_at_stage)
-        if agent_key == "execution_planner_agent":
+        # Execution boundary: stop after execution approval boundary agent.
+        if agent_key == "execution_approval_agent":
             execution_boundary_reached = True
-            write_event(AuditEventCreate(workflow_run_id=wr.workflow_run_id, orchestrator_run_id=orchestrator_run_id, event_type="execution_boundary_reached", actor="system", severity="info", message="Execution boundary reached", metadata={"agent_key": agent_key}))
-            if approval_required:
-                approval = create_approval_item(
-                    ApprovalItemCreate(
-                        workflow_run_id=wr.workflow_run_id,
-                        orchestrator_run_id=orchestrator_run_id,
-                        agent_run_id=agent_result.run_id,
-                        approval_type="execution_boundary",
-                        status="pending",
-                        requested_action={"action": "approve_execution_handoff", "next_step": "execution_submit_is_separate"},
-                        risk_summary={"note": "paper-first; no submit performed"},
-                        required_approver="owner",
-                    )
+            write_event(
+                AuditEventCreate(
+                    workflow_run_id=wr.workflow_run_id,
+                    orchestrator_run_id=orchestrator_run_id,
+                    event_type="execution_boundary_reached",
+                    actor="system",
+                    severity="info",
+                    message="Execution boundary reached",
+                    metadata={"agent_key": agent_key},
                 )
-                approval_id = approval.approval_id
-                break
+            )
+            if approval_required:
+                # Prefer approval_id from agent result if present.
+                try:
+                    approval_payload = (agent_result.decision or {}).get("result") or {}
+                    approval = approval_payload.get("approval") if isinstance(approval_payload, dict) else None
+                    if isinstance(approval, dict) and approval.get("approval_id"):
+                        approval_id = str(approval.get("approval_id"))
+                except Exception:
+                    approval_id = approval_id
+            break
 
         if agent_result.status in {"blocked", "failed"}:
             write_event(AuditEventCreate(workflow_run_id=wr.workflow_run_id, orchestrator_run_id=orchestrator_run_id, event_type="workflow_blocked", actor="system", severity="warn", message="Workflow blocked by agent", metadata={"agent_key": agent_key, "blockers": agent_result.blockers}))
