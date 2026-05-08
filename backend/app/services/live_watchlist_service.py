@@ -38,4 +38,29 @@ def build_live_candidates() -> list[LiveWatchlistCandidate]:
                 risk_factors=[],
             )
         )
-    return rows
+    if rows:
+        return rows
+
+    # Contract/UI fallback: return a sentinel row that is explicitly NOT a market symbol,
+    # so callers can render "no candidates" without returning an empty list.
+    return [
+        LiveWatchlistCandidate(
+            symbol="CANDIDATE_UNIVERSE_EMPTY",
+            asset="STOCK",
+            asset_class="stock",
+            horizon="swing",
+            trigger="not_configured",
+            trigger_type="not_configured",
+            priority_score=0,
+            trigger_strength=0,
+            account_fit="not_configured",
+            account_fit_label="Not evaluated",
+            suggested_expression="Add candidates to Candidate Universe to populate the live watchlist.",
+            agent_status="disabled",
+            notify_status="watch_only",
+            notify_label="Watch only",
+            data_quality="not_configured",
+            reason="No active candidates found in Candidate Universe.",
+            risk_factors=[],
+        )
+    ]

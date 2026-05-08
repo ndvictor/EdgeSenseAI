@@ -22,7 +22,7 @@ WORKFLOW_NAME = "small_account_edge_radar"
 
 
 class SmallAccountEdgeRadarInput(BaseModel):
-    symbols: list[str] = Field(default_factory=lambda: ["AMD", "NVDA", "AAPL", "MSFT", "BTC-USD"])
+    symbols: list[str] = Field(default_factory=list)
     asset_classes: list[str] | None = None
     horizon: str = "swing"
     account_size: float | None = None
@@ -137,6 +137,20 @@ def run_small_account_edge_radar(request: SmallAccountEdgeRadarInput) -> SmallAc
     agent_results: list[AgentRunResult] = []
     warnings: list[str] = []
     errors: list[str] = []
+
+    if not request.symbols:
+        # Prefer workflow-native symbols over demo defaults.
+        # We source from the Candidate Universe via the existing Watchlist Builder adapter.
+        try:
+            from app.services.agent_runtime.wrappers.watchlist_adapter import build_watchlist
+
+            asset_class = (request.asset_classes[0] if request.asset_classes else "stock").lower().strip()
+            watchlist = build_watchlist(asset_class=asset_class, horizon=request.horizon, max_symbols=10)
+            request.symbols = [s for s in (watchlist.get("symbols") or []) if isinstance(s, str) and s.strip()]
+            if not request.symbols:
+                warnings.append("No symbols provided and Watchlist Builder returned no candidates; workflow will run with zero symbols.")
+        except Exception:
+            warnings.append("No symbols provided and Watchlist Builder unavailable; workflow will run with zero symbols.")
 
     base_payload = request.model_dump()
 
