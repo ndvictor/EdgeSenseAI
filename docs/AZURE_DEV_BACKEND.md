@@ -9,7 +9,7 @@ az login
 az extension add --name containerapp --upgrade
 
 RESOURCE_GROUP="edgesenseai-dev-rg"
-LOCATION="eastus"
+LOCATION="centralus"
 APP_NAME="edgesenseai-backend-dev"
 ENV_NAME="edgesenseai-dev-env"
 ```

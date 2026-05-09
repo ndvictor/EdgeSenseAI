@@ -16,7 +16,8 @@ permissions:
 env:
   AZURE_CORE_OUTPUT: none
   RESOURCE_GROUP: edgesenseai-rg
-  LOCATION: eastus
+  LOCATION: centralus
+  ALLOW_REUSE_NON_CENTRALUS_ENV: "false"
   ACR_LOGIN_SERVER: opsenseaiacrbuild.azurecr.io
   IMAGE_NAME: edgesenseai-backend
   IMAGE_TAG: dev
@@ -150,16 +151,54 @@ jobs:
       - name: Ensure Container Apps environment exists
         shell: bash
         run: |
-          if az containerapp env show \
-            --name "$CONTAINER_APP_ENV" \
-            --resource-group "$RESOURCE_GROUP" >/dev/null 2>&1; then
-            echo "Container Apps environment exists: $CONTAINER_APP_ENV"
+          echo "Existing Container Apps environments:"
+          az containerapp env list \
+            --query "[].{name:name, resourceGroup:resourceGroup, location:location, id:id}" \
+            -o table || true
+
+          ENV_MATCHES_JSON="$(az containerapp env list \
+            --query "[?name=='${CONTAINER_APP_ENV}'].{name:name, resourceGroup:resourceGroup, location:location, id:id}" \
+            -o json)"
+          export ENV_MATCHES_JSON
+
+          CENTRALUS_ENV_ID="$(python - <<'PY'
+          import json, os
+          target = os.environ["LOCATION"].lower()
+          for env in json.loads(os.environ.get("ENV_MATCHES_JSON") or "[]"):
+              if (env.get("location") or "").lower() == target:
+                  print(env.get("id") or "")
+                  break
+          PY
+          )"
+
+          FIRST_ENV_ID="$(python - <<'PY'
+          import json, os
+          matches = json.loads(os.environ.get("ENV_MATCHES_JSON") or "[]")
+          print((matches[0] if matches else {}).get("id") or "")
+          PY
+          )"
+
+          if [ -n "$CENTRALUS_ENV_ID" ]; then
+            echo "Reusing Container Apps environment in ${LOCATION}: $CONTAINER_APP_ENV"
+            echo "CONTAINER_APP_ENV_REF=$CENTRALUS_ENV_ID" >> "$GITHUB_ENV"
+          elif [ -n "$FIRST_ENV_ID" ] && [ "${ALLOW_REUSE_NON_CENTRALUS_ENV,,}" = "true" ]; then
+            echo "Reusing non-centralus Container Apps environment because ALLOW_REUSE_NON_CENTRALUS_ENV=true."
+            echo "CONTAINER_APP_ENV_REF=$FIRST_ENV_ID" >> "$GITHUB_ENV"
           else
-            echo "Creating Container Apps environment: $CONTAINER_APP_ENV"
-            az containerapp env create \
+            echo "Creating Container Apps environment in ${LOCATION}: $CONTAINER_APP_ENV"
+            if ! az containerapp env create \
               --name "$CONTAINER_APP_ENV" \
               --resource-group "$RESOURCE_GROUP" \
-              --location "$LOCATION"
+              --location "$LOCATION"; then
+              echo "Existing Container Apps environment is not in centralus. Delete the old environment or set ALLOW_REUSE_NON_CENTRALUS_ENV=true."
+              exit 1
+            fi
+            ENV_ID="$(az containerapp env show \
+              --name "$CONTAINER_APP_ENV" \
+              --resource-group "$RESOURCE_GROUP" \
+              --query id \
+              -o tsv)"
+            echo "CONTAINER_APP_ENV_REF=$ENV_ID" >> "$GITHUB_ENV"
           fi
 
       - name: Create or update backend Container App
@@ -180,7 +219,7 @@ jobs:
             az containerapp create \
               --name "$CONTAINER_APP_NAME" \
               --resource-group "$RESOURCE_GROUP" \
-              --environment "$CONTAINER_APP_ENV" \
+              --environment "$CONTAINER_APP_ENV_REF" \
               --image "$IMAGE" \
               --target-port "$CONTAINER_PORT" \
               --ingress external \

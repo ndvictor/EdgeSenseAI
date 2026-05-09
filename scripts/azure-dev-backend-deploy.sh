@@ -3,7 +3,7 @@ set -euo pipefail
 
 # Variables (edit or export before running)
 RESOURCE_GROUP="${RESOURCE_GROUP:-edgesenseai-dev-rg}"
-LOCATION="${LOCATION:-eastus}"
+LOCATION="${LOCATION:-centralus}"
 APP_NAME="${APP_NAME:-edgesenseai-backend-dev}"
 ENV_NAME="${ENV_NAME:-edgesenseai-dev-env}"
 

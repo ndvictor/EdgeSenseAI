@@ -3,7 +3,7 @@ set -euo pipefail
 
 # Safe template. Fill these in before running.
 RESOURCE_GROUP="${RESOURCE_GROUP:-edgesenseai-rg}"
-LOCATION="${LOCATION:-eastus}"
+LOCATION="${LOCATION:-centralus}"
 ACR_NAME="${ACR_NAME:-edgesenseaiacr}" # must be globally unique, lowercase
 IMAGE_NAME="${IMAGE_NAME:-edgesenseai-backend}"
 IMAGE_TAG="${IMAGE_TAG:-v1}"

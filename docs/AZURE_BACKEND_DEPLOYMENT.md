@@ -15,7 +15,7 @@ Set these once in your shell:
 
 ```bash
 RESOURCE_GROUP="edgesenseai-rg"
-LOCATION="eastus"
+LOCATION="centralus"
 ACR_NAME="edgesenseaiacr"          # must be globally unique, lowercase, 5-50 chars
 CONTAINER_APP_ENV="edgesenseai-env"
 CONTAINER_APP_NAME="edgesenseai-backend"
