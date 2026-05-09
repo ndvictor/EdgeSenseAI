@@ -218,6 +218,95 @@ function nested(source: unknown, path: string[]): unknown {
   return current;
 }
 
+type ProviderAttemptSummary = {
+  provider: string;
+  status: string;
+  detail: string;
+};
+
+type ProviderSummary = {
+  symbol: string;
+  provider: string;
+  status: string;
+  detail: string;
+  quality: string;
+  freshness: string;
+  isMock: boolean;
+  attempts: ProviderAttemptSummary[];
+  warnings: string[];
+};
+
+function providerDisplayName(value: unknown): string {
+  const provider = text(value, "unknown").toLowerCase();
+  const labels: Record<string, string> = {
+    yfinance: "yfinance",
+    yahoo: "yfinance",
+    alpaca: "Alpaca",
+    polygon: "Polygon",
+    mock: "Mock",
+    smoke: "Smoke check",
+  };
+  return labels[provider] ?? provider;
+}
+
+function providerAttemptStatus(attempt: Record<string, unknown>): ProviderAttemptSummary {
+  const provider = providerDisplayName(attempt.provider);
+  const quality = text(attempt.data_quality ?? attempt.status, "unknown");
+  const error = text(attempt.error, "");
+  const notConfigured = asList(attempt.not_configured_fields).length > 0 || quality === "not_configured";
+  const unavailable = asList(attempt.unavailable_fields).length > 0;
+  if (quality === "real") {
+    return {
+      provider,
+      status: unavailable ? "Live with limited fields" : "Configured and live",
+      detail: unavailable ? `Missing optional fields: ${text(attempt.unavailable_fields)}` : "Real market data returned.",
+    };
+  }
+  if (notConfigured) {
+    return {
+      provider,
+      status: "Not configured",
+      detail: error || "Provider credentials or enablement are missing.",
+    };
+  }
+  return {
+    provider,
+    status: quality,
+    detail: error || "Provider was checked during data readiness.",
+  };
+}
+
+function summarizeProviderStatus(providerStatus: unknown, fallbackProvider: unknown): ProviderSummary {
+  const raw = asRecord(providerStatus);
+  const symbolEntry = Object.entries(raw).find(([, value]) => {
+    const record = asRecord(value);
+    return Boolean(record.provider || record.status || record.attempts);
+  });
+  const symbol = symbolEntry?.[0] ?? "selected symbol";
+  const record = symbolEntry ? asRecord(symbolEntry[1]) : raw;
+  const attempts = asList(record.attempts).map((attempt) => providerAttemptStatus(asRecord(attempt)));
+  const provider = providerDisplayName(record.provider ?? fallbackProvider ?? attempts.find((attempt) => attempt.status.includes("live"))?.provider);
+  const isMock = Boolean(record.is_mock) || provider.toLowerCase() === "mock";
+  const quality = text(record.quality_status, attempts.find((attempt) => attempt.status.includes("live")) ? "real" : "unknown");
+  const freshness = text(record.freshness_status, "checked per run");
+  const rawStatus = text(record.status, "");
+  const hasLiveAttempt = attempts.some((attempt) => attempt.status.includes("live")) || (!isMock && rawStatus === "usable");
+  const status = isMock ? "Mock fallback" : hasLiveAttempt ? "Configured and live" : rawStatus || "Not configured";
+  const warnings = asList(record.warnings).map((warning) => text(warning)).filter(Boolean);
+
+  return {
+    symbol,
+    provider,
+    status,
+    detail: isMock ? "Using mock/fallback data." : hasLiveAttempt ? "Real market data is being used for workflow readiness." : "No live provider is currently usable.",
+    quality,
+    freshness,
+    isMock,
+    attempts,
+    warnings,
+  };
+}
+
 function timeline(run: OrchestratorRunRecord | null): StageTimelineItem[] {
   return asList(run?.stage_timeline).map((row) => asRecord(row) as StageTimelineItem);
 }
@@ -422,6 +511,63 @@ function Metric({ label, value, tone }: { label: string; value: React.ReactNode;
   );
 }
 
+function ProviderStatusCard({ summary }: { summary: ProviderSummary }) {
+  return (
+    <Card title="Data Source & Status" subtitle="Human-readable provider selected by DataReadinessAgent. No raw JSON.">
+      <div className="grid gap-3 md:grid-cols-2">
+        <div className="rounded-2xl border border-emerald-300/25 bg-emerald-400/10 p-4 shadow-[0_0_28px_rgba(16,185,129,0.10)]">
+          <div className="text-[10px] font-bold uppercase tracking-[0.2em] text-emerald-200/70">Data source used</div>
+          <div className="mt-2 text-3xl font-black text-emerald-100">{summary.provider}</div>
+          <p className="mt-2 text-sm leading-5 text-slate-400">{summary.detail}</p>
+        </div>
+        <div className="rounded-2xl border border-emerald-300/20 bg-black/25 p-4">
+          <div className="mb-3 flex flex-wrap items-center gap-2">
+            <Badge tone={summary.status === "Configured and live" ? "safe" : summary.isMock ? "warn" : "blocked"}>{summary.status}</Badge>
+            <Badge tone="paper">{summary.symbol}</Badge>
+          </div>
+          <div className="grid gap-2">
+            <Metric label="Freshness" value={summary.freshness} tone={summary.freshness === "fresh" ? "text-emerald-100" : "text-amber-100"} />
+            <Metric label="Quality" value={summary.quality} />
+            <Metric label="Mock data" value={summary.isMock ? "yes" : "no"} tone={summary.isMock ? "text-amber-100" : "text-emerald-100"} />
+          </div>
+        </div>
+      </div>
+      <div className="mt-4 grid gap-3 lg:grid-cols-2">
+        <div className="rounded-2xl border border-white/10 bg-black/25 p-4">
+          <div className="text-xs font-semibold uppercase tracking-[0.18em] text-slate-500">Provider checks</div>
+          <div className="mt-3 space-y-2">
+            {summary.attempts.length ? (
+              summary.attempts.map((attempt) => (
+                <div key={`${attempt.provider}-${attempt.status}`} className="rounded-xl border border-emerald-400/10 bg-black/25 p-3">
+                  <div className="flex flex-wrap items-center justify-between gap-2">
+                    <div className="font-semibold text-slate-100">{attempt.provider}</div>
+                    <span className={`rounded-full border px-2 py-0.5 text-[10px] font-bold uppercase ${statusTone(attempt.status)}`}>{attempt.status}</span>
+                  </div>
+                  <p className="mt-1 text-xs leading-5 text-slate-500">{attempt.detail}</p>
+                </div>
+              ))
+            ) : (
+              <p className="text-sm text-slate-500">No provider attempt details reported.</p>
+            )}
+          </div>
+        </div>
+        <div className="rounded-2xl border border-amber-400/15 bg-amber-500/5 p-4">
+          <div className="text-xs font-semibold uppercase tracking-[0.18em] text-amber-100/70">Provider notes</div>
+          {summary.warnings.length ? (
+            <ul className="mt-3 space-y-2 text-sm leading-5 text-amber-100/90">
+              {summary.warnings.map((warning) => (
+                <li key={warning}>{warning}</li>
+              ))}
+            </ul>
+          ) : (
+            <p className="mt-3 text-sm text-slate-500">No provider warnings reported.</p>
+          )}
+        </div>
+      </div>
+    </Card>
+  );
+}
+
 function IssueList({ items, empty = "None" }: { items: unknown; empty?: string }) {
   const rows = asList(items).map((item) => text(item)).filter(Boolean);
   if (!rows.length) return <p className="text-sm text-slate-500">{empty}</p>;
@@ -603,6 +749,7 @@ export default function DayTradingWorkflowPage() {
   const runbookStages = asList(data.runbookStages.data?.stages);
   const auditEvents = asList(data.auditEvents.data?.events);
   const schedules = asList(data.schedules.data?.schedules);
+  const providerSummary = summarizeProviderStatus(run?.provider_status ?? dataPipeline.provider_status, run?.provider_name ?? dataPipeline.provider_name);
 
   const runWorkflow = useCallback(
     async (symbolsText: string, stopStage: number) => {
@@ -1040,9 +1187,11 @@ export default function DayTradingWorkflowPage() {
             description="Shows the data path feeding the dry-run workflow, including provider status, feature rows, persistence mode, freshness, and optional Kafka state."
           />
           <div className="grid gap-4 xl:grid-cols-2">
+          <div className="xl:col-span-2">
+            <ProviderStatusCard summary={providerSummary} />
+          </div>
           {[
-            ["Data Source Used", run?.source_mode ?? dataPipeline.provider_name],
-            ["Provider Status", run?.provider_status ?? dataPipeline.provider_status],
+            ["Workflow Source Mode", run?.source_mode ?? "runtime"],
             ["Snapshot Status", `${text(run?.latest_snapshot_status)} (${text(run?.latest_snapshot_count ?? 0)})`],
             ["Feature Store Status", `${text(run?.feature_store_status ?? dataPipeline.feature_store_status)} (${text(run?.feature_row_count ?? 0)} rows)`],
             ["Persistence Status", run?.persistence_status ?? dataPipeline.persistence_status],
