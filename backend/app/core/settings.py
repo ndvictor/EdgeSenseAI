@@ -15,7 +15,7 @@ class Settings(BaseSettings):
     environment: str = Field(default="dev", alias="ENVIRONMENT")
     app_name: str = Field(default="EdgeSenseAI Backend", alias="APP_NAME")
 
-    database_url: str = Field(default="postgresql://edgesenseai:edgesenseai@localhost:55532/edgesenseai", alias="DATABASE_URL")
+    database_url: str = Field(default="", alias="DATABASE_URL")
     redis_url: str = Field(default="redis://localhost:56390/0", alias="REDIS_URL")
     kafka_bootstrap_servers: str = Field(default="localhost:19093", alias="KAFKA_BOOTSTRAP_SERVERS")
 

@@ -229,6 +229,8 @@ jobs:
                 BROKER_EXECUTION_ENABLED=false \
                 REQUIRE_HUMAN_APPROVAL=true \
                 MARKET_DATA_MODE=provider \
+                MARKET_DATA_PROVIDER=yfinance \
+                MARKET_DATA_PROVIDER_PRIORITY=polygon,alpaca,yfinance \
                 ALLOW_MOCK_MARKET_DATA=false \
                 ALLOW_SYNTHETIC_MARKET_DATA=false \
                 QLIB_REQUIRED=false \
@@ -255,6 +257,8 @@ jobs:
                 BROKER_EXECUTION_ENABLED=false \
                 REQUIRE_HUMAN_APPROVAL=true \
                 MARKET_DATA_MODE=provider \
+                MARKET_DATA_PROVIDER=yfinance \
+                MARKET_DATA_PROVIDER_PRIORITY=polygon,alpaca,yfinance \
                 ALLOW_MOCK_MARKET_DATA=false \
                 ALLOW_SYNTHETIC_MARKET_DATA=false \
                 QLIB_REQUIRED=false \

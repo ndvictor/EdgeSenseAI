@@ -158,6 +158,14 @@ def _persist_run(resp: OrchestratorRunResponse, *, req: OrchestratorRunRequest) 
 
 
 def run_workflow(body: OrchestratorRunRequest) -> OrchestratorRunResponse:
+    if not body.symbols:
+        return _blocked_run_response(
+            body=body,
+            blockers=["no_symbols_selected"],
+            warnings=[],
+            next_action="Run scanner/provider candidate selection before invoking the autonomous workflow.",
+        )
+
     db_blocker = production_database_blocker()
     if db_blocker:
         db_health = check_database_health()

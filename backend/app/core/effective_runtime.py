@@ -5,8 +5,24 @@ from __future__ import annotations
 import os
 from typing import Any
 
+from app.core.production_safety import is_production_environment
 from app.core.runtime_settings_store import load_runtime_settings
 from app.core.settings import settings
+
+
+_PRODUCTION_ENV_FIRST_KEYS = {
+    "PAPER_TRADING_ENABLED",
+    "LIVE_TRADING_ENABLED",
+    "BROKER_EXECUTION_ENABLED",
+    "EXECUTION_AGENT_ENABLED",
+    "REQUIRE_HUMAN_APPROVAL",
+    "MARKET_DATA_MODE",
+    "MARKET_DATA_PROVIDER",
+    "MARKET_DATA_PROVIDER_PRIORITY",
+    "ALLOW_MOCK_MARKET_DATA",
+    "ALLOW_SYNTHETIC_MARKET_DATA",
+    "QLIB_REQUIRED",
+}
 
 # Uppercase env keys -> Settings attribute name for fallback when env is unset
 _BOOL_ENV_TO_SETTINGS: dict[str, str] = {
@@ -64,10 +80,12 @@ def _parse_env_bool(raw: str) -> bool:
 
 def effective_bool(env_key: str) -> bool:
     """Resolve bool: runtime_settings.json > os.environ > pydantic settings."""
+    env_val = os.getenv(env_key)
+    if is_production_environment() and env_key in _PRODUCTION_ENV_FIRST_KEYS and env_val is not None:
+        return _parse_env_bool(env_val)
     runtime = load_runtime_settings()
     if env_key in runtime:
         return bool(runtime[env_key])
-    env_val = os.getenv(env_key)
     if env_val is not None:
         return _parse_env_bool(env_val)
     attr = _BOOL_ENV_TO_SETTINGS.get(env_key)
@@ -109,10 +127,12 @@ def effective_int(env_key: str) -> int:
 
 
 def effective_str(env_key: str) -> str:
+    env_val = os.getenv(env_key)
+    if is_production_environment() and env_key in _PRODUCTION_ENV_FIRST_KEYS and env_val is not None:
+        return env_val
     runtime = load_runtime_settings()
     if env_key in runtime:
         return str(runtime[env_key])
-    env_val = os.getenv(env_key)
     if env_val is not None:
         return env_val
     attr = _STR_ENV_TO_SETTINGS.get(env_key)
