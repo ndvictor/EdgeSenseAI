@@ -2629,6 +2629,9 @@ def test_settings_master_admin_contract():
     assert "trading" in payload
     assert "master_admin" in payload
 
+    news = payload.get("news") or {}
+    assert "news_provider_priority" in news
+
     ma = payload["master_admin"]
     # Required settings fields
     assert "workflow_enabled" in ma

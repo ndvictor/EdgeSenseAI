@@ -48,6 +48,7 @@ _STR_ENV_TO_SETTINGS: dict[str, str] = {
     "MARKET_DATA_PROVIDER": "market_data_provider",
     "MARKET_DATA_PROVIDER_PRIORITY": "market_data_provider_priority_raw",
     "NEWS_PROVIDER_PRIMARY": "news_provider_primary",
+    "NEWS_PROVIDER_PRIORITY": "news_provider_priority_raw",
     "LLM_GATEWAY_DEFAULT_CHEAP_MODEL": "llm_gateway_default_cheap_model",
     "LLM_GATEWAY_DEFAULT_REASONING_MODEL": "llm_gateway_default_reasoning_model",
     "LLM_GATEWAY_DEFAULT_FALLBACK_MODEL": "llm_gateway_default_fallback_model",
@@ -128,3 +129,29 @@ def emergency_stop_active() -> bool:
 
 def execution_enabled() -> bool:
     return effective_bool("EXECUTION_ENABLED") and not emergency_stop_active()
+
+
+def news_provider_priority_from_runtime() -> list[str]:
+    """Comma-separated fallback order from runtime / env / defaults (lowercase names)."""
+    raw = effective_str("NEWS_PROVIDER_PRIORITY")
+    if raw and raw.strip():
+        return [p.strip().lower() for p in raw.split(",") if p.strip()]
+    return list(settings.news_provider_priority)
+
+
+def news_provider_chain() -> list[str]:
+    """News feeds to try in order: primary first, then priority list entries (deduped)."""
+    primary = (effective_str("NEWS_PROVIDER_PRIMARY") or "").lower().strip()
+    tail = news_provider_priority_from_runtime()
+    ordered: list[str] = []
+    seen: set[str] = set()
+    if primary and primary != "none":
+        ordered.append(primary)
+        seen.add(primary)
+    for name in tail:
+        n = (name or "").strip().lower()
+        if not n or n == "none" or n in seen:
+            continue
+        ordered.append(n)
+        seen.add(n)
+    return ordered if ordered else ["none"]

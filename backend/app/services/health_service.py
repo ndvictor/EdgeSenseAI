@@ -1,6 +1,6 @@
 from datetime import datetime
 
-from app.core.effective_runtime import effective_bool, effective_str
+from app.core.effective_runtime import effective_bool, effective_str, news_provider_chain, news_provider_priority_from_runtime
 from app.core.settings import settings
 from app.services.market_data_service import market_data_provider_priority_from_runtime
 from app.services.embedding_service import get_embedding_status
@@ -24,6 +24,9 @@ def get_health_snapshot() -> dict:
         "redis_configured": bool(settings.redis_url),
         "market_data_provider": (effective_str("MARKET_DATA_PROVIDER") or settings.market_data_provider).lower().strip(),
         "market_data_provider_priority": market_data_provider_priority_from_runtime(),
+        "news_provider_primary": (effective_str("NEWS_PROVIDER_PRIMARY") or settings.news_provider_primary).lower().strip(),
+        "news_provider_priority": news_provider_priority_from_runtime(),
+        "news_provider_chain": news_provider_chain(),
         "live_trading_enabled": effective_bool("LIVE_TRADING_ENABLED"),
         "paper_trading_enabled": effective_bool("PAPER_TRADING_ENABLED"),
         "execution_agent_enabled": effective_bool("EXECUTION_AGENT_ENABLED"),

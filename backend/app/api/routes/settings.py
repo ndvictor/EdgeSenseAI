@@ -46,6 +46,7 @@ class MarketDataSettings(BaseModel):
 class NewsSettings(BaseModel):
     news_provider_enabled: bool
     news_provider_primary: str
+    news_provider_priority: str
     news_provider_timeout_seconds: int
 
 
@@ -127,6 +128,7 @@ class MarketDataSettingsUpdate(BaseModel):
 class NewsSettingsUpdate(BaseModel):
     news_provider_enabled: bool | None = None
     news_provider_primary: str | None = None
+    news_provider_priority: str | None = None
     news_provider_timeout_seconds: int | None = None
 
 
@@ -218,6 +220,7 @@ def get_settings() -> SettingsResponse:
         news=NewsSettings(
             news_provider_enabled=runtime.get("NEWS_PROVIDER_ENABLED", settings.news_provider_enabled),
             news_provider_primary=runtime.get("NEWS_PROVIDER_PRIMARY", settings.news_provider_primary),
+            news_provider_priority=runtime.get("NEWS_PROVIDER_PRIORITY", settings.news_provider_priority_raw),
             news_provider_timeout_seconds=runtime.get("NEWS_PROVIDER_TIMEOUT_SECONDS", settings.news_provider_timeout_seconds),
         ),
         platform=PlatformFeatures(
@@ -323,6 +326,8 @@ def _apply_news_updates(current: dict, updates: NewsSettingsUpdate | None) -> No
         current["NEWS_PROVIDER_ENABLED"] = updates.news_provider_enabled
     if updates.news_provider_primary is not None:
         current["NEWS_PROVIDER_PRIMARY"] = updates.news_provider_primary
+    if updates.news_provider_priority is not None:
+        current["NEWS_PROVIDER_PRIORITY"] = updates.news_provider_priority
     if updates.news_provider_timeout_seconds is not None:
         current["NEWS_PROVIDER_TIMEOUT_SECONDS"] = updates.news_provider_timeout_seconds
 

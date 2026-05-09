@@ -55,6 +55,7 @@ DEFAULT_RUNTIME_SETTINGS: dict[str, Any] = {
     # News Settings
     "NEWS_PROVIDER_ENABLED": False,
     "NEWS_PROVIDER_PRIMARY": "none",
+    "NEWS_PROVIDER_PRIORITY": "newsapi,finnhub,benzinga",
     "NEWS_PROVIDER_TIMEOUT_SECONDS": 10,
     # Rate Limits
     "MAX_DAILY_LLM_COST": 10,

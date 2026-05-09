@@ -67,6 +67,10 @@ class Settings(BaseSettings):
 
     news_provider_enabled: bool = Field(default=False, alias="NEWS_PROVIDER_ENABLED")
     news_provider_primary: str = Field(default="none", alias="NEWS_PROVIDER_PRIMARY")
+    news_provider_priority_raw: str = Field(
+        default="newsapi,finnhub,benzinga",
+        alias="NEWS_PROVIDER_PRIORITY",
+    )
     news_api_key: str = Field(default="", alias="NEWS_API_KEY")
     finnhub_api_key: str = Field(default="", alias="FINNHUB_API_KEY")
     benzinga_api_key: str = Field(default="", alias="BENZINGA_API_KEY")
@@ -92,6 +96,10 @@ class Settings(BaseSettings):
     @property
     def market_data_provider_priority(self) -> list[str]:
         return [item.strip().lower() for item in self.market_data_provider_priority_raw.split(",") if item.strip()]
+
+    @property
+    def news_provider_priority(self) -> list[str]:
+        return [item.strip().lower() for item in self.news_provider_priority_raw.split(",") if item.strip()]
 
     @property
     def notification_email_recipients_list(self) -> list[str]:

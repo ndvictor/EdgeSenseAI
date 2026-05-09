@@ -6,6 +6,7 @@ import {
   BookOpen,
   BrainCircuit,
   Database,
+  Globe,
   Import,
   Layers2,
   ListChecks,

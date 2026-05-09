@@ -319,7 +319,7 @@ export default function WorkflowRunbookPage() {
         seen.add(sym);
         unique.push(sym);
       }
-      const realSymbols = unique.filter((s) => !LIVE_WATCHLIST_PLACEHOLDER_SYMBOLS.has(s));
+      const realSymbols = unique.filter((s) => s !== "CANDIDATE_UNIVERSE_EMPTY");
       if (!realSymbols.length) {
         setWatchlistSymbols([]);
         setWatchlistMeta(wl.summary ?? null);
@@ -395,11 +395,8 @@ export default function WorkflowRunbookPage() {
     setOrcBusy(true);
     setError(null);
     try {
-      if (
-        !symbolsForNextRun.length ||
-        symbolsForNextRun.some((s) => LIVE_WATCHLIST_PLACEHOLDER_SYMBOLS.has(String(s).toUpperCase()))
-      ) {
-        setError("No real symbols from live watchlist (empty Candidate Universe or placeholder only). Refresh context and add tickers in Candidate Engine.");
+      if (!symbolsForNextRun.length || symbolsForNextRun.some((s) => String(s).toUpperCase() === "CANDIDATE_UNIVERSE_EMPTY")) {
+        setError("No real tickers selected for next run. Add active candidates in Candidate Engine / Live Watchlist.");
         return;
       }
       const res = await runWorkflowOrchestrator({

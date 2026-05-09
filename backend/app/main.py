@@ -105,6 +105,7 @@ from app.schemas import (
 from app.services.account_feasibility_service import AccountFeasibilityResult, evaluate_account_feasibility
 from app.services.candidate_universe_service import get_candidate_symbols
 from app.services.decision_workflow_service import DecisionWorkflowRunRequest, get_latest_decision_workflow_run, run_decision_workflow
+from app.services.universe_selection_service import UniverseSelectionRequest, run_universe_selection
 from app.services.edge_signal_service import build_edge_signals
 from app.services.feature_engineering_service import EngineeredFeatures, build_features
 from app.services.health_service import get_health_snapshot
@@ -363,11 +364,17 @@ def _build_decision_command_center() -> CommandCenterResponse:
 
 
 def _run_command_center_workflow() -> CommandCenterResponse:
-    """Explicitly run decision workflow on candidate universe and return Command Center response."""
-    symbols = get_candidate_symbols()
+    """Explicitly run universe selection, then decision workflow on the ranked symbols."""
+    raw_seeds = get_candidate_symbols()
+    seeds = [
+        str(s).strip().upper()
+        for s in raw_seeds
+        if s and str(s).strip().upper() not in {"", "CANDIDATE_UNIVERSE_EMPTY"}
+    ]
     effective_profile = _effective_account_profile()
+    max_decision = 5
 
-    if not symbols:
+    if not seeds:
         return CommandCenterResponse(
             account_profile=effective_profile,
             top_action=None,
@@ -379,14 +386,46 @@ def _run_command_center_workflow() -> CommandCenterResponse:
             cost_usage_message="No candidates selected. Add symbols from Stocks search, Watchlist, Scanner, or Candidate Universe before ranking.",
         )
 
-    # Run decision workflow on candidate universe
+    # Step 1: universe selection (freshness + weighted rank) — same starting point as orchestrator pipeline.
+    universe_run_id: str | None = None
+    symbols_for_decision = seeds[:max_decision]
+    try:
+        univ = run_universe_selection(
+            UniverseSelectionRequest(
+                symbols=seeds[:50],
+                asset_class="stock",
+                horizon="swing",
+                source="auto",
+                max_candidates=max_decision,
+                min_score=50,
+                include_mock=False,
+            )
+        )
+        universe_run_id = univ.run_id
+        picked: list[str] = []
+        for c in univ.selected_watchlist or []:
+            sym = str(getattr(c, "symbol", "") or "").strip().upper()
+            if sym and sym != "CANDIDATE_UNIVERSE_EMPTY" and sym not in picked:
+                picked.append(sym)
+        if len(picked) < max_decision and univ.ranked_candidates:
+            for c in univ.ranked_candidates:
+                sym = str(getattr(c, "symbol", "") or "").strip().upper()
+                if sym and sym != "CANDIDATE_UNIVERSE_EMPTY" and sym not in picked:
+                    picked.append(sym)
+                if len(picked) >= max_decision:
+                    break
+        if picked:
+            symbols_for_decision = picked[:max_decision]
+    except Exception:
+        symbols_for_decision = seeds[:max_decision]
+
     workflow = run_decision_workflow(
         DecisionWorkflowRunRequest(
-            symbols=symbols,
+            symbols=symbols_for_decision,
             asset_class="stock",
             horizon="swing",
             source="auto",
-            max_candidates=5,
+            max_candidates=max_decision,
             allow_mock=False,
         ),
         account_profile=effective_profile,
@@ -403,6 +442,7 @@ def _run_command_center_workflow() -> CommandCenterResponse:
         for candidate in workflow.candidates
     ]
 
+    uni_note = f" After universe selection ({universe_run_id})." if universe_run_id else ""
     return CommandCenterResponse(
         account_profile=effective_profile,
         top_action=workflow.top_action,
@@ -411,7 +451,11 @@ def _run_command_center_workflow() -> CommandCenterResponse:
         agents=agents(),
         source_data_status=source_status,
         dashboard_mode=f"decision_workflow:{workflow.status}",
-        cost_usage_message=f"Workflow {workflow.run_id} just completed. Ranked {len(symbols)} candidate(s). {len([c for c in workflow.candidates if c.status == 'candidate_ready'])} passed source-backed quality and model thresholds.",
+        cost_usage_message=(
+            f"Workflow {workflow.run_id} just completed.{uni_note} "
+            f"Decision pass used {len(symbols_for_decision)} symbol(s) post-universe. "
+            f"{len([c for c in workflow.candidates if c.status == 'candidate_ready'])} passed source-backed quality and model thresholds."
+        ),
     )
 
 

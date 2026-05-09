@@ -843,8 +843,8 @@ function SettingsPageInner() {
                                 disabled={disableAll}
                               />
                               <SelectInput
-                                label="Market Data Provider"
-                                description="Primary market data source"
+                                label="Market data — try first"
+                                description="Primary feed for quotes/bars when source is auto; fallbacks follow Provider priority."
                                 value={settings.market_data.market_data_provider}
                                 onChange={(val) => updateMarketData({ market_data_provider: val })}
                                 options={[
@@ -855,8 +855,8 @@ function SettingsPageInner() {
                                 ]}
                               />
                               <TextInput
-                                label="Provider Priority"
-                                description="Fallback order (comma-separated)"
+                                label="Market — provider priority"
+                                description="Additional feeds to try in order after primary (comma-separated)."
                                 value={settings.market_data.market_data_provider_priority}
                                 onChange={(val) => updateMarketData({ market_data_provider_priority: val })}
                                 placeholder="polygon,alpaca,yfinance,mock"
@@ -932,8 +932,8 @@ function SettingsPageInner() {
                                 disabled={disableAll}
                               />
                               <SelectInput
-                                label="Primary News Source"
-                                description="Main news data provider"
+                                label="News — try first"
+                                description="First news feed to use when the app aggregates headlines; configure API keys in .env."
                                 value={settings.news.news_provider_primary}
                                 onChange={(val) => updateNews({ news_provider_primary: val })}
                                 options={[
@@ -942,6 +942,13 @@ function SettingsPageInner() {
                                   { value: "finnhub", label: "Finnhub" },
                                   { value: "benzinga", label: "Benzinga" },
                                 ]}
+                              />
+                              <TextInput
+                                label="News — provider priority"
+                                description="Other news feeds to try after the first (comma-separated). Enables multiple backends without a single dropdown."
+                                value={settings.news.news_provider_priority}
+                                onChange={(val) => updateNews({ news_provider_priority: val })}
+                                placeholder="newsapi,finnhub,benzinga"
                               />
                               <NumberInput
                                 label="Timeout (seconds)"

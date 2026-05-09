@@ -2,7 +2,16 @@
 
 import { useEffect, useState } from "react";
 import Link from "next/link";
-import { api, getAgentRuntimeAgents, getAgentRuntimeLatest, type AgentRuntimeAgentDescriptor, type AgentRunResultRecord, type CommandCenterResponse } from "@/lib/api";
+import {
+  api,
+  getAgentRuntimeAgents,
+  getAgentRuntimeLatest,
+  runWorkflowOrchestrator,
+  type AgentRuntimeAgentDescriptor,
+  type AgentRunResultRecord,
+  type CommandCenterResponse,
+  type OrchestratorRunRecord,
+} from "@/lib/api";
 import { EdgeSignalGrid, MetricCard, RecommendationTable } from "@/components/Cards";
 import { LiveWatchlistPanel } from "@/components/LiveWatchlistPanel";
 import { Gauge, Users, TrendingUp, AlertTriangle, Play, Clock } from "lucide-react";
@@ -144,6 +153,7 @@ function CommandCenterPanel() {
   const [data, setData] = useState<CommandCenterResponse | null>(null);
   const [error, setError] = useState<string | null>(null);
   const [isRunning, setIsRunning] = useState(false);
+  const [runNotice, setRunNotice] = useState<{ kind: "success" | "error"; text: string } | null>(null);
   const [tab, setTab] = useState<"candidates" | "live_watch" | "agents">("candidates");
 
   const loadData = async () => {
@@ -162,12 +172,28 @@ function CommandCenterPanel() {
   const handleRunWorkflow = async () => {
     setIsRunning(true);
     setError(null);
+    setRunNotice(null);
+    const controller = new AbortController();
+    const timeoutMs = 180_000;
+    const timer = window.setTimeout(() => controller.abort(), timeoutMs);
     try {
-      const response = await api.runCommandCenter();
+      const response = await api.runCommandCenter(controller.signal);
       setData(response);
+      setRunNotice({
+        kind: "success",
+        text: response.cost_usage_message?.trim() || "Workflow finished. Dashboard updated.",
+      });
     } catch (err) {
-      setError("Failed to run workflow");
+      const aborted = err instanceof Error && err.name === "AbortError";
+      const msg = aborted
+        ? `Request timed out after ${timeoutMs / 1000}s (universe + ranking can be slow). Check backend logs or try again.`
+        : err instanceof Error
+          ? err.message
+          : "Failed to run workflow";
+      setError(msg);
+      setRunNotice({ kind: "error", text: msg });
     } finally {
+      window.clearTimeout(timer);
       setIsRunning(false);
     }
   };
@@ -211,6 +237,51 @@ function CommandCenterPanel() {
             {error}
           </div>
         )}
+
+        <section className={`${cardShell} mb-4`}>
+          <div className="flex flex-wrap items-center justify-between gap-4">
+            <div className="min-w-0">
+              <p className="text-xs font-semibold uppercase tracking-[0.2em] text-emerald-400">Decision workflow</p>
+              <p className="mt-1 text-sm text-slate-400">
+                Runs universe selection on active candidates, then ranks them (<code className="text-emerald-200/80">POST /api/command-center/run</code>). Can take 30–120s — keep this tab open until it finishes.
+              </p>
+            </div>
+            <button
+              type="button"
+              onClick={() => void handleRunWorkflow()}
+              disabled={isRunning}
+              className={`flex shrink-0 items-center gap-2 rounded-xl px-4 py-2.5 text-sm font-bold uppercase transition-all ${
+                isRunning
+                  ? "cursor-wait border border-emerald-400/50 bg-emerald-500/20 text-emerald-200"
+                  : "border border-emerald-400/40 bg-emerald-500/10 text-emerald-300 hover:bg-emerald-500 hover:text-slate-950"
+              }`}
+            >
+              {isRunning ? (
+                <>
+                  <div className="h-4 w-4 animate-spin rounded-full border-2 border-emerald-400 border-t-transparent" />
+                  Running…
+                </>
+              ) : (
+                <>
+                  <Play className="h-4 w-4" />
+                  Run decision workflow
+                </>
+              )}
+            </button>
+          </div>
+          {runNotice ? (
+            <div
+              className={`mt-4 rounded-xl border px-3 py-2 text-sm ${
+                runNotice.kind === "success"
+                  ? "border-emerald-500/35 bg-emerald-500/10 text-emerald-100"
+                  : "border-rose-500/35 bg-rose-500/10 text-rose-100"
+              }`}
+            >
+              {runNotice.kind === "success" ? "Done — " : "Error — "}
+              {runNotice.text}
+            </div>
+          ) : null}
+        </section>
 
         {tab === "live_watch" ? (
           <LiveWatchlistPanel showHeader={false} mode="watchlist" />

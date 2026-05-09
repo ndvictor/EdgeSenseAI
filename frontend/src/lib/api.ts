@@ -20,7 +20,24 @@ async function request<T>(path: string, options?: RequestInit): Promise<T> {
       ...(options?.headers ?? {}),
     },
   });
-  if (!response.ok) throw new Error(`${path} failed with ${response.status}`);
+  if (!response.ok) {
+    const text = await response.text().catch(() => "");
+    let detail = `${path} failed with ${response.status}`;
+    try {
+      const j = JSON.parse(text) as { detail?: unknown };
+      if (j?.detail != null) {
+        detail =
+          typeof j.detail === "string"
+            ? `${detail}: ${j.detail}`
+            : `${detail}: ${JSON.stringify(j.detail)}`;
+      } else if (text.trim()) {
+        detail = `${detail}: ${text.slice(0, 280)}`;
+      }
+    } catch {
+      if (text.trim()) detail = `${detail}: ${text.slice(0, 280)}`;
+    }
+    throw new Error(detail);
+  }
   return parseJsonResponse<T>(response, path);
 }
 
@@ -349,6 +366,8 @@ export type MarketDataSettings = {
 export type NewsSettings = {
   news_provider_enabled: boolean;
   news_provider_primary: string;
+  /** Comma-separated fallback order after primary (e.g. newsapi,finnhub,benzinga). */
+  news_provider_priority: string;
   news_provider_timeout_seconds: number;
 };
 
@@ -429,6 +448,7 @@ export type MarketDataSettingsUpdate = {
 export type NewsSettingsUpdate = {
   news_provider_enabled?: boolean;
   news_provider_primary?: string;
+  news_provider_priority?: string;
   news_provider_timeout_seconds?: number;
 };
 
@@ -1181,6 +1201,54 @@ export type FeatureStoreRunResponse = {
   normalized_snapshot?: NormalizedMarketSnapshot | null;
   storage_mode?: string;
   warnings?: string[];
+};
+
+/** Body for `POST /api/pipeline/run` — feed → quality → feature store → universe → orchestrator. */
+export type PipelineAutomationRunRequest = {
+  asset_class?: string;
+  horizon?: string;
+  mode?: string;
+  source?: string;
+  seed_symbols?: string[];
+  max_candidates?: number;
+  dry_run?: boolean;
+  require_human_approval?: boolean;
+  stop_at_stage?: number;
+  metadata?: Record<string, unknown>;
+};
+
+/** One row from `artifacts.feature_store_runs` after an automated pipeline run. */
+export type PipelineFeatureStoreRunArtifact = {
+  symbol: string;
+  quality_status: string;
+  data_source: string;
+  provider?: string;
+  warnings?: string[];
+  row_id: string;
+};
+
+export type PipelineAutomationRunResponse = {
+  pipeline_run_id: string;
+  status: string;
+  orchestrator_run_id?: string | null;
+  workflow_run_id?: string | null;
+  selected_symbols: string[];
+  blockers: string[];
+  warnings: string[];
+  artifacts: Record<string, unknown>;
+  next_action: string;
+  created_at: string;
+  updated_at: string;
+};
+
+export type PipelineAutomationRunEnvelope = {
+  status: "ok";
+  run: PipelineAutomationRunResponse;
+};
+
+export type PipelineLatestEnvelope = {
+  status: "ok";
+  run: PipelineAutomationRunResponse | null;
 };
 
 export type ModelRegistryItem = {
@@ -4608,6 +4676,14 @@ export const api = {
     request<DataQualityReport>(`/api/data-quality/${symbol}?asset_class=${assetClass}&source=${source}`),
   runFeatureStore: (payload: FeatureStoreRunRequest) =>
     request<FeatureStoreRunResponse>("/api/feature-store/run", { method: "POST", body: JSON.stringify(payload) }),
+  /** Full automated pipeline; can take minutes (runs orchestrator after feature store). */
+  runPipelineAutomation: (payload: PipelineAutomationRunRequest, signal?: AbortSignal) =>
+    request<PipelineAutomationRunEnvelope>("/api/pipeline/run", {
+      method: "POST",
+      body: JSON.stringify(payload),
+      ...(signal ? { signal } : {}),
+    }),
+  getLatestPipelineAutomationRun: () => request<PipelineLatestEnvelope>("/api/pipeline/latest"),
   getLatestFeatureStoreRows: () => request<FeatureStoreRow[]>("/api/feature-store/latest"),
   getFeatureStoreRowsBySymbol: (symbol: string) => request<FeatureStoreRow[]>(`/api/feature-store/${symbol}`),
   getModelRunRegistry: () => request<ModelRegistryResponse>("/api/model-runs/registry"),
@@ -4681,7 +4757,12 @@ export const api = {
   expireRecommendation: (id: string) => request<{ success: boolean; recommendation: Record<string, unknown> | null; message: string }>("/api/recommendation-lifecycle/expire", { method: "POST", body: JSON.stringify({ id }) }),
 
   // Command Center Run API
-  runCommandCenter: () => request<CommandCenterResponse>("/api/command-center/run", { method: "POST" }),
+  runCommandCenter: (signal?: AbortSignal) =>
+    request<CommandCenterResponse>("/api/command-center/run", {
+      method: "POST",
+      body: "{}",
+      ...(signal ? { signal } : {}),
+    }),
 
   // Universe Selection APIs
   runUniverseSelection: (payload: UniverseSelectionRequest) =>

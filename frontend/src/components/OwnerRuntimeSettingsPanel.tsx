@@ -22,12 +22,19 @@ export function OwnerRuntimeSettingsPanel({ settings, bundleLoading, onAfterSave
   const [error, setError] = useState<string | null>(null);
   const [message, setMessage] = useState<string | null>(null);
   const [priorityDraft, setPriorityDraft] = useState("");
+  const [newsPriorityDraft, setNewsPriorityDraft] = useState("");
 
   useEffect(() => {
     if (settings?.market_data.market_data_provider_priority != null) {
       setPriorityDraft(settings.market_data.market_data_provider_priority);
     }
   }, [settings?.market_data.market_data_provider_priority]);
+
+  useEffect(() => {
+    if (settings?.news.news_provider_priority != null) {
+      setNewsPriorityDraft(settings.news.news_provider_priority);
+    }
+  }, [settings?.news.news_provider_priority]);
 
   const run = async (fn: () => Promise<void>) => {
     setBusy(true);
@@ -251,7 +258,7 @@ export function OwnerRuntimeSettingsPanel({ settings, bundleLoading, onAfterSave
       </div>
 
       <div className="mt-4 rounded-xl border border-emerald-400/15 bg-black/35 p-4">
-        <label className="text-xs font-semibold uppercase tracking-wide text-slate-500">Provider fallback order</label>
+        <label className="text-xs font-semibold uppercase tracking-wide text-slate-500">Market — provider fallback order</label>
         <p className="mb-2 text-xs text-slate-500">MARKET_DATA_PROVIDER_PRIORITY — comma-separated (saved explicitly).</p>
         <div className="flex flex-col gap-2 sm:flex-row sm:items-center">
           <input
@@ -271,6 +278,32 @@ export function OwnerRuntimeSettingsPanel({ settings, bundleLoading, onAfterSave
             className="rounded-lg border border-emerald-400/40 bg-emerald-500/15 px-4 py-2 text-sm font-semibold text-emerald-200 disabled:cursor-not-allowed disabled:opacity-40"
           >
             Save priority list
+          </button>
+        </div>
+      </div>
+
+      <div className="mt-4 rounded-xl border border-emerald-400/15 bg-black/35 p-4">
+        <label className="text-xs font-semibold uppercase tracking-wide text-slate-500">News — provider fallback order</label>
+        <p className="mb-2 text-xs text-slate-500">
+          NEWS_PROVIDER_PRIORITY — feeds to try after NEWS_PROVIDER_PRIMARY (comma-separated: newsapi, finnhub, benzinga).
+        </p>
+        <div className="flex flex-col gap-2 sm:flex-row sm:items-center">
+          <input
+            type="text"
+            value={newsPriorityDraft}
+            disabled={d}
+            onChange={(e) => setNewsPriorityDraft(e.target.value)}
+            className="min-w-0 flex-1 rounded-lg border border-emerald-400/25 bg-black/50 px-3 py-2 font-mono text-sm text-cyan-100"
+          />
+          <button
+            type="button"
+            disabled={
+              d || newsPriorityDraft.trim() === (settings.news.news_provider_priority || "").trim()
+            }
+            onClick={() => patchNews({ news_provider_priority: newsPriorityDraft.trim() })}
+            className="rounded-lg border border-cyan-400/40 bg-cyan-500/15 px-4 py-2 text-sm font-semibold text-cyan-100 disabled:cursor-not-allowed disabled:opacity-40"
+          >
+            Save news priority
           </button>
         </div>
       </div>
