@@ -301,7 +301,16 @@ def update_last_ranked(symbol: str) -> None:
 
 
 def get_candidate_symbols() -> list[str]:
-    """Get list of active candidate symbols only."""
+    """Get list of active candidate symbols only.
+
+    Loads Postgres-backed candidates into memory when the DB is configured so cold
+    starts and other workers don't see an empty universe after restart.
+    """
+    if _is_db_available():
+        try:
+            _sync_db_to_memory()
+        except Exception:
+            pass
     return [c.symbol for c in _CANDIDATE_UNIVERSE.values() if c.status == CandidateStatus.ACTIVE]
 
 

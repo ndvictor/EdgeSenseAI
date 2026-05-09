@@ -281,6 +281,65 @@ function CommandCenterPanel() {
               {runNotice.text}
             </div>
           ) : null}
+
+          {data?.data_source_confirmation ? (
+            <div className="mt-4 rounded-xl border border-cyan-500/25 bg-cyan-950/20 px-4 py-3 text-sm text-slate-200">
+              <p className="text-xs font-semibold uppercase tracking-wide text-cyan-300/90">Data source confirmation</p>
+              <p className="mt-2 text-xs text-slate-400">
+                Effective runtime feeds used for this Command Center response (quotes/features resolve from{" "}
+                <code className="text-cyan-200/90">MARKET_DATA_PROVIDER</code> + priority when source is{" "}
+                <code className="text-cyan-200/90">auto</code>). Configure under Settings → Configuration editor.
+              </p>
+              <dl className="mt-3 grid gap-2 text-xs sm:grid-cols-2 lg:grid-cols-3">
+                <div>
+                  <dt className="text-slate-500">Market — primary</dt>
+                  <dd className="font-mono text-cyan-100">{data.data_source_confirmation.market_data_primary}</dd>
+                </div>
+                <div className="sm:col-span-2">
+                  <dt className="text-slate-500">Market — fallback chain</dt>
+                  <dd className="font-mono text-slate-300">{data.data_source_confirmation.market_data_fallback_chain.join(", ") || "—"}</dd>
+                </div>
+                <div>
+                  <dt className="text-slate-500">Universe selection</dt>
+                  <dd className="font-mono text-slate-300">
+                    source={data.data_source_confirmation.universe_selection_source} · horizon={data.data_source_confirmation.universe_selection_horizon}
+                    {data.data_source_confirmation.universe_run_id ? (
+                      <span className="block truncate text-[11px] text-slate-500">run {data.data_source_confirmation.universe_run_id}</span>
+                    ) : null}
+                  </dd>
+                </div>
+                <div>
+                  <dt className="text-slate-500">Decision workflow</dt>
+                  <dd className="font-mono text-slate-300">
+                    source={data.data_source_confirmation.decision_workflow_source} · horizon={data.data_source_confirmation.decision_workflow_horizon}
+                    {data.data_source_confirmation.decision_workflow_run_id ? (
+                      <span className="block truncate text-[11px] text-slate-500">run {data.data_source_confirmation.decision_workflow_run_id}</span>
+                    ) : null}
+                  </dd>
+                </div>
+                <div>
+                  <dt className="text-slate-500">News feeds</dt>
+                  <dd className="text-slate-300">
+                    {data.data_source_confirmation.news_enabled ? "enabled" : "disabled"} · primary {data.data_source_confirmation.news_primary}
+                    <span className="block truncate font-mono text-[11px] text-slate-500">
+                      fallbacks: {data.data_source_confirmation.news_fallback_chain.join(", ") || "—"}
+                    </span>
+                  </dd>
+                </div>
+                <div>
+                  <dt className="text-slate-500">Account profile data</dt>
+                  <dd className="font-mono text-slate-300">{data.data_source_confirmation.account_profile_data_source}</dd>
+                </div>
+                <div className="sm:col-span-2 lg:col-span-3">
+                  <dt className="text-slate-500">Candidate seeds → symbols after universe</dt>
+                  <dd className="font-mono text-[11px] leading-relaxed text-slate-400">
+                    [{data.data_source_confirmation.candidate_seeds.join(", ") || "—"}] → [
+                    {data.data_source_confirmation.symbols_after_universe.join(", ") || "—"}]
+                  </dd>
+                </div>
+              </dl>
+            </div>
+          ) : null}
         </section>
 
         {tab === "live_watch" ? (

@@ -1,14 +1,14 @@
 "use client";
 
 import Link from "next/link";
-import { usePathname } from "next/navigation";
+import { usePathname, useSearchParams } from "next/navigation";
 import {
   BookOpen,
   BrainCircuit,
   Database,
-  Globe,
   Import,
   Layers2,
+  LineChart,
   ListChecks,
   Rss,
   Settings,
@@ -18,6 +18,7 @@ import {
   FlaskConical,
   Workflow,
   BriefcaseBusiness,
+  Cpu,
 } from "lucide-react";
 
 type NavItem = { label: string; href: string; icon: any; activeAlso?: string[] };
@@ -31,7 +32,9 @@ const MAIN_ITEMS: NavItem[] = [
   { label: "Data feed", href: "/data-feed", icon: Rss },
   { label: "Data validation", href: "/data-quality", icon: ListChecks },
   { label: "Feature pipeline", href: "/feature-pipeline", icon: Layers2 },
+  { label: "Model Lab", href: "/model/lab", icon: Cpu },
   { label: "Research Lab", href: "/research-lab", icon: FlaskConical },
+  { label: "Qlib", href: "/qlib", icon: LineChart },
   { label: "Strategy Workflow", href: "/strategy-workflow", icon: Workflow },
   { label: "Workflow Runbook", href: "/workflow-runbook", icon: BookOpen },
   { label: "Trading Desk", href: "/trading-desk", icon: BriefcaseBusiness },
@@ -40,8 +43,19 @@ const MAIN_ITEMS: NavItem[] = [
   { label: "Archive", href: "/edgesense/archive", icon: BookOpen },
 ];
 
+function navItemActive(pathname: string, searchParams: ReturnType<typeof useSearchParams>, item: NavItem): boolean {
+  const activeAlso = item.activeAlso?.some((p) => pathname === p || pathname.startsWith(`${p}/`)) ?? false;
+  if (item.href === "/qlib") {
+    const tab = searchParams.get("tab");
+    const onQlibTab = pathname === "/research-evidence" && (tab === null || tab === "" || tab === "qlib");
+    return pathname === "/qlib" || pathname.startsWith(`${item.href}/`) || onQlibTab;
+  }
+  return pathname === item.href || pathname.startsWith(`${item.href}/`) || activeAlso;
+}
+
 export function Sidebar() {
   const pathname = usePathname();
+  const searchParams = useSearchParams();
 
   return (
     <aside className="flex min-h-screen w-68 shrink-0 flex-col border-r border-emerald-400/10 bg-[#05080d] px-3 py-5">
@@ -58,8 +72,7 @@ export function Sidebar() {
       <nav className="flex-1 space-y-1.5 overflow-y-auto pr-1">
         {MAIN_ITEMS.map((item) => {
           const Icon = item.icon;
-          const activeAlso = item.activeAlso?.some((p) => pathname === p || pathname.startsWith(`${p}/`)) ?? false;
-          const active = pathname === item.href || pathname.startsWith(`${item.href}/`) || activeAlso;
+          const active = navItemActive(pathname, searchParams, item);
           return (
             <Link
               key={item.href}

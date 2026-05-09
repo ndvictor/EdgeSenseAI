@@ -182,6 +182,27 @@ class SourceDataStatus(BaseModel):
     data_quality: str | None = None
     is_mock: bool = False
     error: str | None = None
+    """How snapshots were requested for this candidate (e.g. auto → resolves via MARKET_DATA_PROVIDER)."""
+    pipeline_source: str | None = None
+
+
+class CommandCenterDataSourceConfirmation(BaseModel):
+    """Runtime-effective feeds and workflow routing for this Command Center response."""
+
+    market_data_primary: str = "mock"
+    market_data_fallback_chain: List[str] = Field(default_factory=list)
+    universe_selection_source: str = "auto"
+    universe_selection_horizon: str = "swing"
+    decision_workflow_source: str = "auto"
+    decision_workflow_horizon: str = "swing"
+    news_enabled: bool = False
+    news_primary: str = "none"
+    news_fallback_chain: List[str] = Field(default_factory=list)
+    account_profile_data_source: str = ""
+    universe_run_id: str | None = None
+    decision_workflow_run_id: str | None = None
+    candidate_seeds: List[str] = Field(default_factory=list)
+    symbols_after_universe: List[str] = Field(default_factory=list)
 
 
 class CommandCenterResponse(BaseModel):
@@ -193,3 +214,6 @@ class CommandCenterResponse(BaseModel):
     source_data_status: List[SourceDataStatus] = Field(default_factory=list)
     dashboard_mode: str = "source_backed"
     cost_usage_message: str = "No cost usage data recorded yet."
+    data_source_confirmation: CommandCenterDataSourceConfirmation = Field(
+        default_factory=CommandCenterDataSourceConfirmation,
+    )

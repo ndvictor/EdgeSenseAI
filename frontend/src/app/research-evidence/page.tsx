@@ -1,7 +1,8 @@
 "use client";
 
-import React, { useEffect, useState } from "react";
+import React, { useCallback, useEffect, useState } from "react";
 import Link from "next/link";
+import { usePathname, useRouter, useSearchParams } from "next/navigation";
 import {
   getQlibStatus,
   getQlibAutomationStatus,
@@ -25,8 +26,30 @@ import {
 
 type Tab = "qlib" | "proof" | "model" | "strategy";
 
+function tabFromSearchParams(sp: URLSearchParams | null): Tab | null {
+  const t = sp?.get("tab");
+  if (t === "qlib" || t === "proof" || t === "model" || t === "strategy") return t;
+  return null;
+}
+
 export default function ResearchEvidencePage() {
+  const router = useRouter();
+  const pathname = usePathname();
+  const searchParams = useSearchParams();
   const [tab, setTab] = useState<Tab>("qlib");
+
+  const selectTab = useCallback(
+    (next: Tab) => {
+      setTab(next);
+      router.replace(`${pathname}?tab=${next}`, { scroll: false });
+    },
+    [pathname, router],
+  );
+
+  useEffect(() => {
+    const fromUrl = tabFromSearchParams(searchParams);
+    if (fromUrl) setTab(fromUrl);
+  }, [searchParams]);
   const [err, setErr] = useState<string | null>(null);
 
   const [qlibStatus, setQlibStatus] = useState<Record<string, unknown> | null>(null);
@@ -240,7 +263,7 @@ export default function ResearchEvidencePage() {
           <button
             key={id}
             type="button"
-            onClick={() => setTab(id)}
+            onClick={() => selectTab(id)}
             className={`rounded-lg border px-3 py-1.5 text-sm font-medium transition ${
               tab === id
                 ? "border-emerald-400/50 bg-emerald-400/15 text-emerald-100"

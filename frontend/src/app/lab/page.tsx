@@ -50,9 +50,9 @@ function filterUnits(units: LabInventoryUnit[], tab: LabTab): LabInventoryUnit[]
 
 function statusChipClass(status: string): string {
   switch (status) {
-    case "present":
+    case "created":
       return "border-emerald-500/45 bg-emerald-500/15 text-emerald-200";
-    case "present_partial":
+    case "created_partial":
     case "partial":
       return "border-amber-500/45 bg-amber-500/15 text-amber-100";
     case "need_to_build":
@@ -130,11 +130,11 @@ function StageSection({ stage, tab }: { stage: LabInventoryStage; tab: LabTab })
   const units = useMemo(() => filterUnits(stage.units, tab), [stage.units, tab]);
   const { summary } = stage;
   const filteredSummary = useMemo(() => {
-    const present = units.filter((u) => u.status === "present").length;
-    const partial = units.filter((u) => u.status === "partial" || u.status === "present_partial").length;
+    const created = units.filter((u) => u.status === "created").length;
+    const partial = units.filter((u) => u.status === "partial" || u.status === "created_partial").length;
     const missing = units.filter((u) => isMissingStatus(u.status)).length;
     const backlog = units.filter((u) => u.status === "backlog").length;
-    return { total_units: units.length, present, partial, missing, backlog };
+    return { total_units: units.length, created, partial, missing, backlog };
   }, [units]);
 
   if (units.length === 0) {
@@ -157,7 +157,7 @@ function StageSection({ stage, tab }: { stage: LabInventoryStage; tab: LabTab })
               Units <span className="font-medium text-slate-300">{filteredSummary.total_units}</span>
               {tab !== "workflow" ? <span className="text-slate-600"> / {summary.total_units}</span> : null}
             </span>
-            <span className="text-emerald-400/80">P {filteredSummary.present}</span>
+            <span className="text-emerald-400/80">C {filteredSummary.created}</span>
             <span className="text-amber-400/80">∂ {filteredSummary.partial}</span>
             <span className="text-red-400/80">M {filteredSummary.missing}</span>
             <span className="text-slate-500">B {filteredSummary.backlog}</span>
@@ -254,8 +254,8 @@ export default function LabPlatformPage() {
       <div className="mb-6 grid gap-3 sm:grid-cols-2 lg:grid-cols-4 xl:grid-cols-8">
         <SummaryCard label="Total Stages" value={summary.total_stages} />
         <SummaryCard label="Total Units" value={summary.total_units} />
-        <SummaryCard label="Backend present" value={summary.backend_present_count ?? summary.present} />
-        <SummaryCard label="Frontend present" value={summary.frontend_present_count ?? summary.present} />
+        <SummaryCard label="Backend created" value={summary.backend_created_count ?? summary.created} />
+        <SummaryCard label="Frontend created" value={summary.frontend_created_count ?? summary.created} />
         <SummaryCard label="Tested" value={summary.tested_count ?? summary.tested} hint={`Untested ${summary.untested}`} />
         <SummaryCard label="Missing" value={summary.missing_count ?? summary.missing} />
         <SummaryCard label="Needs backend" value={summary.needs_backend_count ?? summary.missing} />
@@ -311,7 +311,7 @@ export default function LabPlatformPage() {
                     <span>
                       Total <span className="text-slate-300">{c.total}</span>
                     </span>
-                    <span className="text-emerald-400/90">P {c.present}</span>
+                    <span className="text-emerald-400/90">C {c.created}</span>
                     <span className="text-amber-400/90">∂ {c.partial}</span>
                     <span className="text-red-400/90">M {c.missing}</span>
                     <span className="text-slate-500">B {c.backlog}</span>

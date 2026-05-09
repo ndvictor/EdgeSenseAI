@@ -146,21 +146,21 @@ def _lab_core_gaps(units_flat: list[dict[str, Any]]) -> list[str]:
         bad_status = st in ("need_to_build", "need_to_build_clarify", "unclear")
 
         if "Frontend" in name or name.startswith("UI "):
-            if u.get("frontend_status") != "present":
-                missing.append(f"{name}: frontend_not_present")
+            if u.get("frontend_status") != "created":
+                missing.append(f"{name}: frontend_not_created")
             if bad_status:
                 missing.append(f"{name}: status_{st}")
             continue
 
         if "Backend" in name:
-            if u.get("backend_status") != "present":
-                missing.append(f"{name}: backend_not_present")
+            if u.get("backend_status") != "created":
+                missing.append(f"{name}: backend_not_created")
             if bad_status:
                 missing.append(f"{name}: status_{st}")
             continue
 
-        if u.get("backend_status") != "present":
-            missing.append(f"{name}: backend_not_present")
+        if u.get("backend_status") != "created":
+            missing.append(f"{name}: backend_not_created")
         if bad_status:
             missing.append(f"{name}: status_{st}")
     return missing

@@ -1774,9 +1774,9 @@ def test_lab_inventory_contract():
     summary = payload["summary"]
     assert summary["total_stages"] == 14
     assert summary["total_units"] >= 80
-    assert summary["present"] + summary["partial"] + summary["missing"] + summary["backlog"] == summary["total_units"]
-    assert "backend_present_count" in summary
-    assert "frontend_present_count" in summary
+    assert summary["created"] + summary["partial"] + summary["missing"] + summary["backlog"] == summary["total_units"]
+    assert "backend_created_count" in summary
+    assert "frontend_created_count" in summary
     assert "tested_count" in summary
     assert "needs_backend_count" in summary
     assert "needs_frontend_count" in summary
@@ -1793,7 +1793,7 @@ def test_lab_inventory_contract():
         assert st["stage_name"]
         su = st["summary"]
         assert su["total_units"] == len(st["units"])
-        assert su["present"] + su["partial"] + su["missing"] + su["backlog"] == su["total_units"]
+        assert su["created"] + su["partial"] + su["missing"] + su["backlog"] == su["total_units"]
 
     cats = payload["component_categories"]
     assert len(cats) == 7
@@ -1807,13 +1807,13 @@ def test_lab_inventory_contract():
         "Orchestrator",
     }
     for c in cats:
-        assert c["total"] == c["present"] + c["partial"] + c["missing"] + c["backlog"]
+        assert c["total"] == c["created"] + c["partial"] + c["missing"] + c["backlog"]
 
     unit = next(u for u in payload["stages"][0]["units"] if u["unit_id"] == "unit_001")
     assert unit["name"] == "Account settings schema"
     assert unit["status"] in {
-        "present",
-        "present_partial",
+        "created",
+        "created_partial",
         "partial",
         "need_to_build",
         "need_to_build_clarify",

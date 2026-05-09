@@ -10,7 +10,7 @@ from app.services.xgboost_ranker_service import RankerInputRow, RankerRunResult,
 
 
 class ModelLabRunRequest(BaseModel):
-    data_source: Literal["mock", "yfinance"] = "mock"
+    data_source: Literal["mock", "yfinance", "polygon", "alpaca", "auto"] = "mock"
     model: Literal["xgboost_ranker", "weighted_ranker"] = "xgboost_ranker"
     symbols: list[str] = Field(default_factory=lambda: ["AMD", "NVDA", "BTC-USD"])
     train_split_percent: int = 70

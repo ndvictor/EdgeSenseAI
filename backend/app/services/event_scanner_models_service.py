@@ -35,10 +35,13 @@ from app.services.trigger_rules_service import (
     TriggerRule,
     get_active_trigger_rules,
 )
+from app.services.market_data_service import MarketDataService
 from app.services.universe_selection_service import (
     UniverseSelectionCandidate,
     get_latest_universe_selection,
 )
+
+_MARKET = MarketDataService()
 
 
 class EventScannerMatchedEvent(BaseModel):
@@ -121,55 +124,59 @@ def _event_scan_from_record(row: dict) -> EventScannerResponse | None:
         return None
 
 
-def _determine_symbols_to_scan(request: EventScannerRequest) -> list[str]:
-    """Determine which symbols to scan based on request rules."""
+def _determine_symbols_to_scan(request: EventScannerRequest) -> tuple[list[str], list[str]]:
+    """Determine which symbols to scan based on request rules.
+
+    Explicit ``symbols`` are always merged (deduped) when provided, so tests and operators
+    can scan tickers without depending on trigger rules or a prior universe run.
+    """
     symbols: list[str] = []
     source_info: list[str] = []
 
-    # Priority 1: Use active trigger rules
+    # Explicit symbols first when provided
+    if request.symbols:
+        for s in request.symbols:
+            u = s.strip().upper()
+            if u and u not in symbols:
+                symbols.append(u)
+        source_info.append(f"{len([s for s in request.symbols if s.strip()])} from explicit request")
+
+    # Merge active trigger rules
     if request.use_active_trigger_rules:
         active_rules = get_active_trigger_rules()
         if active_rules:
-            rule_symbols = list(set(r.symbol for r in active_rules))
-            symbols.extend(rule_symbols)
-            source_info.append(f"{len(rule_symbols)} from active trigger rules")
+            for r in active_rules:
+                sym = r.symbol.strip().upper()
+                if sym and sym not in symbols:
+                    symbols.append(sym)
+            source_info.append(f"{len(active_rules)} active trigger rule symbol(s)")
 
-    # Priority 2: Use latest watchlist
-    if not symbols and request.use_latest_watchlist:
+    # Latest universe watchlist (additive)
+    if request.use_latest_watchlist:
         latest_universe = get_latest_universe_selection()
         if latest_universe and latest_universe.selected_watchlist:
-            watchlist_symbols = [c.symbol for c in latest_universe.selected_watchlist]
-            symbols.extend(watchlist_symbols)
-            source_info.append(f"{len(watchlist_symbols)} from latest watchlist")
-
-    # Priority 3: Use explicit symbols
-    if not symbols and request.symbols:
-        symbols.extend(request.symbols)
-        source_info.append(f"{len(request.symbols)} from explicit request")
+            for c in latest_universe.selected_watchlist:
+                sym = str(getattr(c, "symbol", "") or "").strip().upper()
+                if sym and sym not in symbols:
+                    symbols.append(sym)
+            wl = len([c for c in latest_universe.selected_watchlist])
+            source_info.append(f"{wl} from latest watchlist")
 
     # Remove duplicates and limit
-    symbols = list(dict.fromkeys(s.upper() for s in symbols))[: request.max_symbols]
+    symbols = list(dict.fromkeys(symbols))[: request.max_symbols]
 
     return symbols, source_info
 
 
-def _cheap_event_check(symbol: str, rule: TriggerRule | None) -> EventScannerMatchedEvent | None:
-    """Run cheap deterministic event check for a symbol.
-
-    This is a deterministic check based on available market data.
-    Does NOT fetch real-time data - uses available cached data or returns None.
-    """
-    # Placeholder for cheap checks
-    # In production, this would check:
-    # - Price change from previous close
-    # - Relative volume (RVOL)
-    # - Trend alignment
-    # - Spread sanity
-    # - Trigger rule condition match
-
-    # For now, return a placeholder event if trigger rule exists
+def _cheap_event_check(
+    symbol: str,
+    rule: TriggerRule | None,
+    *,
+    source: str,
+    allow_mock: bool,
+) -> EventScannerMatchedEvent | None:
+    """Run cheap deterministic event check for a symbol."""
     if rule:
-        # Simple deterministic score based on priority
         raw_score = min(100, max(40, rule.priority_score + 10))
         confidence = min(1.0, max(0.4, rule.priority_score / 100))
 
@@ -193,7 +200,52 @@ def _cheap_event_check(symbol: str, rule: TriggerRule | None) -> EventScannerMat
             detected_at=datetime.now(timezone.utc).isoformat(),
         )
 
-    return None
+    # No trigger rule: emit one generic event when the market snapshot passes a minimal bar.
+    try:
+        snap = _MARKET.get_market_snapshot(symbol, source=source)
+    except Exception:
+        return None
+
+    if snap.get("is_mock") and not allow_mock:
+        return None
+    dq = snap.get("data_quality")
+    if dq in ("unavailable", "not_configured"):
+        return None
+    if snap.get("price") is None:
+        return None
+
+    raw_score = 58
+    try:
+        ch = snap.get("change_percent")
+        if ch is not None:
+            raw_score = int(min(92, max(45, 52 + abs(float(ch)) * 4)))
+    except (TypeError, ValueError):
+        pass
+
+    confidence = min(0.85, max(0.52, raw_score / 110))
+
+    return EventScannerMatchedEvent(
+        event_id=f"evt-{uuid4().hex[:12]}",
+        symbol=symbol.upper(),
+        strategy_key=None,
+        trigger_rule_id=None,
+        trigger_type="snapshot_watch",
+        raw_signal_score=raw_score,
+        event_confidence=round(confidence, 2),
+        event_data={
+            "price": snap.get("price"),
+            "provider": snap.get("provider"),
+            "change_percent": snap.get("change_percent"),
+            "volume": snap.get("volume"),
+            "data_quality": dq,
+            "is_mock": snap.get("is_mock"),
+        },
+        reasons=[
+            "Snapshot gate passed without an active trigger rule",
+            "Cheap deterministic score from price / change_percent when present",
+        ],
+        detected_at=datetime.now(timezone.utc).isoformat(),
+    )
 
 
 def run_event_scanner(request: EventScannerRequest) -> EventScannerResponse:
@@ -252,13 +304,13 @@ def run_event_scanner(request: EventScannerRequest) -> EventScannerResponse:
         )
         data_freshness_run_id = freshness_result.run_id
 
-        # Filter to usable symbols
+        # Filter to usable / degraded (exclude only blocked)
         usable_symbols = [
-            r.symbol for r in freshness_result.results if r.decision == "usable"
+            r.symbol for r in freshness_result.results if r.decision in ("usable", "degraded")
         ]
 
         for result in freshness_result.results:
-            if result.decision != "usable":
+            if result.decision == "blocked":
                 skipped_symbols.append({
                     "symbol": result.symbol,
                     "reason": f"Data {result.decision}: {', '.join(result.blockers) if result.blockers else 'quality issues'}",
@@ -281,7 +333,7 @@ def run_event_scanner(request: EventScannerRequest) -> EventScannerResponse:
     for symbol in symbols_to_scan:
         try:
             rule = active_rules.get(symbol)
-            event = _cheap_event_check(symbol, rule)
+            event = _cheap_event_check(symbol, rule, source=request.source, allow_mock=request.allow_mock)
 
             if event:
                 matched_events.append(event)
@@ -336,13 +388,21 @@ def run_event_scanner(request: EventScannerRequest) -> EventScannerResponse:
 
 
 def get_latest_event_scan() -> EventScannerResponse | None:
-    """Get the most recent event scanner run."""
+    """Get the most recent event scanner run.
+
+    Prefer in-process ``_LATEST_SCAN`` when set so signal scoring sees the scan
+    just produced in this worker even if persistence failed or the DB still
+    holds an older row with empty ``matched_events``. After process restart,
+    memory is cleared and the latest persisted row is used.
+    """
+    if _LATEST_SCAN is not None:
+        return _LATEST_SCAN
     row = get_latest_event_scanner_run()
     if row:
         restored = _event_scan_from_record(row)
         if restored:
             return restored
-    return _LATEST_SCAN
+    return None
 
 
 def list_event_scan_runs(limit: int = 20) -> list[EventScannerResponse]:

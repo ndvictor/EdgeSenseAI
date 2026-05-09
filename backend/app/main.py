@@ -96,6 +96,7 @@ from app.schemas import (
     AccountRiskProfile,
     AccountRiskProfileUpdate,
     AgentStatus,
+    CommandCenterDataSourceConfirmation,
     CommandCenterResponse,
     EdgeSignalsResponse,
     LiveWatchlistResponse,
@@ -293,6 +294,41 @@ def agents() -> list[AgentStatus]:
     ]
 
 
+def _command_center_data_source_confirmation(
+    effective_profile: AccountRiskProfile,
+    *,
+    universe_source: str = "auto",
+    universe_horizon: str = "swing",
+    decision_source: str = "auto",
+    decision_horizon: str = "swing",
+    universe_run_id: str | None = None,
+    decision_run_id: str | None = None,
+    candidate_seeds: list[str] | None = None,
+    symbols_after_universe: list[str] | None = None,
+) -> CommandCenterDataSourceConfirmation:
+    """Surface effective runtime feeds (market/news) and workflow routing for auditability."""
+    from app.core.effective_runtime import effective_bool, effective_str, news_provider_priority_from_runtime
+    from app.services.market_data_service import market_data_provider_priority_from_runtime
+
+    primary = (effective_str("MARKET_DATA_PROVIDER") or "mock").lower().strip()
+    return CommandCenterDataSourceConfirmation(
+        market_data_primary=primary,
+        market_data_fallback_chain=list(market_data_provider_priority_from_runtime()),
+        universe_selection_source=universe_source,
+        universe_selection_horizon=universe_horizon,
+        decision_workflow_source=decision_source,
+        decision_workflow_horizon=decision_horizon,
+        news_enabled=bool(effective_bool("NEWS_PROVIDER_ENABLED")),
+        news_primary=(effective_str("NEWS_PROVIDER_PRIMARY") or "none").lower().strip(),
+        news_fallback_chain=list(news_provider_priority_from_runtime()),
+        account_profile_data_source=effective_profile.source,
+        universe_run_id=universe_run_id,
+        decision_workflow_run_id=decision_run_id,
+        candidate_seeds=list(candidate_seeds or []),
+        symbols_after_universe=list(symbols_after_universe or []),
+    )
+
+
 def _build_decision_command_center() -> CommandCenterResponse:
     """Build Command Center response - READ ONLY, does not run workflows.
 
@@ -314,6 +350,7 @@ def _build_decision_command_center() -> CommandCenterResponse:
             source_data_status=[],
             dashboard_mode="no_symbols_selected",
             cost_usage_message="No candidates selected. Run Universe Selection to create a watchlist, or add candidates manually from Stocks, Watchlist, or Scanner.",
+            data_source_confirmation=_command_center_data_source_confirmation(effective_profile),
         )
 
     # Try to use latest stored workflow run (read-only)
@@ -330,6 +367,10 @@ def _build_decision_command_center() -> CommandCenterResponse:
             source_data_status=[],
             dashboard_mode="candidates_ready_not_ranked",
             cost_usage_message=f"{len(symbols)} candidate(s) ready but decision workflow has not been run. Go to Candidates page to run workflow, or run Universe Selection to create a new watchlist.",
+            data_source_confirmation=_command_center_data_source_confirmation(
+                effective_profile,
+                candidate_seeds=symbols,
+            ),
         )
 
     # Use latest stored workflow results
@@ -340,6 +381,7 @@ def _build_decision_command_center() -> CommandCenterResponse:
             data_quality=candidate.data_quality,
             is_mock=candidate.source == "mock",
             error="; ".join(candidate.blockers) if candidate.blockers else None,
+            pipeline_source=candidate.source,
         )
         for candidate in latest_workflow.candidates
     ]
@@ -360,6 +402,14 @@ def _build_decision_command_center() -> CommandCenterResponse:
         source_data_status=source_status,
         dashboard_mode=f"decision_workflow:{latest_workflow.status}",
         cost_usage_message=f"Latest workflow {latest_workflow.run_id} completed {int(workflow_age_seconds)}s ago.{stale_message} {len([c for c in latest_workflow.candidates if c.status == 'candidate_ready'])} passed source-backed quality and model thresholds.",
+        data_source_confirmation=_command_center_data_source_confirmation(
+            effective_profile,
+            decision_source=latest_workflow.source,
+            decision_horizon=str(latest_workflow.horizon),
+            decision_run_id=latest_workflow.run_id,
+            candidate_seeds=symbols,
+            symbols_after_universe=list(latest_workflow.symbols_requested or []),
+        ),
     )
 
 
@@ -384,6 +434,7 @@ def _run_command_center_workflow() -> CommandCenterResponse:
             source_data_status=[],
             dashboard_mode="no_symbols_selected",
             cost_usage_message="No candidates selected. Add symbols from Stocks search, Watchlist, Scanner, or Candidate Universe before ranking.",
+            data_source_confirmation=_command_center_data_source_confirmation(effective_profile),
         )
 
     # Step 1: universe selection (freshness + weighted rank) — same starting point as orchestrator pipeline.
@@ -438,6 +489,7 @@ def _run_command_center_workflow() -> CommandCenterResponse:
             data_quality=candidate.data_quality,
             is_mock=candidate.source == "mock",
             error="; ".join(candidate.blockers) if candidate.blockers else None,
+            pipeline_source=candidate.source,
         )
         for candidate in workflow.candidates
     ]
@@ -455,6 +507,17 @@ def _run_command_center_workflow() -> CommandCenterResponse:
             f"Workflow {workflow.run_id} just completed.{uni_note} "
             f"Decision pass used {len(symbols_for_decision)} symbol(s) post-universe. "
             f"{len([c for c in workflow.candidates if c.status == 'candidate_ready'])} passed source-backed quality and model thresholds."
+        ),
+        data_source_confirmation=_command_center_data_source_confirmation(
+            effective_profile,
+            universe_source="auto",
+            universe_horizon="swing",
+            decision_source=workflow.source,
+            decision_horizon=str(workflow.horizon),
+            universe_run_id=universe_run_id,
+            decision_run_id=workflow.run_id,
+            candidate_seeds=seeds,
+            symbols_after_universe=list(symbols_for_decision),
         ),
     )
 

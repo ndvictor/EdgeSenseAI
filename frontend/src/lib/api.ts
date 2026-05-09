@@ -239,7 +239,7 @@ export type CandidatesStatusResponse = {
   candidate_sources?: CandidateSourceStatus[];
 };
 
-export type MarketDataSource = "auto" | "yfinance" | "alpaca" | "mock";
+export type MarketDataSource = "auto" | "yfinance" | "alpaca" | "polygon" | "mock";
 
 export type AccountRiskProfile = {
   account_mode: "manual" | "paper";
@@ -790,7 +790,7 @@ export type RankerScore = {
 };
 
 export type ModelLabRunRequest = {
-  data_source: "mock" | "yfinance";
+  data_source: "mock" | "yfinance" | "polygon" | "alpaca" | "auto";
   model: "xgboost_ranker" | "weighted_ranker";
   symbols: string[];
   train_split_percent: number;
@@ -889,6 +889,26 @@ export type SourceDataStatus = {
   data_quality?: string | null;
   is_mock: boolean;
   error?: string | null;
+  /** Requested pipeline source for snapshots (e.g. auto uses MARKET_DATA_PROVIDER + priority). */
+  pipeline_source?: string | null;
+};
+
+/** Effective feeds and routing returned with GET/POST /api/command-center — confirms what backend used. */
+export type CommandCenterDataSourceConfirmation = {
+  market_data_primary: string;
+  market_data_fallback_chain: string[];
+  universe_selection_source: string;
+  universe_selection_horizon: string;
+  decision_workflow_source: string;
+  decision_workflow_horizon: string;
+  news_enabled: boolean;
+  news_primary: string;
+  news_fallback_chain: string[];
+  account_profile_data_source: string;
+  universe_run_id: string | null;
+  decision_workflow_run_id: string | null;
+  candidate_seeds: string[];
+  symbols_after_universe: string[];
 };
 
 export type CommandCenterResponse = {
@@ -900,6 +920,7 @@ export type CommandCenterResponse = {
   source_data_status: SourceDataStatus[];
   dashboard_mode: string;
   cost_usage_message: string;
+  data_source_confirmation: CommandCenterDataSourceConfirmation;
 };
 
 export type LiveWatchlistResponse = {
@@ -1610,15 +1631,15 @@ export type LabInventoryUnit = {
 export type LabInventorySummary = {
   total_stages: number;
   total_units: number;
-  present: number;
+  created: number;
   partial: number;
   missing: number;
   backlog: number;
   tested: number;
   untested: number;
   ready_to_promote: number;
-  backend_present_count?: number;
-  frontend_present_count?: number;
+  backend_created_count?: number;
+  frontend_created_count?: number;
   tested_count?: number;
   missing_count?: number;
   ready_for_frontend_count?: number;
@@ -1629,7 +1650,7 @@ export type LabInventorySummary = {
 
 export type LabInventoryStageSummary = {
   total_units: number;
-  present: number;
+  created: number;
   partial: number;
   missing: number;
   backlog: number;
@@ -1646,7 +1667,7 @@ export type LabInventoryStage = {
 export type LabComponentCategory = {
   category: string;
   total: number;
-  present: number;
+  created: number;
   partial: number;
   missing: number;
   backlog: number;

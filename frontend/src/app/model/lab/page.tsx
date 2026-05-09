@@ -30,6 +30,14 @@ const MODEL_LAB_SECTIONS = [
 
 type ModelLabSectionId = (typeof MODEL_LAB_SECTIONS)[number]["id"];
 
+const MODEL_LAB_DATA_SOURCES: { value: ModelLabRunRequest["data_source"]; label: string }[] = [
+  { value: "auto", label: "Auto (runtime default)" },
+  { value: "mock", label: "Mock prototype" },
+  { value: "yfinance", label: "Yahoo Finance (research)" },
+  { value: "polygon", label: "Polygon.io" },
+  { value: "alpaca", label: "Alpaca market data" },
+];
+
 function modelLabHashToSectionId(hash: string): ModelLabSectionId | null {
   const id = hash.replace(/^#/, "");
   return MODEL_LAB_SECTIONS.some((s) => s.id === id) ? (id as ModelLabSectionId) : null;
@@ -617,8 +625,11 @@ export default function ModelLabPage() {
                   <label className="block">
                     <span className="text-sm font-semibold text-slate-300">Data Source</span>
                     <select value={dataSource} onChange={(event) => setDataSource(event.target.value as ModelLabRunRequest["data_source"])} className="mt-2 w-full rounded-lg border border-emerald-900 bg-slate-900 px-4 py-3 text-white">
-                      <option value="mock">Mock prototype</option>
-                      <option value="yfinance">YFinance research</option>
+                      {MODEL_LAB_DATA_SOURCES.map((opt) => (
+                        <option key={opt.value} value={opt.value}>
+                          {opt.label}
+                        </option>
+                      ))}
                     </select>
                   </label>
 

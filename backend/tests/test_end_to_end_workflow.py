@@ -127,7 +127,7 @@ def test_lab_inventory_core_platform_units_present():
     for name in _CORE_LAB_NAMES:
         assert name in units, f"missing inventory unit {name}"
         u = units[name]
-        assert u.get("backend_status") == "present", name
+        assert u.get("backend_status") == "created", name
         assert u.get("status") not in ("need_to_build", "need_to_build_clarify", "unclear"), name
 
 

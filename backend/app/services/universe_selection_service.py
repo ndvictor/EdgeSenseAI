@@ -9,14 +9,16 @@ This is THE STARTING POINT for the platform workflow, NOT Candidate Universe.
 Candidate Universe is downstream (receives selected symbols from here).
 """
 
+import math
 from datetime import datetime, timedelta, timezone
 from typing import Any, Literal
 from uuid import uuid4
 
 from pydantic import BaseModel, ConfigDict, Field
 
-from app.core.effective_runtime import effective_str
 from app.services.candidate_universe_service import add_candidate
+from app.services.data_quality_service import check_market_data_quality
+from app.services.market_data_service import MarketDataService
 from app.services.data_freshness_gate_service import (
     DataFreshnessCheckRequest,
     run_data_freshness_check,
@@ -28,6 +30,8 @@ from app.services.timing_cadence_service import (
     get_active_loop_for_phase,
     get_cadence_plan_for_phase,
 )
+
+_MARKET_DATA = MarketDataService()
 
 
 class UniverseSelectionRequest(BaseModel):
@@ -123,6 +127,20 @@ _UNIVERSE_SELECTION_RUNS: list[UniverseSelectionResponse] = []
 _LATEST_UNIVERSE_SELECTION: UniverseSelectionResponse | None = None
 
 
+def _map_quality_report_to_label(
+    dq: str | None,
+    quality_status: str,
+) -> Literal["excellent", "good", "fair", "poor", "unavailable"]:
+    raw = (dq or "").lower()
+    if raw in ("excellent", "good", "fair", "poor", "unavailable"):
+        return raw  # type: ignore[return-value]
+    if quality_status == "fail":
+        return "poor"
+    if quality_status == "warn":
+        return "fair"
+    return "good"
+
+
 def _weighted_universe_ranker_v1(
     symbol: str,
     asset_class: str,
@@ -134,72 +152,111 @@ def _weighted_universe_ranker_v1(
 ) -> UniverseSelectionCandidate | None:
     """Deterministic weighted ranker for universe selection.
 
-    NO LLMs. NO hardcoded defaults.
-    Data quality gate runs FIRST.
+    NO LLMs. Uses live snapshots from MarketDataService + check_market_data_quality.
+    Data freshness gate runs earlier in the pipeline; this step aligns scores with the same feeds.
     """
     blockers: list[str] = []
     reasons: list[str] = []
 
-    # Step 1: Data Quality Gate (MUST PASS FIRST)
-    # For now, we simulate data quality check
-    # In production, this would call market_data_service for snapshot
-    data_quality: Literal["excellent", "good", "fair", "poor", "unavailable"] = "fair"
-    provider = "unknown"
+    if source == "mock" and not include_mock:
+        blockers.append("Mock source selected but include_mock=false")
+        return None
 
-    # Label reflects human/runtime primary when source is auto; explicit source wins otherwise.
-    if source == "auto":
-        provider = (effective_str("MARKET_DATA_PROVIDER") or "yfinance").lower().strip()
-    elif source == "mock":
-        if not include_mock:
-            blockers.append("Mock source selected but include_mock=false")
-            return None
-        provider = "mock"
-        data_quality = "fair"
-    else:
-        provider = source
+    try:
+        snapshot = _MARKET_DATA.get_market_snapshot(symbol, source=source)
+    except Exception as exc:
+        blockers.append(f"Market snapshot failed: {exc}"[:200])
+        return None
 
-    # Check if data is available (simulated)
-    # In production, this would check actual market data availability
+    if snapshot.get("is_mock") and not include_mock:
+        blockers.append("Mock snapshot but include_mock=false")
+        return None
+
+    report = check_market_data_quality(symbol, asset_class=asset_class, source=source, snapshot=snapshot)
+    if report.quality_status == "fail":
+        blockers.extend(report.blockers or ["Data quality check failed"])
+        return None
+
+    provider = report.provider or snapshot.get("provider") or "unknown"
+    data_quality = _map_quality_report_to_label(snapshot.get("data_quality"), report.quality_status)
+
     if data_quality == "unavailable":
         blockers.append("Data unavailable for symbol")
         return None
 
-    if data_quality == "poor" and not include_mock:
-        blockers.append("Data quality too poor and mock not allowed")
-        return None
+    # Score components derived from snapshot when fields exist (else conservative defaults).
+    price = snapshot.get("price")
+    vol = snapshot.get("volume")
+    change_pct = snapshot.get("change_percent")
+    rvol = snapshot.get("relative_volume")
+    bid = snapshot.get("bid")
+    ask = snapshot.get("ask")
+    spread_pct = snapshot.get("spread_percent")
 
-    # Step 2: Score Components (all deterministic, no ML)
-    # These are simulated scores - real implementation would calculate from market data
+    # Liquidity: volume heuristic (log-scale capped)
+    liquidity_score = 55.0
+    if vol is not None:
+        try:
+            v = float(vol)
+            if v > 0:
+                liquidity_score = float(min(95.0, 40.0 + 15.0 * math.log10(max(1.0, v))))
+        except (TypeError, ValueError):
+            pass
 
-    # Liquidity score (0-100)
-    # Higher for large-cap stocks, lower for illiquid symbols
-    liquidity_score = 65.0  # Default assumption
-
-    # Spread score (0-100)
-    # Higher for tight spreads, lower for wide spreads
+    # Spread quality (tighter is better when we have spread_pct or bid/ask)
     spread_score = 60.0
+    if spread_pct is not None:
+        spread_score = float(max(20.0, min(95.0, 95.0 - min(75.0, float(spread_pct) * 50.0))))
+    elif bid is not None and ask is not None and price:
+        try:
+            mid_spread_pct = ((float(ask) - float(bid)) / float(price)) * 100.0
+            spread_score = float(max(25.0, min(95.0, 95.0 - min(70.0, mid_spread_pct * 40.0))))
+        except (TypeError, ValueError, ZeroDivisionError):
+            pass
 
-    # Trend score from history (0-100)
-    # Based on recent price action
+    # Trend from session change %
     trend_score = 55.0
+    if change_pct is not None:
+        try:
+            cp = float(change_pct)
+            trend_score = float(max(15.0, min(92.0, 55.0 + cp * 3.5)))
+        except (TypeError, ValueError):
+            pass
 
-    # Volatility fit (0-100)
-    # How well does volatility match the horizon preference
+    # Volatility fit vs horizon (still heuristic without full vol series)
     volatility_fit = 60.0
     if horizon == "day_trade":
-        volatility_fit = 70.0  # Day traders want more volatility
+        try:
+            volatility_fit = 68.0 if rvol is not None and float(rvol) >= 1.2 else 62.0
+        except (TypeError, ValueError):
+            volatility_fit = 62.0
     elif horizon == "one_month":
-        volatility_fit = 50.0  # Swing traders want moderate volatility
+        volatility_fit = 52.0
 
-    # RVOL score if volume available (0-100)
+    # RVOL score
     rvol_score = 50.0
+    if rvol is not None:
+        try:
+            rv = float(rvol)
+            rvol_score = float(max(25.0, min(95.0, 35.0 + rv * 28.0)))
+        except (TypeError, ValueError):
+            pass
 
     # Account fit score (0-100)
-    # How well does the symbol fit account size and risk parameters
     account_fit = 60.0
     if account_equity and account_equity < 25000:
-        # Small accounts should avoid expensive stocks
         account_fit = 55.0
+    if price is not None and account_equity:
+        try:
+            px = float(price)
+            if px > 500 and account_equity < 5000:
+                account_fit = min(account_fit, 45.0)
+                reasons.append("High nominal price vs small account — size carefully")
+        except (TypeError, ValueError):
+            pass
+
+    if report.warnings:
+        reasons.extend(report.warnings[:3])
 
     # Step 3: Combine into universe_score (0-100)
     # Weighted combination

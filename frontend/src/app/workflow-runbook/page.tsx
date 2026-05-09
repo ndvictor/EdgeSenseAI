@@ -38,8 +38,8 @@ import { WorkflowVisibilityPanels } from "@/components/workflow-runbook/Workflow
 
 function chip(status: string): string {
   const s = status.toLowerCase();
-  if (s === "present" || s === "ok" || s === "ready") return "border-emerald-500/45 bg-emerald-500/15 text-emerald-200";
-  if (s === "partial_existing" || s === "partial" || s === "present_partial") return "border-amber-500/45 bg-amber-500/15 text-amber-100";
+  if (s === "present" || s === "created" || s === "ok" || s === "ready") return "border-emerald-500/45 bg-emerald-500/15 text-emerald-200";
+  if (s === "partial_existing" || s === "partial" || s === "present_partial" || s === "created_partial") return "border-amber-500/45 bg-amber-500/15 text-amber-100";
   if (s === "existing_gated") return "border-sky-500/45 bg-sky-500/15 text-sky-100";
   if (s === "backlog" || s === "missing" || s === "need_to_build") return "border-slate-500/40 bg-slate-500/10 text-slate-300";
   if (s === "fail" || s === "blocked") return "border-red-500/45 bg-red-500/15 text-red-100";

@@ -1,4 +1,5 @@
 from app.core.effective_runtime import effective_str
+from app.data_providers.alpaca_provider import AlpacaProvider
 from app.data_providers.mock_provider import MockMarketDataProvider
 from app.data_providers.polygon_provider import PolygonProvider
 from app.data_providers.yfinance_provider import YFinanceProvider
@@ -16,6 +17,7 @@ def get_market_data_provider(provider_name: str | None = None):
     - mock: deterministic prototype data
     - yfinance: research-grade market data via yfinance
     - polygon: Polygon.io (requires POLYGON_API_KEY)
+    - alpaca: Alpaca market data (requires ALPACA_MARKET_DATA_ENABLED and keys; equities only in Model Lab)
     """
     explicit = provider_name.strip().lower() if isinstance(provider_name, str) and provider_name.strip() else ""
     if explicit and explicit != "auto":
@@ -29,5 +31,7 @@ def get_market_data_provider(provider_name: str | None = None):
         return YFinanceProvider()
     if provider == "polygon":
         return PolygonProvider()
+    if provider == "alpaca":
+        return AlpacaProvider()
 
     return MockMarketDataProvider()

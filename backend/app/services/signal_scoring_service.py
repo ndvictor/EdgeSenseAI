@@ -92,6 +92,39 @@ _LATEST_SCORING: SignalScoringResponse | None = None
 _SCORING_HISTORY: list[SignalScoringResponse] = []
 
 
+def _feature_row_from_event(event: EventScannerMatchedEvent, horizon: str) -> FeatureStoreRow:
+    """Build a valid FeatureStoreRow from scanner output for downstream rankers."""
+    try:
+        detected = datetime.fromisoformat(event.detected_at.replace("Z", "+00:00"))
+    except Exception:
+        detected = datetime.now(timezone.utc)
+    dq_raw = event.event_data.get("data_quality")
+    dq = str(dq_raw) if dq_raw else ("mock_fallback" if event.event_data.get("is_mock") else "unknown")
+    ds = str(
+        event.event_data.get("provider")
+        or event.event_data.get("data_source")
+        or "event_scanner",
+    )
+    vol = event.event_data.get("volume")
+    vol_score = float(vol) if vol is not None else None
+    chg = event.event_data.get("change_percent")
+    mom = float(chg) if chg is not None else None
+    return FeatureStoreRow(
+        id=f"fs-{uuid4().hex[:12]}",
+        ticker=event.symbol,
+        asset_class="stock",
+        horizon=horizon,
+        timestamp=detected,
+        data_source=ds,
+        data_quality=dq,
+        technical_score=float(event.raw_signal_score),
+        momentum_score=mom,
+        volume_score=vol_score,
+        rvol_score=event.event_data.get("rvol"),
+        confidence=event.event_confidence,
+    )
+
+
 def _signal_scoring_from_record(row: dict) -> SignalScoringResponse | None:
     try:
         started = row.get("started_at")
@@ -115,19 +148,10 @@ def _signal_scoring_from_record(row: dict) -> SignalScoringResponse | None:
 def _score_with_weighted_ranker(
     event: EventScannerMatchedEvent,
     strategy_config: StrategyConfig | None,
+    horizon: str,
 ) -> tuple[int, dict[str, Any]]:
     """Score with weighted ranker if feature row available."""
-    # Create minimal feature row from event data
-    feature_row = FeatureStoreRow(
-        symbol=event.symbol,
-        source="event_scanner",
-        price=event.event_data.get("price"),
-        volume=event.event_data.get("volume"),
-        rvol=event.event_data.get("rvol"),
-        trend_strength=event.event_data.get("trend_strength"),
-        ema_alignment=event.event_data.get("ema_alignment"),
-        spread_pct=event.event_data.get("spread_pct"),
-    )
+    feature_row = _feature_row_from_event(event, horizon)
 
     if strategy_config:
         result = run_weighted_ranker_v1(feature_row, strategy_config)
@@ -141,12 +165,10 @@ def _score_with_weighted_ranker(
 def _score_with_xgboost(
     event: EventScannerMatchedEvent,
     strategy_config: StrategyConfig | None,
+    horizon: str,
 ) -> tuple[int | None, dict[str, Any]]:
     """Score with XGBoost if available. Returns None if not trained."""
-    feature_row = FeatureStoreRow(
-        symbol=event.symbol,
-        source="event_scanner",
-    )
+    feature_row = _feature_row_from_event(event, horizon)
 
     if strategy_config:
         result = run_xgboost_ranker_safe(feature_row, strategy_config)
@@ -319,8 +341,12 @@ def run_signal_scoring(request: SignalScoringRequest) -> SignalScoringResponse:
                 strategy_config = get_strategy(event.strategy_key)
 
             # Score with available models
-            weighted_score, weighted_output = _score_with_weighted_ranker(event, strategy_config)
-            xgboost_score, xgboost_output = _score_with_xgboost(event, strategy_config)
+            weighted_score, weighted_output = _score_with_weighted_ranker(
+                event, strategy_config, request.horizon,
+            )
+            xgboost_score, xgboost_output = _score_with_xgboost(
+                event, strategy_config, request.horizon,
+            )
             hist_score, hist_output = _score_with_historical_similarity(event)
             data_quality = _compute_data_quality_score(event)
 
