@@ -121,6 +121,12 @@ def run_workflow(body: OrchestratorRunRequest) -> OrchestratorRunResponse:
             approval_required=False,
             approval_id=None,
             execution_boundary_reached=False,
+            governance_blockers=[],
+            preview_continued_despite_governance_blockers=False,
+            preview_continued_after_approval_boundary=False,
+            source_mode=body.source,
+            using_mock_data=body.source == "mock",
+            allow_submit=False,
             submitted_order=False,
             broker_called=False,
             llm_used=False,
@@ -146,6 +152,45 @@ def run_workflow(body: OrchestratorRunRequest) -> OrchestratorRunResponse:
         )
     )
     write_event(AuditEventCreate(event_type="governance_check_completed", actor="system", severity="info", message="Governance check completed", metadata=gov.model_dump()))
+
+    if gov.decision == "blocked" and not body.dry_run:
+        wr = create_workflow_run(
+            WorkflowRunCreateRequest(
+                workflow_name=body.workflow_name,
+                asset_class=body.asset_class,
+                horizon=body.horizon,
+                mode=body.mode,
+                source=body.source,
+                metadata={**(body.metadata or {}), "governance_blocked": True},
+            )
+        )
+        resp = OrchestratorRunResponse(
+            orchestrator_run_id=new_orchestrator_id(),
+            workflow_run_id=wr.workflow_run_id,
+            status="blocked",
+            current_stage=None,
+            current_agent_key=None,
+            blockers=list(gov.blockers),
+            warnings=list(gov.warnings),
+            next_action=gov.next_action,
+            approval_required=False,
+            approval_id=None,
+            execution_boundary_reached=False,
+            governance_blockers=list(gov.blockers),
+            preview_continued_despite_governance_blockers=False,
+            preview_continued_after_approval_boundary=False,
+            source_mode=body.source,
+            using_mock_data=body.source == "mock",
+            allow_submit=False,
+            submitted_order=False,
+            broker_called=False,
+            llm_used=False,
+            created_at=iso_utc_now(),
+            updated_at=iso_utc_now(),
+        )
+        _MEMORY[resp.orchestrator_run_id] = resp
+        _persist_run(resp, req=body)
+        return resp
 
     # Create workflow run
     wr = create_workflow_run(
@@ -178,7 +223,7 @@ def run_workflow(body: OrchestratorRunRequest) -> OrchestratorRunResponse:
         asset_class=body.asset_class,
         horizon=body.horizon,
         mode=body.mode,
-        source="mock" if body.dry_run else body.source,
+        source=body.source,
         symbols=list(body.symbols or []),
         account_equity=body.account_equity,
         max_risk_per_trade_percent=body.max_risk_per_trade_percent,
@@ -193,6 +238,7 @@ def run_workflow(body: OrchestratorRunRequest) -> OrchestratorRunResponse:
     approval_required = bool(body.require_human_approval)
     approval_id: str | None = None
     execution_boundary_reached = False
+    preview_continued_after_approval_boundary = False
 
     for idx, agent_key in enumerate(plan, start=1):
         current_stage = idx
@@ -281,6 +327,10 @@ def run_workflow(body: OrchestratorRunRequest) -> OrchestratorRunResponse:
                         approval_id = str(approval.get("approval_id"))
                 except Exception:
                     approval_id = approval_id
+                if body.dry_run:
+                    preview_continued_after_approval_boundary = idx < min(stage_cap, len(plan))
+                else:
+                    break
 
         if agent_result.status in {"blocked", "failed"}:
             write_event(AuditEventCreate(workflow_run_id=wr.workflow_run_id, orchestrator_run_id=orchestrator_run_id, event_type="workflow_blocked", actor="system", severity="warn", message="Workflow blocked by agent", metadata={"agent_key": agent_key, "blockers": agent_result.blockers}))
@@ -310,9 +360,15 @@ def run_workflow(body: OrchestratorRunRequest) -> OrchestratorRunResponse:
         blockers=sorted(set(blockers)),
         warnings=sorted(set(warnings)),
         next_action=next_action,
-        approval_required=approval_required,
+        approval_required=bool(approval_required and approval_id),
         approval_id=approval_id,
         execution_boundary_reached=bool(execution_boundary_reached),
+        governance_blockers=list(gov.blockers),
+        preview_continued_despite_governance_blockers=bool(body.dry_run and gov.blockers),
+        preview_continued_after_approval_boundary=bool(preview_continued_after_approval_boundary),
+        source_mode=body.source,
+        using_mock_data=body.source == "mock",
+        allow_submit=False,
         submitted_order=False,
         broker_called=False,
         llm_used=False,

@@ -56,6 +56,12 @@ class OrchestratorRunResponse(BaseModel):
     approval_required: bool = True
     approval_id: str | None = None
     execution_boundary_reached: bool = False
+    governance_blockers: list[str] = Field(default_factory=list)
+    preview_continued_despite_governance_blockers: bool = False
+    preview_continued_after_approval_boundary: bool = False
+    source_mode: str = "manual"
+    using_mock_data: bool = False
+    allow_submit: bool = False
     submitted_order: bool = False
     broker_called: bool = False
     llm_used: bool = False

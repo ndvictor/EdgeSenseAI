@@ -7,29 +7,44 @@ import pytest
 from fastapi.testclient import TestClient
 
 from app.main import app
-from app.services.workflow_orchestrator.stage_plan import default_stage_plan
 import app.services.workflow_orchestrator.service as orchestrator_service
+from app.services.agent_runtime.models import AgentRunRequest, AgentRunResult, WorkflowRunCreateRequest, WorkflowRunRecord, iso_utc_now
 
 
 client = TestClient(app)
+_RUN_CACHE: dict[tuple[tuple[str, str], ...], dict[str, Any]] = {}
 
 
 @pytest.fixture(autouse=True)
 def _force_memory_persistence(monkeypatch):
-    import app.services.agent_runtime.store as agent_store
-    import app.services.agent_runtime.wrappers as wrappers
-    import app.services.approval_queue.service as approval_service
-    import app.services.audit_log.service as audit_service
-    from app.services.agent_runtime.wrappers.safety import SafetyResult
+    import app.services.workflow_governance.service as governance_service
 
+    _RUN_CACHE.clear()
     monkeypatch.setattr(orchestrator_service, "_db_session", lambda: None)
-    monkeypatch.setattr(agent_store, "_db_session", lambda: None)
-    monkeypatch.setattr(approval_service, "_db_session", lambda: None)
-    monkeypatch.setattr(audit_service, "_db_session", lambda: None)
+    monkeypatch.setattr(orchestrator_service, "write_event", lambda *_args, **_kwargs: None)
+    monkeypatch.setattr(orchestrator_service, "default_stage_plan", lambda **_kwargs: ["account_owner_policy_agent", "watchlist_builder_agent", "strategy_selection_agent", "execution_planner_agent"])
+    monkeypatch.setattr(governance_service, "get_active_workflow_state", lambda *_args, **_kwargs: None)
+    monkeypatch.setattr(orchestrator_service, "orchestrator_pipeline_agent_count", lambda: 4)
+    monkeypatch.setattr(governance_service, "effective_bool", lambda key: key in {"BROKER_EXECUTION_ENABLED", "LIVE_TRADING_ENABLED", "PAPER_TRADING_ENABLED", "REQUIRE_HUMAN_APPROVAL", "WORKFLOW_ENABLED"})
 
-    def fake_wrapped_agent(*, agent_key: str, inputs: dict[str, Any], context: dict[str, Any]) -> dict[str, Any]:
+    def fake_create_workflow_run(req: WorkflowRunCreateRequest) -> WorkflowRunRecord:
+        now = iso_utc_now()
+        return WorkflowRunRecord(
+            workflow_run_id="wr_test_autonomous_boundaries",
+            workflow_name=req.workflow_name,
+            asset_class=req.asset_class,
+            horizon=req.horizon,
+            mode=req.mode,
+            source=req.source,
+            created_at=now,
+            updated_at=now,
+            metadata=req.metadata,
+        )
+
+    def fake_create_agent_run(req: AgentRunRequest) -> AgentRunResult:
+        inputs = dict(req.inputs or {})
+        agent_key = req.agent_key
         symbol = str(inputs.get("symbol") or inputs.get("selected_symbol") or (inputs.get("symbols") or ["AMD"])[0]).upper()
-        safety = SafetyResult(sanitized_inputs=dict(inputs), blockers=[], warnings=[])
         result: dict[str, Any] = {"status": "ok", "warnings": [], "blockers": []}
         if agent_key == "market_condition_agent":
             result["market_context"] = {"regime": "risk_on", "volatility_state": "normal", "liquidity_state": "good"}
@@ -49,15 +64,28 @@ def _force_memory_persistence(monkeypatch):
             result.update({"narrative": None, "warnings": ["narrative_review_deferred_by_policy"]})
         elif agent_key == "execution_planner_agent":
             result.update({"execution_plan": {"account_state": {"account_equity": inputs.get("account_equity")}}})
-        return {
-            "tool_name": f"test.{agent_key}",
-            "tool_request": dict(inputs),
-            "tool_response": result,
-            "next_agent": None,
-            "safety": safety,
-        }
+        now = iso_utc_now()
+        return AgentRunResult(
+            run_id=f"ar_test_{agent_key}",
+            workflow_run_id=req.workflow_run_id or "wr_test_autonomous_boundaries",
+            agent_key=agent_key,
+            status="completed",
+            decision={"phase": "test", "agent_key": agent_key, "tool": f"test.{agent_key}", "result": result},
+            blockers=[],
+            warnings=list(result.get("warnings") or []),
+            next_action="ok",
+            next_agent=None,
+            artifacts={"llm_used": False, "broker_called": False, "submitted_order": False},
+            trace_id=f"tr_test_{agent_key}",
+            trace=[],
+            idempotency_key=req.idempotency_key or f"test:{agent_key}",
+            inputs_hash=f"hash:{agent_key}",
+            created_at=now,
+            persistence_mode="memory",
+        )
 
-    monkeypatch.setattr(wrappers, "run_wrapped_agent", fake_wrapped_agent)
+    monkeypatch.setattr(orchestrator_service, "create_workflow_run", fake_create_workflow_run)
+    monkeypatch.setattr(orchestrator_service, "create_agent_run", fake_create_agent_run)
 
 
 def _run_orchestrator(payload: dict[str, Any] | None = None) -> dict[str, Any]:
@@ -69,9 +97,14 @@ def _run_orchestrator(payload: dict[str, Any] | None = None) -> dict[str, Any]:
         "stop_at_stage": 100,
     }
     body.update(payload or {})
+    cache_key = tuple(sorted((key, repr(value)) for key, value in body.items()))
+    if cache_key in _RUN_CACHE:
+        return _RUN_CACHE[cache_key]
     response = client.post("/api/workflow-orchestrator/run", json=body)
     assert response.status_code == 200
-    return response.json()["run"]
+    run = response.json()["run"]
+    _RUN_CACHE[cache_key] = run
+    return run
 
 
 def _walk_values(value: Any):
@@ -92,6 +125,7 @@ def _timeline_by_agent(run: dict[str, Any]) -> dict[str, dict[str, Any]]:
 def test_canonical_orchestrator_endpoint_is_non_submitting():
     run = _run_orchestrator()
 
+    assert run["allow_submit"] is False
     assert run["submitted_order"] is False
     assert run["broker_called"] is False
     assert run["llm_used"] is False
@@ -103,7 +137,7 @@ def test_orchestrator_stage_timeline_uses_default_stage_plan():
     run = _run_orchestrator()
 
     keys = [row["agent_key"] for row in run["stage_timeline"]]
-    for key in default_stage_plan():
+    for key in ["account_owner_policy_agent", "watchlist_builder_agent", "strategy_selection_agent", "execution_planner_agent"]:
         assert key in keys
 
 
@@ -150,7 +184,8 @@ def test_orchestrator_service_does_not_call_old_autonomous_controller_surfaces()
         assert name not in source
 
 
-def test_qlib_unavailable_does_not_fail_orchestrator():
+def test_qlib_unavailable_does_not_fail_orchestrator(monkeypatch):
+    monkeypatch.setattr(orchestrator_service, "default_stage_plan", lambda **_kwargs: ["account_owner_policy_agent", "qlib_research_agent"])
     run = _run_orchestrator()
     keys = [row["agent_key"] for row in run["stage_timeline"]]
 
@@ -158,17 +193,47 @@ def test_qlib_unavailable_does_not_fail_orchestrator():
     assert run["status"] != "failed"
 
 
-def test_approval_queue_creation_does_not_submit_broker_order():
-    run = _run_orchestrator({"stop_at_stage": 14})
+def test_approval_queue_creation_does_not_submit_broker_order(monkeypatch):
+    monkeypatch.setattr(orchestrator_service, "default_stage_plan", lambda **_kwargs: ["account_owner_policy_agent", "execution_approval_agent"])
+    run = _run_orchestrator()
 
     assert run["submitted_order"] is False
     assert run["broker_called"] is False
     assert run["execution_boundary_reached"] is True
 
 
-def test_narrative_review_does_not_call_llm_by_default():
-    run = _run_orchestrator({"stop_at_stage": 15})
+def test_narrative_review_does_not_call_llm_by_default(monkeypatch):
+    monkeypatch.setattr(orchestrator_service, "default_stage_plan", lambda **_kwargs: ["account_owner_policy_agent", "narrative_review_agent"])
+    run = _run_orchestrator()
     keys = [row["agent_key"] for row in run["stage_timeline"]]
 
     assert "narrative_review_agent" in keys
+    assert run["llm_used"] is False
+
+
+def test_dry_run_governance_blockers_continue_with_trace():
+    run = _run_orchestrator({"dry_run": True, "source": "runtime", "stop_at_stage": 3})
+
+    assert run["stage_timeline"]
+    assert "broker_execution_blocked_v1" in run["governance_blockers"]
+    assert "live_trading_blocked_v1" in run["governance_blockers"]
+    assert run["preview_continued_despite_governance_blockers"] is True
+    assert run["source_mode"] == "runtime"
+    assert run["using_mock_data"] is False
+    assert run["allow_submit"] is False
+    assert run["submitted_order"] is False
+    assert run["broker_called"] is False
+    assert run["llm_used"] is False
+
+
+def test_non_dry_run_governance_blockers_stop_before_stages():
+    run = _run_orchestrator({"dry_run": False, "source": "runtime", "stop_at_stage": 3})
+
+    assert run["status"] == "blocked"
+    assert run["stage_timeline"] == []
+    assert "broker_execution_blocked_v1" in run["governance_blockers"]
+    assert "live_trading_blocked_v1" in run["governance_blockers"]
+    assert run["preview_continued_despite_governance_blockers"] is False
+    assert run["submitted_order"] is False
+    assert run["broker_called"] is False
     assert run["llm_used"] is False
