@@ -13,6 +13,7 @@ from app.services.workflow_governance.models import WorkflowGovernanceCheckReque
 from app.services.workflow_governance.service import check_governance
 from app.services.workflow_orchestrator.models import OrchestratorRunRequest, OrchestratorRunResponse, OrchestratorStatusResponse, iso_utc_now, new_orchestrator_id
 from app.services.workflow_orchestrator.safety import enforce_orchestrator_safety
+from app.services.workflow_orchestrator.pipeline_carryforward import advisory_glue_next_agent_mismatch, apply_stage_carryforward
 from app.services.workflow_orchestrator.stage_plan import default_stage_plan, orchestrator_pipeline_agent_count
 
 _MEMORY: dict[str, OrchestratorRunResponse] = {}
@@ -202,6 +203,13 @@ def run_workflow(body: OrchestratorRunRequest) -> OrchestratorRunResponse:
     current_stage: int | None = None
     current_agent: str | None = None
 
+    # Accumulated inputs: glue stages write symbols, strategy_key, regime, etc. for downstream agents.
+    req_inputs: dict[str, Any] = {
+        "asset_class": body.asset_class,
+        "horizon": body.horizon,
+        "symbols": list(body.symbols or []),
+    }
+
     approval_required = bool(body.require_human_approval)
     approval_id: str | None = None
     execution_boundary_reached = False
@@ -215,7 +223,6 @@ def run_workflow(body: OrchestratorRunRequest) -> OrchestratorRunResponse:
         if idx > stage_cap:
             break
 
-        req_inputs: dict[str, Any] = {"asset_class": body.asset_class, "horizon": body.horizon, "symbols": body.symbols}
         # Dry-run orchestrator: deterministic mock market data only (no yfinance/broker; avoids CI rate limits).
         req_inputs["source"] = "mock" if body.dry_run else (body.source or "auto")
         if body.strategy_key:
@@ -239,7 +246,26 @@ def run_workflow(body: OrchestratorRunRequest) -> OrchestratorRunResponse:
             )
         )
         agent_run_ids.append(agent_result.run_id)
-        stage_timeline.append({"stage": idx, "agent_key": agent_key, "run_id": agent_result.run_id, "status": agent_result.status, "at": agent_result.created_at})
+
+        carry_warnings = apply_stage_carryforward(agent_key=agent_key, agent_result=agent_result, req_inputs=req_inputs)
+        warnings.extend(carry_warnings)
+        next_planned = plan[idx] if idx < len(plan) else None
+        mismatch = advisory_glue_next_agent_mismatch(agent_key=agent_key, agent_result=agent_result, next_planned_agent=next_planned)
+        if mismatch:
+            warnings.append(mismatch)
+
+        stage_timeline.append({
+            "stage": idx,
+            "agent_key": agent_key,
+            "run_id": agent_result.run_id,
+            "status": agent_result.status,
+            "at": agent_result.created_at,
+            "pipeline_inputs_snapshot": {
+                k: req_inputs[k]
+                for k in ("symbols", "symbol", "strategy_key", "regime", "proof_status", "selected_model_key", "qlib_available")
+                if k in req_inputs
+            },
+        })
 
         write_event(AuditEventCreate(workflow_run_id=wr.workflow_run_id, orchestrator_run_id=orchestrator_run_id, agent_run_id=agent_result.run_id, event_type="agent_run_completed", actor="system", severity="info", message=f"Agent completed: {agent_key}", metadata={"status": agent_result.status}))
 
