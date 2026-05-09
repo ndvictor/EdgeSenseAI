@@ -173,7 +173,7 @@ export default function ApprovalQueuePage() {
                   onClick={() => act(it.approval_id, "approve")}
                   className="rounded-lg border border-emerald-400/50 bg-emerald-500/15 px-3 py-2 text-xs font-bold text-emerald-100"
                 >
-                  Approve handoff
+                  Approve gated workflow handoff
                 </button>
                 <button
                   type="button"

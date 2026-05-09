@@ -1,6 +1,6 @@
 "use client";
 
-import React, { useCallback, useEffect, useState } from "react";
+import React, { Suspense, useCallback, useEffect, useState } from "react";
 import Link from "next/link";
 import { usePathname, useRouter, useSearchParams } from "next/navigation";
 import {
@@ -79,7 +79,7 @@ function StatusPill({ value }: { value: unknown }) {
   return <span className={`inline-flex rounded-lg border px-2 py-0.5 text-[11px] font-medium ${evidenceStatusClass(value)}`}>{String(value ?? "—")}</span>;
 }
 
-export default function ResearchEvidencePage() {
+function ResearchEvidenceContent() {
   const router = useRouter();
   const pathname = usePathname();
   const searchParams = useSearchParams();
@@ -576,5 +576,21 @@ export default function ResearchEvidencePage() {
         </div>
       ) : null}
     </div>
+  );
+}
+
+export default function ResearchEvidencePage() {
+  return (
+    <Suspense
+      fallback={
+        <main className="min-h-screen bg-[#04070b] p-6 text-slate-100">
+          <div className="rounded-2xl border border-emerald-400/10 bg-[#070c12]/95 p-4 text-sm text-slate-400">
+            Loading research evidence...
+          </div>
+        </main>
+      }
+    >
+      <ResearchEvidenceContent />
+    </Suspense>
   );
 }

@@ -12,7 +12,7 @@ import {
   Settings,
 } from "lucide-react";
 
-type NavItem = { label: string; href: string; icon: any; activeAlso?: string[] };
+type NavItem = { label: string; href: string; icon: any; activeAlso?: string[]; children?: Array<{ label: string; href: string }> };
 
 const MAIN_ITEMS: NavItem[] = [
   { label: "Home", href: "/", icon: Home },
@@ -20,15 +20,16 @@ const MAIN_ITEMS: NavItem[] = [
     label: "Autonomous Day-Trading",
     href: "/daytrading-workflow",
     icon: Workflow,
-    activeAlso: [
-      "/workflow-runbook",
-      "/agent-runtime",
-      "/approval-queue",
-      "/audit-log",
-      "/workflow-governance",
-      "/workflow-scheduler",
-      "/platform-readiness",
-      "/research-evidence",
+    children: [
+      { label: "Home", href: "/daytrading-workflow" },
+      { label: "Command Center", href: "/daytrading-workflow/command-center" },
+      { label: "Workflow", href: "/daytrading-workflow/workflow" },
+      { label: "Live Watchlist", href: "/daytrading-workflow/live-watchlist" },
+      { label: "Data Pipeline", href: "/daytrading-workflow/data-pipeline" },
+      { label: "Strategy & Models", href: "/daytrading-workflow/strategy-models" },
+      { label: "Qlib & Evidence", href: "/daytrading-workflow/qlib-evidence" },
+      { label: "Execution & Approval", href: "/daytrading-workflow/execution-approval" },
+      { label: "Issues / Debug", href: "/daytrading-workflow/issues-debug" },
     ],
   },
   {
@@ -87,22 +88,41 @@ export function Sidebar() {
           const Icon = item.icon;
           const active = navItemActive(pathname, searchParams, item);
           return (
-            <Link
-              key={item.href}
-              href={item.href}
-              className={`group flex items-center gap-3 rounded-xl px-2 py-2 text-sm font-medium transition-all ${
-                active ? "border border-emerald-400/40 bg-emerald-400/10 text-white" : "text-slate-300 hover:bg-white/[0.04] hover:text-emerald-200"
-              }`}
-            >
-              <span
-                className={`flex h-9 w-9 items-center justify-center rounded-xl border transition-colors ${
-                  active ? "border-emerald-400/60 bg-emerald-400/10 text-emerald-300" : "border-emerald-400/25 bg-emerald-400/[0.04] text-emerald-400"
+            <div key={item.href}>
+              <Link
+                href={item.href}
+                className={`group flex items-center gap-3 rounded-xl px-2 py-2 text-sm font-medium transition-all ${
+                  active ? "border border-emerald-400/40 bg-emerald-400/10 text-white" : "text-slate-300 hover:bg-white/[0.04] hover:text-emerald-200"
                 }`}
               >
-                <Icon className="h-4 w-4" />
-              </span>
-              {item.label}
-            </Link>
+                <span
+                  className={`flex h-9 w-9 items-center justify-center rounded-xl border transition-colors ${
+                    active ? "border-emerald-400/60 bg-emerald-400/10 text-emerald-300" : "border-emerald-400/25 bg-emerald-400/[0.04] text-emerald-400"
+                  }`}
+                >
+                  <Icon className="h-4 w-4" />
+                </span>
+                {item.label}
+              </Link>
+              {active && item.children?.length ? (
+                <div className="ml-12 mt-1 space-y-1 border-l border-emerald-400/10 pl-3">
+                  {item.children.map((child) => {
+                    const childActive = pathname === child.href;
+                    return (
+                      <Link
+                        key={child.href}
+                        href={child.href}
+                        className={`block rounded-lg px-2 py-1.5 text-xs transition ${
+                          childActive ? "bg-emerald-400/10 text-emerald-100" : "text-slate-500 hover:bg-white/[0.04] hover:text-emerald-200"
+                        }`}
+                      >
+                        {child.label}
+                      </Link>
+                    );
+                  })}
+                </div>
+              ) : null}
+            </div>
           );
         })}
       </nav>

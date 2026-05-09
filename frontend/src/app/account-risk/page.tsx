@@ -10,7 +10,7 @@ export default function AccountRiskPage() {
   return <AccountRiskPanel />;
 }
 
-export function AccountRiskPanel() {
+function AccountRiskPanel() {
   const [alpaca, setAlpaca] = useState<AlpacaPaperSnapshot | null>(null);
   const [settings, setSettings] = useState<SettingsResponse | null>(null);
   const [error, setError] = useState<string | null>(null);

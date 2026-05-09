@@ -16,7 +16,7 @@ const CommandCenterPanel = dynamic(() => import("@/app/command-center/page"), {
   ssr: false,
   loading: () => <LoadingCard label="Loading Command Center…" />,
 });
-const AccountRiskPanel = dynamic(() => import("@/app/account-risk/page").then((m) => ({ default: m.AccountRiskPanel })), {
+const AccountRiskPanel = dynamic(() => import("@/app/account-risk/page"), {
   ssr: false,
   loading: () => <LoadingCard label="Loading Account Risk Center…" />,
 });

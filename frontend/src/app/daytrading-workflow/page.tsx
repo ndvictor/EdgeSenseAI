@@ -5,7 +5,13 @@ import { usePathname } from "next/navigation";
 import { useCallback, useEffect, useMemo, useState } from "react";
 import {
   api,
+  approveApprovalQueueItem,
+  cancelApprovalQueueItem,
+  createAgentRun,
+  getAgentRuntimeAgents,
   getAgentRuntimeLatest,
+  getAgentRuntimeStatus,
+  getAuditLogStatus,
   getApprovalQueueItems,
   getLatestModelEvidenceRecord,
   getLatestProofRegistryRecord,
@@ -13,14 +19,41 @@ import {
   getLatestWorkflowOrchestratorRun,
   getPlatformReadinessStatus,
   getQlibStatus,
+  getWorkflowGovernanceStatus,
+  getWorkflowRunbookLatest,
+  getWorkflowRunbookStages,
+  getWorkflowRunbookStatus,
+  getWorkflowSchedulerStatus,
+  listAuditLogEvents,
+  listWorkflowSchedules,
   listWorkflowOrchestratorRuns,
+  rejectApprovalQueueItem,
   runWorkflowOrchestrator,
+  type AgentRuntimeAgentDescriptor,
+  type AgentRunResultRecord,
   type ApprovalQueueItemRecord,
   type OrchestratorRunRecord,
   type OrchestratorRunRequest,
 } from "@/lib/api";
 
-type TabId = "home" | "command" | "workflow" | "watchlist" | "data" | "strategy" | "evidence" | "execution" | "debug";
+type TabId =
+  | "home"
+  | "command"
+  | "workflow"
+  | "watchlist"
+  | "data"
+  | "strategy"
+  | "evidence"
+  | "execution"
+  | "debug"
+  | "runbook"
+  | "agentRuntime"
+  | "approvalQueue"
+  | "auditLog"
+  | "governance"
+  | "scheduler"
+  | "platformReadiness"
+  | "researchEvidence";
 
 type FetchState<T> = {
   data: T | null;
@@ -43,6 +76,8 @@ type EvidenceStatus = { status?: string; record?: Record<string, unknown> | null
 type DashboardData = {
   latest: FetchState<{ status: string; run: OrchestratorRunRecord | null }>;
   runs: FetchState<{ status: string; runs: OrchestratorRunRecord[] }>;
+  agentRuntimeStatus: FetchState<Record<string, unknown>>;
+  agentRuntimeAgents: FetchState<{ status: string; agents: AgentRuntimeAgentDescriptor[] }>;
   agentRuntime: FetchState<Record<string, unknown>>;
   readiness: FetchState<ReadinessStatus>;
   finalReadiness: FetchState<Record<string, unknown>>;
@@ -54,6 +89,14 @@ type DashboardData = {
   watchlist: FetchState<Record<string, unknown>>;
   paper: FetchState<Record<string, unknown>>;
   accountRisk: FetchState<Record<string, unknown>>;
+  runbookStatus: FetchState<Record<string, unknown>>;
+  runbookStages: FetchState<Record<string, unknown>>;
+  runbookLatest: FetchState<Record<string, unknown>>;
+  auditStatus: FetchState<Record<string, unknown>>;
+  auditEvents: FetchState<Record<string, unknown>>;
+  governanceStatus: FetchState<Record<string, unknown>>;
+  schedulerStatus: FetchState<Record<string, unknown>>;
+  schedules: FetchState<Record<string, unknown>>;
 };
 
 const PLATFORM_PAGES: Array<{ id: TabId; label: string; href: string; group: string; eyebrow: string }> = [
@@ -110,6 +153,8 @@ const STAGES: Array<{ key: string; name: string; summary: string }> = [
 const EMPTY: DashboardData = {
   latest: { data: null, error: null },
   runs: { data: null, error: null },
+  agentRuntimeStatus: { data: null, error: null },
+  agentRuntimeAgents: { data: null, error: null },
   agentRuntime: { data: null, error: null },
   readiness: { data: null, error: null },
   finalReadiness: { data: null, error: null },
@@ -121,6 +166,14 @@ const EMPTY: DashboardData = {
   watchlist: { data: null, error: null },
   paper: { data: null, error: null },
   accountRisk: { data: null, error: null },
+  runbookStatus: { data: null, error: null },
+  runbookStages: { data: null, error: null },
+  runbookLatest: { data: null, error: null },
+  auditStatus: { data: null, error: null },
+  auditEvents: { data: null, error: null },
+  governanceStatus: { data: null, error: null },
+  schedulerStatus: { data: null, error: null },
+  schedules: { data: null, error: null },
 };
 
 async function bestEffort<T>(fn: () => Promise<T>): Promise<FetchState<T>> {
@@ -281,6 +334,85 @@ function Card({ title, subtitle, children, error }: { title: string; subtitle?: 
   );
 }
 
+function MiniTable({ rows, empty = "No records reported." }: { rows: unknown[]; empty?: string }) {
+  if (!rows.length) return <p className="text-sm text-slate-500">{empty}</p>;
+  return (
+    <div className="space-y-2">
+      {rows.slice(0, 8).map((row, index) => {
+        const record = asRecord(row);
+        const title = text(record.agent_key ?? record.approval_id ?? record.audit_id ?? record.schedule_id ?? record.name ?? record.event_type ?? record.status ?? `Record ${index + 1}`);
+        const subtitle = text(record.status ?? record.message ?? record.updated_at ?? record.created_at ?? record.next_action);
+        return (
+          <div key={`${title}-${index}`} className="rounded-2xl border border-emerald-400/10 bg-black/25 p-3">
+            <div className="text-sm font-semibold text-slate-100">{title}</div>
+            <div className="mt-1 text-xs text-slate-500">{subtitle}</div>
+          </div>
+        );
+      })}
+    </div>
+  );
+}
+
+function ApprovalActionSelect({
+  label,
+  disabled,
+  disabledReason,
+  busy,
+  onApprove,
+  onDecline,
+}: {
+  label: string;
+  disabled: boolean;
+  disabledReason?: string;
+  busy: boolean;
+  onApprove: () => void;
+  onDecline: () => void;
+}) {
+  return (
+    <div className={`rounded-2xl border p-3 ${disabled ? "border-slate-600/35 bg-slate-900/40 opacity-55" : "border-emerald-400/20 bg-emerald-400/[0.04]"}`}>
+      <div className="mb-2 text-xs font-bold uppercase tracking-[0.16em] text-slate-400">{label}</div>
+      <select
+        disabled={disabled || busy}
+        defaultValue=""
+        onChange={(event) => {
+          const value = event.target.value;
+          event.currentTarget.value = "";
+          if (value === "approve") onApprove();
+          if (value === "decline") onDecline();
+        }}
+        className="w-full rounded-xl border border-emerald-400/10 bg-black/35 px-3 py-2 text-sm font-semibold text-slate-100 outline-none disabled:cursor-not-allowed disabled:text-slate-500"
+      >
+        <option value="">{disabled ? "No approval needed" : "Select action"}</option>
+        <option value="approve">Approve</option>
+        <option value="decline">Decline</option>
+      </select>
+      {disabledReason ? <p className="mt-2 text-xs text-slate-500">{disabledReason}</p> : null}
+    </div>
+  );
+}
+
+function SafetyStatusCard({ title, status, children }: { title: string; status?: string; children: React.ReactNode }) {
+  return (
+    <div className="rounded-2xl border border-slate-600/35 bg-slate-900/40 p-3">
+      <div className="mb-2 flex items-center justify-between gap-3">
+        <div className="text-xs font-bold uppercase tracking-[0.16em] text-slate-400">{title}</div>
+        {status ? <Badge tone="paper">{status}</Badge> : null}
+      </div>
+      <p className="text-sm leading-5 text-slate-400">{children}</p>
+    </div>
+  );
+}
+
+function SectionHeader({ eyebrow, title, description }: { eyebrow: string; title: string; description: string }) {
+  return (
+    <header className="rounded-[2rem] border border-emerald-400/15 bg-[#05080d]/70 p-5 shadow-[0_28px_110px_rgba(0,0,0,0.42)] backdrop-blur-2xl">
+      <div className="mb-2 text-[10px] font-bold uppercase tracking-[0.28em] text-emerald-300/70">{eyebrow}</div>
+      <h1 className="text-3xl font-black tracking-tight text-white">{title}</h1>
+      <p className="mt-2 max-w-4xl text-sm leading-6 text-slate-400">{description}</p>
+    </header>
+  );
+}
+
 function Metric({ label, value, tone }: { label: string; value: React.ReactNode; tone?: string }) {
   return (
     <div className="rounded-2xl border border-emerald-400/10 bg-black/25 px-3 py-2 shadow-[inset_0_1px_0_rgba(16,185,129,0.05)] backdrop-blur">
@@ -302,28 +434,6 @@ function DebugPanel({ title, value }: { title: string; value: unknown }) {
       <summary className="cursor-pointer text-sm font-semibold text-slate-200">{title}</summary>
       <pre className="mt-3 max-h-96 overflow-auto rounded-xl bg-black/40 p-3 text-xs leading-5 text-slate-300">{JSON.stringify(value, null, 2)}</pre>
     </details>
-  );
-}
-
-function SecondaryLinks() {
-  const links = [
-    ["/workflow-runbook", "Runbook"],
-    ["/agent-runtime", "Agent Runtime"],
-    ["/approval-queue", "Approval Queue"],
-    ["/audit-log", "Audit Log"],
-    ["/workflow-governance", "Governance"],
-    ["/workflow-scheduler", "Scheduler"],
-    ["/platform-readiness", "Platform Readiness"],
-    ["/research-evidence", "Research Evidence"],
-  ];
-  return (
-    <div className="mt-6 flex flex-wrap gap-2 border-t border-white/10 pt-4">
-      {links.map(([href, label]) => (
-        <Link key={href} href={href} className="rounded-lg border border-white/10 px-3 py-1.5 text-xs text-slate-400 transition hover:border-emerald-400/30 hover:text-emerald-200">
-          {label}
-        </Link>
-      ))}
-    </div>
   );
 }
 
@@ -381,12 +491,42 @@ export default function DayTradingWorkflowPage() {
   const [loading, setLoading] = useState(true);
   const [runBusy, setRunBusy] = useState(false);
   const [runMessage, setRunMessage] = useState<string | null>(null);
+  const [approvalReason, setApprovalReason] = useState("");
+  const [approvalBusyId, setApprovalBusyId] = useState<string | null>(null);
+  const [agentRunBusy, setAgentRunBusy] = useState(false);
+  const [agentRunResult, setAgentRunResult] = useState<AgentRunResultRecord | null>(null);
 
   const refresh = useCallback(async () => {
     setLoading(true);
-    const [latest, runs, agentRuntime, readiness, finalReadiness, qlib, proof, model, strategy, approvals, watchlist, paper, accountRisk] = await Promise.all([
+    const [
+      latest,
+      runs,
+      agentRuntimeStatus,
+      agentRuntimeAgents,
+      agentRuntime,
+      readiness,
+      finalReadiness,
+      qlib,
+      proof,
+      model,
+      strategy,
+      approvals,
+      watchlist,
+      paper,
+      accountRisk,
+      runbookStatus,
+      runbookStages,
+      runbookLatest,
+      auditStatus,
+      auditEvents,
+      governanceStatus,
+      schedulerStatus,
+      schedules,
+    ] = await Promise.all([
       bestEffort(() => getLatestWorkflowOrchestratorRun()),
       bestEffort(() => listWorkflowOrchestratorRuns(20)),
+      bestEffort(() => getAgentRuntimeStatus()),
+      bestEffort(() => getAgentRuntimeAgents()),
       bestEffort(() => getAgentRuntimeLatest()),
       bestEffort(() => getPlatformReadinessStatus() as Promise<ReadinessStatus>),
       bestEffort(() => api.getFinalReadiness() as Promise<Record<string, unknown>>),
@@ -398,8 +538,40 @@ export default function DayTradingWorkflowPage() {
       bestEffort(() => api.getLiveWatchlist() as Promise<Record<string, unknown>>),
       bestEffort(() => api.getAlpacaPaperSnapshot() as Promise<Record<string, unknown>>),
       bestEffort(() => api.getAccountRisk() as Promise<Record<string, unknown>>),
+      bestEffort(() => getWorkflowRunbookStatus() as Promise<Record<string, unknown>>),
+      bestEffort(() => getWorkflowRunbookStages() as Promise<Record<string, unknown>>),
+      bestEffort(() => getWorkflowRunbookLatest() as Promise<Record<string, unknown>>),
+      bestEffort(() => getAuditLogStatus()),
+      bestEffort(() => listAuditLogEvents(20) as Promise<Record<string, unknown>>),
+      bestEffort(() => getWorkflowGovernanceStatus()),
+      bestEffort(() => getWorkflowSchedulerStatus()),
+      bestEffort(() => listWorkflowSchedules(20) as Promise<Record<string, unknown>>),
     ]);
-    setData({ latest, runs, agentRuntime, readiness, finalReadiness, qlib, proof, model, strategy, approvals, watchlist, paper, accountRisk });
+    setData({
+      latest,
+      runs,
+      agentRuntimeStatus,
+      agentRuntimeAgents,
+      agentRuntime,
+      readiness,
+      finalReadiness,
+      qlib,
+      proof,
+      model,
+      strategy,
+      approvals,
+      watchlist,
+      paper,
+      accountRisk,
+      runbookStatus,
+      runbookStages,
+      runbookLatest,
+      auditStatus,
+      auditEvents,
+      governanceStatus,
+      schedulerStatus,
+      schedules,
+    });
     setLoading(false);
   }, []);
 
@@ -421,8 +593,16 @@ export default function DayTradingWorkflowPage() {
   const approvalItems = data.approvals.data?.items ?? [];
   const openPositions = asList(data.paper.data?.positions);
   const paperAccount = asRecord(data.paper.data?.account);
+  const hasPaperAccount = !data.paper.error && Object.keys(paperAccount).length > 0;
   const accountRisk = asRecord(data.accountRisk.data);
   const watchlistSymbols = asList(data.watchlist.data?.symbols ?? data.watchlist.data?.watchlist ?? data.watchlist.data?.items);
+  const runtimeSummary = asRecord(data.agentRuntimeStatus.data?.summary);
+  const runtimeSafety = asRecord(data.agentRuntimeStatus.data?.safety);
+  const runtimeAgents = data.agentRuntimeAgents.data?.agents ?? [];
+  const latestAgentRuns = asRecord(data.agentRuntime.data?.latest_agent_runs_by_key);
+  const runbookStages = asList(data.runbookStages.data?.stages);
+  const auditEvents = asList(data.auditEvents.data?.events);
+  const schedules = asList(data.schedules.data?.schedules);
 
   const runWorkflow = useCallback(
     async (symbolsText: string, stopStage: number) => {
@@ -460,6 +640,51 @@ export default function DayTradingWorkflowPage() {
       }
     },
     [refresh],
+  );
+
+  const approvalAction = useCallback(
+    async (approvalId: string, action: "approve" | "reject" | "cancel") => {
+      setApprovalBusyId(approvalId);
+      setRunMessage(null);
+      try {
+        const body = { actor: "daytrading_operator", reason: approvalReason.trim() || null };
+        if (action === "approve") await approveApprovalQueueItem(approvalId, body);
+        if (action === "reject") await rejectApprovalQueueItem(approvalId, body);
+        if (action === "cancel") await cancelApprovalQueueItem(approvalId, body);
+        setRunMessage(`Approval ${approvalId} ${action}d. No broker order was submitted.`);
+        await refresh();
+      } catch (error) {
+        setRunMessage(error instanceof Error ? error.message : String(error));
+      } finally {
+        setApprovalBusyId(null);
+      }
+    },
+    [approvalReason, refresh],
+  );
+
+  const runSampleAgent = useCallback(
+    async (agentKey: string) => {
+      setAgentRunBusy(true);
+      setAgentRunResult(null);
+      setRunMessage(null);
+      try {
+        const result = await createAgentRun({
+          agent_key: agentKey,
+          inputs: { timestamp: new Date().toISOString(), symbol: run?.selected_symbol ?? run?.symbol ?? "AMD" },
+          context: { source: "daytrading_platform" },
+          dry_run: true,
+          requested_stage: null,
+          idempotency_key: `dt_${agentKey}_${Date.now()}`,
+        });
+        setAgentRunResult(result.agent_run);
+        await refresh();
+      } catch (error) {
+        setRunMessage(error instanceof Error ? error.message : String(error));
+      } finally {
+        setAgentRunBusy(false);
+      }
+    },
+    [refresh, run?.selected_symbol, run?.symbol],
   );
 
   const status = run?.status ?? "idle";
@@ -529,12 +754,12 @@ export default function DayTradingWorkflowPage() {
           <div className="flex flex-col gap-3 rounded-[2rem] border border-emerald-400/15 bg-[#05080d]/70 p-5 shadow-[0_28px_110px_rgba(0,0,0,0.42)] backdrop-blur-2xl lg:flex-row lg:items-end lg:justify-between">
             <div>
               <div className="mb-2 flex flex-wrap gap-2">
-                <Badge tone="safe">Portfolio Home</Badge>
+                <Badge tone="safe">Paper Portfolio Home</Badge>
                 <Badge tone="paper">Paper Account</Badge>
               </div>
-              <h1 className="text-3xl font-black tracking-tight text-white">Account Home</h1>
+              <h1 className="text-3xl font-black tracking-tight text-white">Paper Account Home</h1>
               <p className="mt-2 max-w-3xl text-sm leading-6 text-slate-400">
-                Portfolio value, buying power, account risk, and open paper positions for the autonomous day-trading workspace.
+                Paper portfolio, paper buying power, paper account risk, and paper open positions for the autonomous day-trading workspace.
               </p>
             </div>
             <button
@@ -547,17 +772,21 @@ export default function DayTradingWorkflowPage() {
             </button>
           </div>
           <div className="grid gap-4 xl:grid-cols-[1fr_0.95fr]">
-            <Card title="Portfolio & Buying Power" subtitle="Combined paper account snapshot and account risk profile." error={data.paper.error || data.accountRisk.error}>
-              <div className="grid gap-2 md:grid-cols-2 xl:grid-cols-3">
-                <Metric label="Portfolio value" value={money(paperAccount.portfolio_value ?? paperAccount.equity ?? accountRisk.account_equity)} />
-                <Metric label="Buying power" value={money(paperAccount.buying_power ?? accountRisk.buying_power)} />
-                <Metric label="Cash" value={money(paperAccount.cash ?? accountRisk.cash)} />
-                <Metric label="Account equity" value={money(accountRisk.account_equity ?? paperAccount.equity)} />
-                <Metric label="Paper account status" value={text(paperAccount.status ?? data.paper.data?.status)} />
-                <Metric label="Day trades used" value={text(paperAccount.daytrade_count)} />
-              </div>
+            <Card title="Paper Portfolio & Paper Buying Power" subtitle="Paper account snapshot only. This does not represent live brokerage buying power." error={data.paper.error}>
+              {hasPaperAccount ? (
+                <div className="grid gap-2 md:grid-cols-2 xl:grid-cols-3">
+                  <Metric label="Paper portfolio value" value={money(paperAccount.portfolio_value ?? paperAccount.equity)} />
+                  <Metric label="Paper buying power" value={money(paperAccount.buying_power)} />
+                  <Metric label="Paper cash" value={money(paperAccount.cash)} />
+                  <Metric label="Paper account equity" value={money(paperAccount.equity)} />
+                  <Metric label="Paper account status" value={text(paperAccount.status ?? data.paper.data?.status)} />
+                  <Metric label="Paper day trades used" value={text(paperAccount.daytrade_count)} />
+                </div>
+              ) : (
+                <p className="text-sm text-slate-500">Paper account data unavailable</p>
+              )}
             </Card>
-            <Card title="Account Risk" subtitle="Risk guardrails used by the autonomous paper-first workflow." error={data.accountRisk.error}>
+            <Card title="Paper Account Risk" subtitle="Paper-first risk guardrails used by the autonomous workflow." error={data.accountRisk.error}>
               <div className="grid gap-2 md:grid-cols-2">
                 <Metric label="Max risk / trade" value={`${text(accountRisk.max_risk_per_trade_percent)}%`} />
                 <Metric label="Max daily loss" value={`${text(accountRisk.max_daily_loss_percent)}%`} />
@@ -568,8 +797,10 @@ export default function DayTradingWorkflowPage() {
               </div>
             </Card>
           </div>
-          <Card title="Open Positions" subtitle="Paper/open positions if the paper account endpoint reports any." error={data.paper.error}>
-            {openPositions.length ? (
+          <Card title="Paper Open Positions" subtitle="Paper open positions if the paper account endpoint reports any." error={data.paper.error}>
+            {!hasPaperAccount ? (
+              <p className="text-sm text-slate-500">Paper account data unavailable</p>
+            ) : openPositions.length ? (
               <div className="grid gap-3 xl:grid-cols-2">
                 {openPositions.map((position, index) => {
                   const row = asRecord(position);
@@ -714,8 +945,14 @@ export default function DayTradingWorkflowPage() {
       ) : null}
 
       {activeTab === "workflow" ? (
-        <Card title="Autonomous Agent Pipeline" subtitle="Process flow from data readiness through learning loop. Cards are driven by the latest orchestrator stage timeline.">
-          <div className="grid gap-3 xl:grid-cols-3">
+        <div className="space-y-4">
+          <SectionHeader
+            eyebrow="Workflow"
+            title="Autonomous Agent Pipeline"
+            description="Stage cards show pending, completed, running, warning, approval-gate, and blocked states from the latest orchestrator timeline."
+          />
+          <Card title="Pipeline Stages" subtitle="Process flow from data readiness through learning loop. Cards are driven by the latest orchestrator stage timeline.">
+            <div className="grid gap-3 xl:grid-cols-3">
             {STAGES.map((stage, index) => {
               const row = stageMap[stage.key];
               const snapshot = stageResult(row);
@@ -749,13 +986,19 @@ export default function DayTradingWorkflowPage() {
                 </div>
               );
             })}
-          </div>
-          <SecondaryLinks />
-        </Card>
+            </div>
+          </Card>
+        </div>
       ) : null}
 
       {activeTab === "watchlist" ? (
-        <div className="grid gap-4 xl:grid-cols-2">
+        <div className="space-y-4">
+          <SectionHeader
+            eyebrow="Live Watchlist"
+            title="Candidates, Market Status, And Paper Monitoring"
+            description="Focused view of selected symbol, scanner/watchlist outputs, market context, data readiness, and paper positions."
+          />
+          <div className="grid gap-4 xl:grid-cols-2">
           <Card title="Market Status" error={data.watchlist.error}>
             <div className="grid gap-2 md:grid-cols-2">
               <Metric label="regime" value={text(latestSnapshot.regime ?? nested(latestSnapshot, ["market_context", "regime"]))} />
@@ -779,17 +1022,24 @@ export default function DayTradingWorkflowPage() {
               <Metric label="avg dollar volume" value={money(latestSnapshot.avg_dollar_volume)} />
             </div>
           </Card>
-          <Card title="Open Positions / Monitoring" error={data.paper.error}>
-            <Metric label="open paper positions" value={openPositions.length} />
+          <Card title="Paper Open Positions / Monitoring" error={data.paper.error}>
+            <Metric label="paper open positions" value={hasPaperAccount ? openPositions.length : "Paper account data unavailable"} />
             <div className="mt-3 space-y-2">
               {openPositions.length ? openPositions.map((position, index) => <div key={index} className="rounded-xl border border-white/10 bg-black/20 p-3 text-sm text-slate-300">{text(position)}</div>) : <p className="text-sm text-slate-500">No open paper positions reported.</p>}
             </div>
           </Card>
+          </div>
         </div>
       ) : null}
 
       {activeTab === "data" ? (
-        <div className="grid gap-4 xl:grid-cols-2">
+        <div className="space-y-4">
+          <SectionHeader
+            eyebrow="Data Pipeline"
+            title="Provider, Feature Store, Persistence, And Freshness"
+            description="Shows the data path feeding the dry-run workflow, including provider status, feature rows, persistence mode, freshness, and optional Kafka state."
+          />
+          <div className="grid gap-4 xl:grid-cols-2">
           {[
             ["Data Source Used", run?.source_mode ?? dataPipeline.provider_name],
             ["Provider Status", run?.provider_status ?? dataPipeline.provider_status],
@@ -812,11 +1062,18 @@ export default function DayTradingWorkflowPage() {
               <Metric label="persistence fallback used" value={String(run?.persistence_status === "memory_fallback" || dataPipeline.persistence_status === "memory_fallback")} />
             </div>
           </Card>
+          </div>
         </div>
       ) : null}
 
       {activeTab === "strategy" ? (
-        <div className="grid gap-4 xl:grid-cols-2">
+        <div className="space-y-4">
+          <SectionHeader
+            eyebrow="Strategy & Models"
+            title="Evidence-Gated Strategy And Model Selection"
+            description="Shows selected strategy/model context, not-trained models, blocked models, and the normalized evidence used by the workflow."
+          />
+          <div className="grid gap-4 xl:grid-cols-2">
           <Card title="Strategy">
             <div className="grid gap-2 md:grid-cols-2">
               <Metric label="selected strategy" value={text(run?.selected_strategy_key ?? strategyRecord.strategy_key)} />
@@ -839,11 +1096,18 @@ export default function DayTradingWorkflowPage() {
               <Metric label="blocked models" value={text(nested(data.model.data, ["summary", "blocked_models"]))} />
             </div>
           </Card>
+          </div>
         </div>
       ) : null}
 
       {activeTab === "evidence" ? (
-        <div className="grid gap-4 xl:grid-cols-2">
+        <div className="space-y-4">
+          <SectionHeader
+            eyebrow="Qlib & Evidence"
+            title="Research Evidence, Proof, Model, And Strategy Registries"
+            description="Qlib is optional and safe when unavailable. Evidence supports workflow gates only and never submits orders."
+          />
+          <div className="grid gap-4 xl:grid-cols-2">
           <Card title="Qlib Research Evidence" subtitle="Qlib is optional. Qlib evidence can support research/model/backtest validation but does not execute trades." error={data.qlib.error}>
             <div className="grid gap-2 md:grid-cols-2">
               <Metric label="used for" value="research, model evidence, signal scoring, backtest references" />
@@ -864,11 +1128,18 @@ export default function DayTradingWorkflowPage() {
               <Metric label="avg R / max DD / win rate" value={`${text(proofRecord.avg_r_multiple)} / ${text(proofRecord.max_drawdown_r)} / ${text(proofRecord.win_rate)}`} />
             </div>
           </Card>
+          </div>
         </div>
       ) : null}
 
       {activeTab === "execution" ? (
-        <div className="grid gap-4 xl:grid-cols-2">
+        <div className="space-y-4">
+          <SectionHeader
+            eyebrow="Execution & Approval"
+            title="Paper Execution Boundary And Human Handoff"
+            description="Approval unlocks a gated workflow step only. Broker order submission and live execution are not active in this autonomous workflow."
+          />
+          <div className="grid gap-4 xl:grid-cols-2">
           <Card title="Execution Planner" subtitle="Approval unlocks a gated workflow step. It does not submit a broker order.">
             <div className="grid gap-2 md:grid-cols-2">
               <Metric label="planner status" value={text(stageMap.execution_planner_agent?.status ?? "not_run")} />
@@ -882,13 +1153,372 @@ export default function DayTradingWorkflowPage() {
           <Card title="Approval Items" error={data.approvals.error}>
             <Metric label="approval required" value={text(run?.approval_required ?? false)} />
             <div className="mt-3 space-y-2">
-              {approvalItems.length ? approvalItems.slice(0, 6).map((item) => <div key={item.approval_id} className="rounded-xl border border-white/10 bg-black/20 p-3 text-sm text-slate-300">{item.approval_id} - {item.status}</div>) : <p className="text-sm text-slate-500">No approval items reported.</p>}
+              {approvalItems.length ? approvalItems.slice(0, 6).map((item) => (
+                <div key={item.approval_id} className="rounded-xl border border-white/10 bg-black/20 p-3 text-sm text-slate-300">
+                  <div className="mb-3 flex flex-wrap items-center justify-between gap-2">
+                    <span className="font-mono text-emerald-200">{item.approval_id}</span>
+                    <Badge tone={item.status === "pending" ? "warn" : item.status === "approved" ? "safe" : "blocked"}>{item.status}</Badge>
+                  </div>
+                  {item.status === "pending" ? (
+                    <ApprovalActionSelect
+                      label="Approve gated workflow handoff"
+                      disabled={false}
+                      disabledReason="Approves only the gated workflow step. No broker order is submitted."
+                      busy={approvalBusyId === item.approval_id}
+                      onApprove={() => approvalAction(item.approval_id, "approve")}
+                      onDecline={() => approvalAction(item.approval_id, "reject")}
+                    />
+                  ) : null}
+                </div>
+              )) : <p className="text-sm text-slate-500">No approval items reported.</p>}
             </div>
           </Card>
           <Card title="Paper Trades / Monitoring" error={data.paper.error}>
             <div className="grid gap-2 md:grid-cols-2">
-              <Metric label="open paper trades" value={openPositions.length} />
-              <Metric label="monitoring status" value={text(data.paper.data?.status ?? "not_available")} />
+              <Metric label="paper open positions" value={hasPaperAccount ? openPositions.length : "Paper account data unavailable"} />
+              <Metric label="paper monitoring status" value={hasPaperAccount ? text(data.paper.data?.status ?? "available") : "Paper account data unavailable"} />
+            </div>
+          </Card>
+          <Card title="Approval Safety Status" subtitle="Broker and live controls are safety status cards only, not buttons.">
+            <div className="grid gap-3 lg:grid-cols-3">
+              <SafetyStatusCard title="Broker Order Submission" status="Disabled">
+                Broker order submission is not active in the autonomous workflow.
+              </SafetyStatusCard>
+              <SafetyStatusCard title="Live Execution" status="Disabled">
+                Live execution is intentionally blocked. Paper-first workflow approval does not submit broker orders.
+              </SafetyStatusCard>
+              <SafetyStatusCard title="Approval Meaning">
+                Approval unlocks a gated workflow step only. It does not submit an order.
+              </SafetyStatusCard>
+            </div>
+          </Card>
+          </div>
+        </div>
+      ) : null}
+
+      {activeTab === "runbook" ? (
+        <div className="grid gap-4 xl:grid-cols-2">
+          <Card title="Runbook Status" subtitle="Workflow runbook data rendered inside Day-Trading OS." error={data.runbookStatus.error}>
+            <div className="grid gap-2 md:grid-cols-2">
+              <Metric label="status" value={text(data.runbookStatus.data?.status)} />
+              <Metric label="data mode" value={text(data.runbookStatus.data?.data_mode)} />
+              <Metric label="updated" value={text(data.runbookStatus.data?.updated_at)} />
+              <Metric label="latest workflow status" value={text(run?.status)} />
+            </div>
+          </Card>
+          <Card title="Runbook Latest" error={data.runbookLatest.error}>
+            <div className="grid gap-2 md:grid-cols-2">
+              <Metric label="workflow_run_id" value={text(run?.workflow_run_id)} />
+              <Metric label="orchestrator_run_id" value={text(run?.orchestrator_run_id)} />
+              <Metric label="current stage" value={text(run?.current_stage)} />
+              <Metric label="next action" value={text(run?.next_action)} />
+            </div>
+          </Card>
+          <Card title="Runbook Stages" error={data.runbookStages.error}>
+            <MiniTable rows={runbookStages} empty="No runbook stages reported." />
+          </Card>
+        </div>
+      ) : null}
+
+      {activeTab === "agentRuntime" ? (
+        <div className="space-y-4">
+          <div className="grid gap-4 xl:grid-cols-2">
+          <Card title="Current Runtime Configuration" subtitle="Same runtime contract as the legacy Agent Runtime page, organized for production operations." error={data.agentRuntimeStatus.error || data.agentRuntime.error}>
+            <div className="grid gap-2 md:grid-cols-2">
+              <Metric label="runtime status" value={text(data.agentRuntimeStatus.data?.status)} />
+              <Metric label="registered agents" value={text(data.agentRuntime.data?.registered_agents_count ?? runtimeSummary.registered_agents_count ?? runtimeAgents.length)} />
+              <Metric label="workflow runs" value={text(runtimeSummary.workflow_runs_count)} />
+              <Metric label="agent runs" value={text(runtimeSummary.agent_runs_count)} />
+              <Metric label="persistence" value={text(data.agentRuntime.data?.persistence_mode ?? runtimeSummary.persistence_mode)} />
+              <Metric label="redis mode" value={text(data.agentRuntime.data?.redis_mode ?? runtimeSummary.redis_mode)} />
+              <Metric label="LLM required" value={text(runtimeSummary.llm_required)} />
+              <Metric label="broker submission enabled" value={text(runtimeSummary.broker_submission_enabled)} />
+              <Metric label="latest workflow" value={text(nested(data.agentRuntime.data, ["latest_workflow_run", "workflow_run_id"]))} />
+              <Metric label="next action" value={text(runtimeSummary.next_action)} />
+            </div>
+          </Card>
+          <Card title="Runtime Safety Flags">
+            <div className="grid gap-2 md:grid-cols-2">
+              {["no_broker_calls", "no_execution_submit", "no_llm_calls", "dry_run_default"].map((key) => (
+                <Metric key={key} label={key} value={text(runtimeSafety[key])} tone={runtimeSafety[key] === false ? "text-red-100" : "text-emerald-100"} />
+              ))}
+            </div>
+          </Card>
+          </div>
+          <Card title="Agent Inventory" subtitle="Registered deterministic/LLM/orchestrator agents, stage placement, tools, forbidden actions, and safety notes." error={data.agentRuntimeAgents.error}>
+            <div className="overflow-x-auto">
+              <table className="w-full min-w-[1100px] border-collapse text-left text-xs">
+                <thead>
+                  <tr className="border-b border-emerald-400/10 text-[10px] uppercase tracking-wider text-slate-500">
+                    <th className="pb-2 pr-2">agent_key</th>
+                    <th className="pb-2 pr-2">display</th>
+                    <th className="pb-2 pr-2">stage</th>
+                    <th className="pb-2 pr-2">role</th>
+                    <th className="pb-2 pr-2">type</th>
+                    <th className="pb-2 pr-2">status</th>
+                    <th className="pb-2 pr-2">uses_llm</th>
+                    <th className="pb-2 pr-2">allowed_tools</th>
+                    <th className="pb-2 pr-2">forbidden_actions</th>
+                    <th className="pb-2">safety_notes</th>
+                  </tr>
+                </thead>
+                <tbody>
+                  {runtimeAgents.map((agent) => (
+                    <tr key={agent.agent_key} className="border-b border-white/[0.04] align-top text-slate-300">
+                      <td className="py-2 pr-2 font-mono text-emerald-200">{agent.agent_key}</td>
+                      <td className="py-2 pr-2">{agent.display_name}</td>
+                      <td className="py-2 pr-2">{agent.stage_number ?? "-"}</td>
+                      <td className="py-2 pr-2">{agent.role}</td>
+                      <td className="py-2 pr-2">{agent.agent_type}</td>
+                      <td className="py-2 pr-2">{agent.status}</td>
+                      <td className="py-2 pr-2">{agent.uses_llm ? "yes" : "no"}</td>
+                      <td className="py-2 pr-2 font-mono text-[10px] text-slate-400">{(agent.allowed_tools ?? []).join(", ") || "-"}</td>
+                      <td className="py-2 pr-2 font-mono text-[10px] text-slate-400">{(agent.forbidden_actions ?? []).join(", ") || "-"}</td>
+                      <td className="py-2 text-[11px] text-slate-500">{(agent.safety_notes ?? []).join("; ") || "-"}</td>
+                    </tr>
+                  ))}
+                </tbody>
+              </table>
+            </div>
+          </Card>
+          <div className="grid gap-4 xl:grid-cols-2">
+            <Card title="Latest Agent Runs" subtitle="Most recent persisted run for each registered agent.">
+              <MiniTable rows={Object.values(latestAgentRuns)} empty="No agent runs reported." />
+            </Card>
+            <Card title="Safe Sample Agent Run" subtitle="Dry-run only. Useful for runtime smoke checks inside this platform.">
+              <div className="space-y-3">
+                <p className="text-sm text-slate-400">Runs `session_router_agent` by default through `/api/agent-runtime/agent-runs` with no broker, submit, or LLM decisioning.</p>
+                <button
+                  type="button"
+                  disabled={agentRunBusy}
+                  onClick={() => runSampleAgent("session_router_agent")}
+                  className="rounded-xl border border-emerald-400/40 bg-emerald-400/10 px-4 py-2 text-sm font-bold text-emerald-100 disabled:opacity-50"
+                >
+                  {agentRunBusy ? "Running..." : "Run Safe Runtime Smoke Check"}
+                </button>
+                {agentRunResult ? (
+                  <div className="rounded-2xl border border-emerald-400/10 bg-black/25 p-3">
+                    <div className="grid gap-2 md:grid-cols-2">
+                      <Metric label="run_id" value={agentRunResult.run_id} />
+                      <Metric label="status" value={agentRunResult.status} />
+                      <Metric label="next_agent" value={agentRunResult.next_agent ?? "-"} />
+                      <Metric label="next_action" value={agentRunResult.next_action} />
+                    </div>
+                    <DebugPanel title="Agent decision and trace" value={{ decision: agentRunResult.decision, trace: agentRunResult.trace }} />
+                  </div>
+                ) : null}
+              </div>
+            </Card>
+          </div>
+        </div>
+      ) : null}
+
+      {activeTab === "approvalQueue" ? (
+        <div className="space-y-4">
+          <div className="rounded-2xl border border-amber-400/25 bg-amber-500/10 px-4 py-3 text-sm text-amber-100">
+            Approval unlocks a gated workflow step. It does not submit a broker order, call Alpaca, or enable live execution.
+          </div>
+          {runMessage ? <div className="rounded-2xl border border-emerald-400/20 bg-emerald-500/10 p-3 text-sm text-emerald-100">{runMessage}</div> : null}
+          <div className="grid gap-4 xl:grid-cols-2">
+          <Card title="Approval Queue" subtitle="Approvals are gates only. They do not submit broker orders." error={data.approvals.error}>
+            <div className="grid gap-2 md:grid-cols-2">
+              <Metric label="approval required" value={text(run?.approval_required ?? false)} />
+              <Metric label="approval_id" value={text(run?.approval_id)} />
+              <Metric label="execution boundary" value={text(run?.execution_boundary_reached ?? false)} />
+              <Metric label="queue items" value={approvalItems.length} />
+              <Metric label="pending" value={approvalItems.filter((item) => item.status === "pending").length} />
+              <Metric label="approved" value={approvalItems.filter((item) => item.status === "approved").length} />
+            </div>
+          </Card>
+          <Card title="Approval Note">
+            <label className="text-xs font-semibold uppercase tracking-[0.14em] text-slate-500">
+              Optional reason / note
+              <input
+                value={approvalReason}
+                onChange={(event) => setApprovalReason(event.target.value)}
+                className="mt-2 w-full rounded-xl border border-emerald-400/10 bg-black/30 px-3 py-2 text-sm normal-case tracking-normal text-slate-100 outline-none focus:border-emerald-400/50"
+                placeholder="Why approve or reject this gate?"
+              />
+            </label>
+          </Card>
+          </div>
+          <Card title="Approval Items" error={data.approvals.error}>
+            <div className="space-y-4">
+              {approvalItems.length ? approvalItems.map((item) => (
+                <div key={item.approval_id} className="rounded-2xl border border-emerald-400/10 bg-black/25 p-4">
+                  <div className="flex flex-wrap items-start justify-between gap-3">
+                    <div>
+                      <div className="font-mono text-sm text-emerald-200">{item.approval_id}</div>
+                      <div className="mt-1 text-xs text-slate-500">workflow <span className="font-mono text-slate-300">{item.workflow_run_id}</span></div>
+                      {item.orchestrator_run_id ? <div className="text-xs text-slate-500">orchestrator <span className="font-mono text-slate-300">{item.orchestrator_run_id}</span></div> : null}
+                    </div>
+                    <Badge tone={item.status === "pending" ? "warn" : item.status === "approved" ? "safe" : "blocked"}>{item.status}</Badge>
+                  </div>
+                  <div className="mt-3 grid gap-2 md:grid-cols-4">
+                    <Metric label="type" value={item.approval_type} />
+                    <Metric label="required approver" value={item.required_approver ?? "-"} />
+                    <Metric label="expires" value={item.expires_at ?? "-"} />
+                    <Metric label="created" value={item.created_at} />
+                  </div>
+                  <div className="mt-3 grid gap-3 xl:grid-cols-2">
+                    <div className="rounded-xl border border-emerald-400/10 bg-black/20 p-3">
+                      <div className="text-xs font-semibold uppercase tracking-wider text-slate-500">Requested action</div>
+                      <pre className="mt-2 max-h-48 overflow-auto text-xs text-slate-300">{JSON.stringify(item.requested_action, null, 2)}</pre>
+                    </div>
+                    <div className="rounded-xl border border-emerald-400/10 bg-black/20 p-3">
+                      <div className="text-xs font-semibold uppercase tracking-wider text-slate-500">Risk summary</div>
+                      <pre className="mt-2 max-h-48 overflow-auto text-xs text-slate-300">{JSON.stringify(item.risk_summary, null, 2)}</pre>
+                    </div>
+                  </div>
+                  <div className="mt-4 grid gap-3 lg:grid-cols-3">
+                    <ApprovalActionSelect
+                      label="Approve gated workflow handoff"
+                      disabled={item.status !== "pending"}
+                      disabledReason={item.status !== "pending" ? `No approval needed because this item is ${item.status}.` : "Approves only the gated workflow step. No broker order is submitted."}
+                      busy={approvalBusyId === item.approval_id}
+                      onApprove={() => approvalAction(item.approval_id, "approve")}
+                      onDecline={() => approvalAction(item.approval_id, "reject")}
+                    />
+                    <SafetyStatusCard title="Broker Order Submission" status="Disabled">
+                      Broker order submission is not active in the autonomous workflow.
+                    </SafetyStatusCard>
+                    <SafetyStatusCard title="Live Execution" status="Disabled">
+                      Live execution is intentionally blocked. Paper-first workflow approval does not submit broker orders.
+                    </SafetyStatusCard>
+                  </div>
+                  <div className="mt-3">
+                    <SafetyStatusCard title="Approval Meaning">
+                      Approval unlocks a gated workflow step only. It does not submit an order.
+                    </SafetyStatusCard>
+                  </div>
+                </div>
+              )) : (
+                <div className="rounded-2xl border border-emerald-400/10 bg-black/25 p-4">
+                  <div className="mb-4 flex flex-wrap items-start justify-between gap-3">
+                    <div>
+                      <div className="text-lg font-semibold text-slate-100">No pending approval request</div>
+                      <p className="mt-1 text-sm text-slate-500">
+                        The approval controls are shown here so operators know where approvals will happen when the workflow creates a gate.
+                      </p>
+                    </div>
+                    <Badge tone="paper">No approval needed</Badge>
+                  </div>
+                  <div className="grid gap-3 lg:grid-cols-3">
+                    <SafetyStatusCard title="Broker Order Submission" status="Disabled">
+                      Broker order submission is not active in the autonomous workflow.
+                    </SafetyStatusCard>
+                    <SafetyStatusCard title="Live Execution" status="Disabled">
+                      Live execution is intentionally blocked. Paper-first workflow approval does not submit broker orders.
+                    </SafetyStatusCard>
+                    <SafetyStatusCard title="Approval Meaning">
+                      Approval unlocks a gated workflow step only. It does not submit an order.
+                    </SafetyStatusCard>
+                  </div>
+                </div>
+              )}
+            </div>
+          </Card>
+        </div>
+      ) : null}
+
+      {activeTab === "auditLog" ? (
+        <div className="grid gap-4 xl:grid-cols-2">
+          <Card title="Audit Log Status" error={data.auditStatus.error}>
+            <div className="grid gap-2 md:grid-cols-2">
+              <Metric label="status" value={text(data.auditStatus.data?.status)} />
+              <Metric label="updated" value={text(data.auditStatus.data?.updated_at)} />
+              <Metric label="event count" value={auditEvents.length} />
+              <Metric label="workflow_run_id" value={text(run?.workflow_run_id)} />
+            </div>
+          </Card>
+          <Card title="Recent Audit Events" error={data.auditEvents.error}>
+            <MiniTable rows={auditEvents} empty="No audit events reported." />
+          </Card>
+        </div>
+      ) : null}
+
+      {activeTab === "governance" ? (
+        <div className="grid gap-4 xl:grid-cols-2">
+          <Card title="Governance Status" error={data.governanceStatus.error}>
+            <div className="grid gap-2 md:grid-cols-2">
+              <Metric label="status" value={text(data.governanceStatus.data?.status)} />
+              <Metric label="workflow enabled" value={text(nested(data.readiness.data, ["systems", "execution_gates", "workflow_enabled"]))} />
+              <Metric label="human approval" value={text(nested(data.readiness.data, ["systems", "execution_gates", "require_human_approval"]))} />
+              <Metric label="emergency stop" value={text(nested(data.readiness.data, ["systems", "execution_gates", "emergency_stop"]))} />
+            </div>
+          </Card>
+          <Card title="Autonomous Boundaries">
+            <div className="grid gap-2 md:grid-cols-2">
+              <Metric label="supported horizons" value={text(nested(data.readiness.data, ["systems", "endpoint_boundaries", "supported_horizons"]))} />
+              <Metric label="blocked horizons" value={text(nested(data.readiness.data, ["systems", "endpoint_boundaries", "blocked_horizons"]))} />
+              <Metric label="broker submit blocked" value={text(nested(data.readiness.data, ["systems", "endpoint_boundaries", "broker_submit_blocked"]))} />
+              <Metric label="LLM decisioning blocked" value={text(nested(data.readiness.data, ["systems", "endpoint_boundaries", "llm_decisioning_blocked"]))} />
+            </div>
+          </Card>
+        </div>
+      ) : null}
+
+      {activeTab === "scheduler" ? (
+        <div className="grid gap-4 xl:grid-cols-2">
+          <Card title="Scheduler Status" error={data.schedulerStatus.error}>
+            <div className="grid gap-2 md:grid-cols-2">
+              <Metric label="status" value={text(data.schedulerStatus.data?.status)} />
+              <Metric label="updated" value={text(data.schedulerStatus.data?.updated_at)} />
+              <Metric label="schedules" value={schedules.length} />
+              <Metric label="safe run endpoint" value="/api/workflow-orchestrator/run" />
+            </div>
+          </Card>
+          <Card title="Schedules" error={data.schedules.error}>
+            <MiniTable rows={schedules} empty="No schedules reported." />
+          </Card>
+        </div>
+      ) : null}
+
+      {activeTab === "platformReadiness" ? (
+        <div className="grid gap-4 xl:grid-cols-2">
+          <Card title="Platform Readiness" error={data.readiness.error}>
+            <div className="grid gap-2 md:grid-cols-2">
+              <Metric label="status" value={text(data.readiness.data?.status)} />
+              <Metric label="data mode" value={text(data.readiness.data?.data_mode)} />
+              <Metric label="updated" value={text(data.readiness.data?.updated_at)} />
+              <Metric label="next action" value={text(data.readiness.data?.next_action)} />
+            </div>
+          </Card>
+          <Card title="Systems">
+            <div className="grid gap-2 md:grid-cols-2">
+              <Metric label="data pipeline" value={text(nested(data.readiness.data, ["systems", "data_pipeline", "provider_status"]))} />
+              <Metric label="evidence pipeline" value={text(nested(data.readiness.data, ["systems", "evidence_pipeline", "proof_registry_status"]))} />
+              <Metric label="small account" value={text(nested(data.readiness.data, ["systems", "small_account_feasibility", "status"]))} />
+              <Metric label="endpoint boundary" value={text(nested(data.readiness.data, ["systems", "endpoint_boundaries", "mixed_endpoint_risk"]))} />
+            </div>
+          </Card>
+        </div>
+      ) : null}
+
+      {activeTab === "researchEvidence" ? (
+        <div className="grid gap-4 xl:grid-cols-2">
+          <Card title="Proof Evidence" error={data.proof.error}>
+            <div className="grid gap-2 md:grid-cols-2">
+              <Metric label="proof status" value={text(run?.proof_status ?? proofRecord.proof_status)} />
+              <Metric label="sample size" value={text(proofRecord.sample_size)} />
+              <Metric label="avg R" value={text(proofRecord.avg_r_multiple)} />
+              <Metric label="max drawdown" value={text(proofRecord.max_drawdown_r)} />
+            </div>
+          </Card>
+          <Card title="Model & Strategy Evidence">
+            <div className="grid gap-2 md:grid-cols-2">
+              <Metric label="selected model" value={text(run?.selected_model_key ?? modelRecord.model_key)} />
+              <Metric label="model status" value={text(modelRecord.status)} />
+              <Metric label="selected strategy" value={text(run?.selected_strategy_key ?? strategyRecord.strategy_key)} />
+              <Metric label="strategy status" value={text(strategyRecord.status)} />
+            </div>
+          </Card>
+          <Card title="Qlib Evidence" subtitle="Qlib is optional and never executes trades." error={data.qlib.error}>
+            <div className="grid gap-2 md:grid-cols-2">
+              <Metric label="qlib available" value={text(data.qlib.data?.qlib_available)} />
+              <Metric label="artifact count" value={text(data.qlib.data?.artifact_count)} />
+              <Metric label="latest signals" value={text(data.qlib.data?.latest_signal_count)} />
+              <Metric label="latest backtests" value={text(data.qlib.data?.latest_backtest_count)} />
             </div>
           </Card>
         </div>
@@ -896,6 +1526,11 @@ export default function DayTradingWorkflowPage() {
 
       {activeTab === "debug" ? (
         <div className="space-y-4">
+          <SectionHeader
+            eyebrow="Issues / Debug"
+            title="Blockers, Warnings, Endpoint Failures, And Raw State"
+            description="Debug view for failed data loads, readiness gaps, governance warnings, and collapsed raw JSON from the latest workflow run."
+          />
           <div className="grid gap-4 xl:grid-cols-2">
             <Card title="Hard Blockers"><IssueList items={[...(run?.blockers ?? []), ...asList(data.finalReadiness.data?.blockers)]} /></Card>
             <Card title="Soft Warnings"><IssueList items={[...(run?.warnings ?? []), ...asList(data.finalReadiness.data?.warnings)]} /></Card>
