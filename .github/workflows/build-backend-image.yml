@@ -14,6 +14,7 @@ permissions:
   contents: read
 
 env:
+  AZURE_CORE_OUTPUT: none
   RESOURCE_GROUP: edgesenseai-rg
   LOCATION: eastus
   ACR_LOGIN_SERVER: opsenseaiacrbuild.azurecr.io
@@ -103,10 +104,36 @@ jobs:
           cache-from: type=gha
           cache-to: type=gha,mode=max
 
+      - name: Validate AZURE_CREDENTIALS shape
+        shell: bash
+        run: |
+          python - <<'PY'
+          import json, os, sys
+          raw = os.environ.get("AZURE_CREDENTIALS", "")
+          if not raw:
+              raise SystemExit("AZURE_CREDENTIALS is empty")
+          try:
+              data = json.loads(raw)
+          except Exception as e:
+              raise SystemExit(f"AZURE_CREDENTIALS is not valid JSON: {e}")
+          required = ["clientSecret", "subscriptionId", "tenantId", "clientId"]
+          missing = [k for k in required if not data.get(k)]
+          if missing:
+              raise SystemExit(f"AZURE_CREDENTIALS missing keys: {missing}")
+          print("AZURE_CREDENTIALS shape ok")
+          PY
+        env:
+          AZURE_CREDENTIALS: ${{ secrets.AZURE_CREDENTIALS }}
+
       - name: Azure login
-        uses: azure/login@v2
+        uses: azure/login@v3
         with:
           creds: ${{ secrets.AZURE_CREDENTIALS }}
+
+      - name: Verify Azure login
+        shell: bash
+        run: |
+          az account show --query "{name:name, subscriptionId:id, tenantId:tenantId}" -o json
 
       - name: Ensure Azure Container Apps extension
         shell: bash
