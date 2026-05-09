@@ -27,6 +27,8 @@ _BOOL_ENV_TO_SETTINGS: dict[str, str] = {
     "LLM_GATEWAY_ENABLE_PAID_TESTS": "llm_gateway_enable_paid_tests",
     "EMBEDDINGS_ENABLE_PAID_CALLS": "embeddings_enable_paid_calls",
     "ALPACA_MARKET_DATA_ENABLED": "alpaca_market_data_enabled",
+    "ALLOW_MOCK_MARKET_DATA": "allow_mock_market_data",
+    "ALLOW_SYNTHETIC_MARKET_DATA": "allow_synthetic_market_data",
     "NEWS_PROVIDER_ENABLED": "news_provider_enabled",
 }
 
@@ -45,6 +47,7 @@ _INT_ENV_TO_SETTINGS: dict[str, str] = {
 _STR_ENV_TO_SETTINGS: dict[str, str] = {
     "EXECUTION_MODE": "execution_mode",
     "BROKER_PROVIDER": "broker_provider",
+    "MARKET_DATA_MODE": "market_data_mode",
     "MARKET_DATA_PROVIDER": "market_data_provider",
     "MARKET_DATA_PROVIDER_PRIORITY": "market_data_provider_priority_raw",
     "NEWS_PROVIDER_PRIMARY": "news_provider_primary",

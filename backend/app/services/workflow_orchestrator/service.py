@@ -1,8 +1,11 @@
 from __future__ import annotations
 
 from datetime import datetime, timezone
+import logging
 from typing import Any
 
+from app.core.production_safety import production_database_blocker
+from app.db.session import check_database_health
 from app.services.agent_runtime.models import AgentRunRequest, WorkflowRunCreateRequest
 from app.services.agent_runtime.service import create_agent_run, create_workflow_run
 from app.services.approval_queue.models import ApprovalItemCreate
@@ -18,6 +21,65 @@ from app.services.workflow_orchestrator.stage_plan import default_stage_plan, or
 from app.services.workflow_orchestrator.state_contract import WorkflowCarryForwardState
 
 _MEMORY: dict[str, OrchestratorRunResponse] = {}
+logger = logging.getLogger(__name__)
+
+
+def _recommendation_payload(
+    *,
+    status: str,
+    symbol: str | None = None,
+    reason: str | None = None,
+    mock_data_used: bool = False,
+    synthetic_data_used: bool = False,
+) -> dict[str, Any]:
+    return {
+        "status": status,
+        "symbol": symbol,
+        "mock_data_used": bool(mock_data_used),
+        "synthetic_data_used": bool(synthetic_data_used),
+        "reason": reason,
+    }
+
+
+def _blocked_run_response(*, body: OrchestratorRunRequest, blockers: list[str], warnings: list[str] | None = None, next_action: str) -> OrchestratorRunResponse:
+    wr = create_workflow_run(
+        WorkflowRunCreateRequest(
+            workflow_name=body.workflow_name,
+            asset_class=body.asset_class,
+            horizon=body.horizon,
+            mode=body.mode,
+            source=body.source,
+            metadata=body.metadata,
+        )
+    )
+    resp = OrchestratorRunResponse(
+        orchestrator_run_id=new_orchestrator_id(),
+        workflow_run_id=wr.workflow_run_id,
+        status="blocked",
+        current_stage=None,
+        current_agent_key=None,
+        blockers=sorted(set(blockers)),
+        warnings=sorted(set(warnings or [])),
+        next_action=next_action,
+        approval_required=False,
+        approval_id=None,
+        execution_boundary_reached=False,
+        governance_blockers=[],
+        preview_continued_despite_governance_blockers=False,
+        preview_continued_after_approval_boundary=False,
+        source_mode=body.source,
+        using_mock_data=False,
+        recommendation=_recommendation_payload(status="data_unavailable", reason="; ".join(sorted(set(blockers)))[:500]),
+        allow_submit=False,
+        submitted_order=False,
+        broker_called=False,
+        llm_used=False,
+        created_at=iso_utc_now(),
+        updated_at=iso_utc_now(),
+    )
+    _MEMORY[resp.orchestrator_run_id] = resp
+    _persist_run(resp, req=body)
+    return resp
 
 
 def _db_session():
@@ -96,46 +158,20 @@ def _persist_run(resp: OrchestratorRunResponse, *, req: OrchestratorRunRequest) 
 
 
 def run_workflow(body: OrchestratorRunRequest) -> OrchestratorRunResponse:
+    db_blocker = production_database_blocker()
+    if db_blocker:
+        db_health = check_database_health()
+        return _blocked_run_response(
+            body=body,
+            blockers=[db_blocker],
+            warnings=[str(db_health.get("message") or "database unavailable")],
+            next_action="Configure a non-local production DATABASE_URL before running the autonomous workflow.",
+        )
+
     safety = enforce_orchestrator_safety(body.model_dump())
     if safety.blockers:
         # Even blocked runs should emit a workflow_run_id so operators can trace/audit the attempt.
-        wr = create_workflow_run(
-            WorkflowRunCreateRequest(
-                workflow_name=body.workflow_name,
-                asset_class=body.asset_class,
-                horizon=body.horizon,
-                mode=body.mode,
-                source=body.source,
-                metadata=body.metadata,
-            )
-        )
-        resp = OrchestratorRunResponse(
-            orchestrator_run_id=new_orchestrator_id(),
-            workflow_run_id=wr.workflow_run_id,
-            status="blocked",
-            current_stage=None,
-            current_agent_key=None,
-            blockers=safety.blockers,
-            warnings=safety.warnings,
-            next_action="Blocked by orchestrator safety policy.",
-            approval_required=False,
-            approval_id=None,
-            execution_boundary_reached=False,
-            governance_blockers=[],
-            preview_continued_despite_governance_blockers=False,
-            preview_continued_after_approval_boundary=False,
-            source_mode=body.source,
-            using_mock_data=body.source == "mock",
-            allow_submit=False,
-            submitted_order=False,
-            broker_called=False,
-            llm_used=False,
-            created_at=iso_utc_now(),
-            updated_at=iso_utc_now(),
-        )
-        _MEMORY[resp.orchestrator_run_id] = resp
-        _persist_run(resp, req=body)
-        return resp
+        return _blocked_run_response(body=body, blockers=safety.blockers, warnings=safety.warnings, next_action="Blocked by orchestrator safety policy.")
 
     # Governance pre-check
     gov = check_governance(
@@ -249,21 +285,44 @@ def run_workflow(body: OrchestratorRunRequest) -> OrchestratorRunResponse:
         if idx > stage_cap:
             break
 
-        agent_result = create_agent_run(
-            AgentRunRequest(
-                workflow_run_id=wr.workflow_run_id,
-                agent_key=agent_key,
-                inputs=state.to_agent_inputs(),
-                context={
-                    "source": "workflow_orchestrator",
-                    "workflow_run_id": wr.workflow_run_id,
-                    "orchestrator_run_id": orchestrator_run_id,
-                },
-                dry_run=True,
-                requested_stage=None,
-                idempotency_key=f"orc:{orchestrator_run_id}:{agent_key}",
+        try:
+            agent_result = create_agent_run(
+                AgentRunRequest(
+                    workflow_run_id=wr.workflow_run_id,
+                    agent_key=agent_key,
+                    inputs=state.to_agent_inputs(),
+                    context={
+                        "source": "workflow_orchestrator",
+                        "workflow_run_id": wr.workflow_run_id,
+                        "orchestrator_run_id": orchestrator_run_id,
+                    },
+                    dry_run=True,
+                    requested_stage=None,
+                    idempotency_key=f"orc:{orchestrator_run_id}:{agent_key}",
+                )
             )
-        )
+        except Exception as exc:
+            logger.exception("Workflow orchestrator agent stage failed", extra={"agent_key": agent_key, "orchestrator_run_id": orchestrator_run_id})
+            blockers.append("operational_failure")
+            warnings.append(f"{agent_key}_failed:{exc}")
+            stage_timeline.append(
+                {
+                    "stage": idx,
+                    "agent_key": agent_key,
+                    "run_id": None,
+                    "status": "failed",
+                    "at": iso_utc_now(),
+                    "pipeline_inputs_snapshot": {
+                        "symbols": list(state.symbols),
+                        "source_mode": state.source_mode,
+                        "using_mock_data": state.using_mock_data,
+                        "submitted_order": False,
+                        "broker_called": False,
+                        "llm_used": False,
+                    },
+                }
+            )
+            break
         agent_run_ids.append(agent_result.run_id)
 
         carry_warnings = apply_stage_carryforward(agent_key=agent_key, agent_result=agent_result, state=state)
@@ -377,6 +436,31 @@ def run_workflow(body: OrchestratorRunRequest) -> OrchestratorRunResponse:
         status = "completed_preview"
         next_action = "Preview completed."
 
+    if blockers:
+        recommendation = _recommendation_payload(
+            status="data_unavailable" if "no_usable_symbols" in blockers or "no_symbols_selected" in blockers or "operational_failure" in blockers else "no_qualified_setup",
+            symbol=None,
+            reason="; ".join(sorted(set(blockers)))[:500],
+            mock_data_used=bool(state.using_mock_data),
+            synthetic_data_used=False,
+        )
+    elif state.selected_symbol or state.symbol:
+        recommendation = _recommendation_payload(
+            status="candidate_selected",
+            symbol=state.selected_symbol or state.symbol,
+            reason="Candidate selected by provider-backed workflow stages.",
+            mock_data_used=bool(state.using_mock_data),
+            synthetic_data_used=False,
+        )
+    else:
+        recommendation = _recommendation_payload(
+            status="no_qualified_setup",
+            symbol=None,
+            reason="No provider-backed candidate qualified.",
+            mock_data_used=bool(state.using_mock_data),
+            synthetic_data_used=False,
+        )
+
     resp = OrchestratorRunResponse(
         orchestrator_run_id=orchestrator_run_id,
         workflow_run_id=wr.workflow_run_id,
@@ -426,6 +510,7 @@ def run_workflow(body: OrchestratorRunRequest) -> OrchestratorRunResponse:
         small_account_rejected_symbols=list(state.small_account_rejected_symbols),
         small_account_blockers=list(state.small_account_blockers),
         small_account_warnings=list(state.small_account_warnings),
+        recommendation=recommendation,
         allow_submit=False,
         submitted_order=False,
         broker_called=False,

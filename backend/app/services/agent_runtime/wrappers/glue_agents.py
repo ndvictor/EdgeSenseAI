@@ -36,11 +36,21 @@ def run_glue_agent(*, agent_key: str, inputs: dict[str, Any], context: dict[str,
     symbols = [str(x).upper() for x in symbols if x]
 
     if agent_key == "data_readiness_agent":
-        out = evaluate_data_readiness(symbols=symbols or ["AMD"], asset_class=asset_class, horizon=horizon, source=str(s.get("source", "auto")))
+        out = evaluate_data_readiness(symbols=symbols, asset_class=asset_class, horizon=horizon, source=str(s.get("source", "auto")))
         return {"tool_name": "feature_store.run", "tool_request": {"symbols": symbols, "asset_class": asset_class, "horizon": horizon}, "tool_response": out, "next_agent": out.get("next_agent"), "safety": safety}
 
     if agent_key == "market_condition_agent":
-        out = scan_market_condition(symbols=symbols or ["AMD"], source=str(s.get("source", "auto")))
+        if not symbols:
+            out = {
+                "decision": "blocked",
+                "market_context": {"should_trigger_workflow": False},
+                "blockers": ["no_symbols_selected"],
+                "warnings": [],
+                "next_agent": None,
+                "next_action": "Provide scanner-selected symbols before market condition scan.",
+            }
+            return {"tool_name": "market_scanner.scan", "tool_request": {"symbols": symbols}, "tool_response": out, "next_agent": None, "safety": safety}
+        out = scan_market_condition(symbols=symbols, source=str(s.get("source", "auto")))
         mc = out["market_context"]
         next_agent = "workflow_router_agent" if mc.get("should_trigger_workflow") else "watchlist_builder_agent"
         return {"tool_name": "market_scanner.scan", "tool_request": {"symbols": symbols}, "tool_response": out, "next_agent": next_agent, "safety": safety}
@@ -90,7 +100,18 @@ def run_glue_agent(*, agent_key: str, inputs: dict[str, Any], context: dict[str,
         }
 
     if agent_key == "model_selection_agent":
-        symbol = str(s.get("symbol") or (symbols[0] if symbols else "AMD"))
+        symbol = str(s.get("symbol") or (symbols[0] if symbols else ""))
+        if not symbol:
+            out = {
+                "decision": "blocked",
+                "selected_model_key": None,
+                "selected_model_keys": [],
+                "blockers": ["no_selected_symbol"],
+                "warnings": [],
+                "next_agent": None,
+                "next_action": "Select a real provider-backed symbol before model selection.",
+            }
+            return {"tool_name": "model_orchestrator.run_model_orchestrator", "tool_request": {"symbol": None, "strategy_key": s.get("strategy_key")}, "tool_response": out, "next_agent": None, "safety": safety}
         out = select_models(symbol=symbol, asset_class=asset_class, horizon=horizon, strategy_key=str(s.get("strategy_key")) if s.get("strategy_key") else None)
         return {"tool_name": "model_orchestrator.run_model_orchestrator", "tool_request": {"symbol": symbol, "strategy_key": s.get("strategy_key")}, "tool_response": out, "next_agent": out.get("next_agent"), "safety": safety}
 

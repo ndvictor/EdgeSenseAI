@@ -9,6 +9,7 @@ from fastapi import APIRouter
 from pydantic import BaseModel, Field
 
 from app.db.session import check_database_health
+from app.core.production_safety import is_local_database_url, is_production_environment
 from app.services.platform_persistence_status_service import get_database_health_check
 
 router = APIRouter()
@@ -32,6 +33,14 @@ class PlatformReadinessResponse(BaseModel):
 
 def _check_database_url() -> ReadinessCheck:
     db_url = os.environ.get("DATABASE_URL")
+    if is_production_environment() and (not db_url or is_local_database_url(db_url)):
+        return ReadinessCheck(
+            key="database_url",
+            label="DATABASE_URL configured",
+            status="fail",
+            message="DATABASE_URL is required in production and must not point to localhost",
+            required_for="persistence",
+        )
     if db_url:
         return ReadinessCheck(
             key="database_url",

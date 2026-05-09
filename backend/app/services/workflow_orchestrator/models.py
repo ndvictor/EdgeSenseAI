@@ -91,6 +91,7 @@ class OrchestratorRunResponse(BaseModel):
     small_account_rejected_symbols: list[str] = Field(default_factory=list)
     small_account_blockers: list[str] = Field(default_factory=list)
     small_account_warnings: list[str] = Field(default_factory=list)
+    recommendation: dict[str, Any] = Field(default_factory=dict)
     allow_submit: bool = False
     submitted_order: bool = False
     broker_called: bool = False

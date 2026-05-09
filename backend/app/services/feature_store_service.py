@@ -60,6 +60,17 @@ def _build_feature_row(
     quality_report: DataQualityReport,
     horizon: str,
 ) -> FeatureStoreRow:
+    if quality_report.quality_status == "fail":
+        return FeatureStoreRow(
+            id=f"fs-{uuid4().hex[:12]}",
+            ticker=normalized.ticker,
+            asset_class=normalized.asset_class,
+            horizon=horizon,
+            timestamp=normalized.timestamp,
+            data_source=normalized.data_source,
+            data_quality=quality_report.quality_status,
+            confidence=None,
+        )
     features = build_features(normalized.to_market_snapshot())
     confidence = max(0.1, min(0.95, features.composite_feature_score / 100))
     if quality_report.quality_status == "warn":

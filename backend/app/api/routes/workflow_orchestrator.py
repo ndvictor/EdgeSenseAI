@@ -1,5 +1,7 @@
 from __future__ import annotations
 
+import logging
+
 from fastapi import APIRouter, HTTPException
 
 from app.services.workflow_orchestrator.models import OrchestratorRunRequest
@@ -16,12 +18,27 @@ from app.services.workflow_orchestrator.service import (
 )
 
 router = APIRouter(prefix="/workflow-orchestrator", tags=["workflow-orchestrator"])
+logger = logging.getLogger(__name__)
 
 
 @router.post("/run")
 def post_run(body: OrchestratorRunRequest):
-    run = run_workflow(body)
-    return {"status": "ok", "run": run.model_dump()}
+    try:
+        run = run_workflow(body)
+    except Exception:
+        logger.exception("Unexpected workflow orchestrator run failure")
+        raise
+    data = run.model_dump()
+    return {
+        "status": run.status,
+        "recommendation": run.recommendation,
+        "submitted_order": run.submitted_order,
+        "broker_called": run.broker_called,
+        "llm_used": run.llm_used,
+        "blockers": run.blockers,
+        "warnings": run.warnings,
+        "run": data,
+    }
 
 
 @router.get("/status/{workflow_run_id}")

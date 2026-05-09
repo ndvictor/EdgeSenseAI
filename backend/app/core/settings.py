@@ -12,6 +12,7 @@ class Settings(BaseSettings):
     )
 
     app_env: str = Field(default="dev", alias="APP_ENV")
+    environment: str = Field(default="dev", alias="ENVIRONMENT")
     app_name: str = Field(default="EdgeSenseAI Backend", alias="APP_NAME")
 
     database_url: str = Field(default="postgresql://edgesenseai:edgesenseai@localhost:55532/edgesenseai", alias="DATABASE_URL")
@@ -50,8 +51,11 @@ class Settings(BaseSettings):
     max_daily_agent_runs: int = Field(default=500, alias="MAX_DAILY_AGENT_RUNS")
     langsmith_tracing: bool = Field(default=False, alias="LANGSMITH_TRACING")
 
-    market_data_provider: str = Field(default="mock", alias="MARKET_DATA_PROVIDER")
-    market_data_provider_priority_raw: str = Field(default="alpaca,yfinance,mock", alias="MARKET_DATA_PROVIDER_PRIORITY")
+    market_data_mode: str = Field(default="provider", alias="MARKET_DATA_MODE")
+    allow_mock_market_data: bool = Field(default=False, alias="ALLOW_MOCK_MARKET_DATA")
+    allow_synthetic_market_data: bool = Field(default=False, alias="ALLOW_SYNTHETIC_MARKET_DATA")
+    market_data_provider: str = Field(default="yfinance", alias="MARKET_DATA_PROVIDER")
+    market_data_provider_priority_raw: str = Field(default="alpaca,polygon,yfinance", alias="MARKET_DATA_PROVIDER_PRIORITY")
     market_data_provider_timeout_seconds: int = Field(default=10, alias="MARKET_DATA_PROVIDER_TIMEOUT_SECONDS")
 
     alpaca_market_data_enabled: bool = Field(default=False, alias="ALPACA_MARKET_DATA_ENABLED")

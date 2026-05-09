@@ -73,6 +73,7 @@ az containerapp env create \
 ## 5) Deploy the backend as a Container App
 
 The backend reads `PORT` (default `8900`), and uses `DATABASE_URL` from env.
+Production persistence requires a real managed Postgres `DATABASE_URL`. Do not deploy production with a missing URL or a localhost URL; Postgres is the source of truth for durable workflow state.
 
 ```bash
 az containerapp create \
@@ -85,16 +86,24 @@ az containerapp create \
   --registry-server "$ACR_LOGIN_SERVER" \
   --env-vars \
     PORT=8900 \
+    ENVIRONMENT=production \
     APP_ENV=production \
     DATABASE_URL="__REPLACE_WITH_SUPABASE_OR_AZURE_POSTGRES_URL__" \
     CORS_ORIGINS="__REPLACE_WITH_VERCEL_ORIGINS__" \
+    MARKET_DATA_MODE=provider \
+    ALLOW_MOCK_MARKET_DATA=false \
+    ALLOW_SYNTHETIC_MARKET_DATA=false \
+    QLIB_REQUIRED=false \
     LIVE_TRADING_ENABLED=false \
     BROKER_EXECUTION_ENABLED=false
 ```
 
 Notes:
-- `DATABASE_URL` can be Supabase Postgres.
-- Redis is **optional**. If you have one, add `REDIS_URL=...`.
+- `DATABASE_URL` is required for production persistence and must point to managed Postgres, not localhost.
+- `MARKET_DATA_MODE=provider` is required for production workflow runs.
+- Mock and synthetic market data are disabled in production with `ALLOW_MOCK_MARKET_DATA=false` and `ALLOW_SYNTHETIC_MARKET_DATA=false`.
+- Qlib is optional unless a selected strategy explicitly requires it; keep `QLIB_REQUIRED=false` for the paper-first workflow.
+- Redis is **optional but recommended**. If you have one, add `REDIS_URL=...`.
 - Missing provider keys (Alpaca/Polygon/News/Qlib runtime) should yield **blocked/unconfigured** statuses in endpoints, not crash startup.
 
 ## 6) Verify endpoints

@@ -54,6 +54,11 @@ jobs:
             missing=1
           fi
 
+          if [ -z "${{ secrets.DATABASE_URL }}" ]; then
+            echo "Missing GitHub secret: DATABASE_URL"
+            missing=1
+          fi
+
           if [ "$missing" -ne 0 ]; then
             echo "Add missing secrets in GitHub repo: Settings -> Secrets and variables -> Actions."
             exit 1
@@ -203,6 +208,8 @@ jobs:
 
       - name: Create or update backend Container App
         shell: bash
+        env:
+          DATABASE_URL: ${{ secrets.DATABASE_URL }}
         run: |
           IMAGE="$ACR_LOGIN_SERVER/$IMAGE_NAME:${{ github.sha }}"
 
@@ -213,7 +220,19 @@ jobs:
             az containerapp update \
               --name "$CONTAINER_APP_NAME" \
               --resource-group "$RESOURCE_GROUP" \
-              --image "$IMAGE"
+              --image "$IMAGE" \
+              --set-env-vars \
+                ENVIRONMENT=production \
+                APP_ENV=production \
+                PAPER_TRADING_ENABLED=true \
+                LIVE_TRADING_ENABLED=false \
+                BROKER_EXECUTION_ENABLED=false \
+                REQUIRE_HUMAN_APPROVAL=true \
+                MARKET_DATA_MODE=provider \
+                ALLOW_MOCK_MARKET_DATA=false \
+                ALLOW_SYNTHETIC_MARKET_DATA=false \
+                QLIB_REQUIRED=false \
+                DATABASE_URL="$DATABASE_URL"
           else
             echo "Creating Container App: $CONTAINER_APP_NAME"
             az containerapp create \
@@ -230,10 +249,16 @@ jobs:
               --max-replicas 1 \
               --env-vars \
                 ENVIRONMENT=production \
+                APP_ENV=production \
                 PAPER_TRADING_ENABLED=true \
                 LIVE_TRADING_ENABLED=false \
                 BROKER_EXECUTION_ENABLED=false \
-                REQUIRE_HUMAN_APPROVAL=true
+                REQUIRE_HUMAN_APPROVAL=true \
+                MARKET_DATA_MODE=provider \
+                ALLOW_MOCK_MARKET_DATA=false \
+                ALLOW_SYNTHETIC_MARKET_DATA=false \
+                QLIB_REQUIRED=false \
+                DATABASE_URL="$DATABASE_URL"
           fi
 
       - name: Show Container App URL and image

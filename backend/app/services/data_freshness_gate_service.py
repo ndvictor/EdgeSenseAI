@@ -198,35 +198,47 @@ def run_data_freshness_check(request: DataFreshnessCheckRequest) -> DataFreshnes
 
     run_id = f"fresh-{uuid4().hex[:12]}"
     checked_at = datetime.now(timezone.utc).isoformat()
+    results: list[DataFreshnessSymbolResult] = []
+    blockers: list[str] = []
+    warnings: list[str] = []
+    status: Literal["pass", "warn", "fail"] = "fail"
 
     # Require explicit symbols
     if not request.symbols:
+        blockers.append("No symbols provided. Explicit symbols required.")
         response = DataFreshnessCheckResponse(
             run_id=run_id,
-            status="fail",
+            status=status,
             source=request.source,
             checked_at=checked_at,
-            results=[],
-            blockers=["No symbols provided. Explicit symbols required."],
-            warnings=[],
+            results=results,
+            blockers=blockers,
+            warnings=warnings,
             summary=DataFreshnessSummary(total_checked=0, blocked_count=0),
         )
         _LATEST_FRESHNESS_CHECK = response
         _FRESHNESS_CHECK_HISTORY.append(response)
         return response
 
-    # Check each symbol
-    results: list[DataFreshnessSymbolResult] = []
     for symbol in request.symbols:
-        result = _check_symbol_freshness(
-            symbol=symbol,
-            source=request.source,
-            max_quote_age=request.max_quote_age_seconds,
-            max_bar_age=request.max_bar_age_seconds,
-            require_bid_ask=request.require_bid_ask,
-            allow_mock=request.allow_mock,
-            horizon=request.horizon,
-        )
+        try:
+            result = _check_symbol_freshness(
+                symbol=symbol,
+                source=request.source,
+                max_quote_age=request.max_quote_age_seconds,
+                max_bar_age=request.max_bar_age_seconds,
+                require_bid_ask=request.require_bid_ask,
+                allow_mock=request.allow_mock,
+                horizon=request.horizon,
+            )
+        except Exception as exc:
+            result = DataFreshnessSymbolResult(
+                symbol=str(symbol).upper(),
+                decision="blocked",
+                tradability_status="fail",
+                blockers=[f"Data freshness check failed: {exc}"],
+                warnings=[],
+            )
         results.append(result)
 
     # Calculate summary
@@ -248,19 +260,22 @@ def run_data_freshness_check(request: DataFreshnessCheckRequest) -> DataFreshnes
     # Determine overall status
     if blocked_count == len(results):
         status = "fail"
-        blockers = ["All symbols blocked by data freshness checks"]
+        blockers.append("All symbols blocked by data freshness checks")
     elif blocked_count > 0:
         status = "warn"
-        blockers = []
-        warnings = [f"{blocked_count}/{len(results)} symbols blocked by data checks"]
+        warnings.append(f"{blocked_count}/{len(results)} symbols blocked by data checks")
     elif degraded_count > 0:
         status = "warn"
-        blockers = []
-        warnings = [f"{degraded_count}/{len(results)} symbols have degraded data quality"]
+        warnings.append(f"{degraded_count}/{len(results)} symbols have degraded data quality")
     else:
         status = "pass"
-        blockers = []
-        warnings = []
+
+    for result in results:
+        blockers.extend(result.blockers or [])
+        warnings.extend(result.warnings or [])
+
+    blockers = sorted(set(blockers))
+    warnings = sorted(set(warnings))
 
     response = DataFreshnessCheckResponse(
         run_id=run_id,

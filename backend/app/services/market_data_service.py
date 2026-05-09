@@ -4,6 +4,7 @@ import requests
 import yfinance as yf
 
 from app.core.effective_runtime import effective_str
+from app.core.production_safety import allow_mock_market_data, allow_synthetic_market_data, is_production_environment
 from app.core.settings import settings
 from app.services.market_data_providers.alpaca_provider import AlpacaMarketDataProvider
 from app.services.market_data_providers.mock_provider import MockMarketDataProvider
@@ -22,7 +23,7 @@ class MarketDataService:
     """Read-only market data service using configured provider priority.
 
     Important product rule:
-    - source=mock is allowed for explicit UI/testing workflows.
+    - source=mock is allowed only when mock market data is explicitly enabled.
     - source=auto must never silently fall back to mock, because that can make fake data look real.
     - Explicit workflow/UI ``source`` (yfinance, polygon, alpaca, mock) always wins over defaults.
     - For ``auto``, MARKET_DATA_PROVIDER (human primary in Settings/runtime) is attempted first, then
@@ -41,7 +42,7 @@ class MarketDataService:
     def _priority_for_source(self, source: str | None = None) -> list[str]:
         requested = source.lower().strip() if source and source.strip() else "auto"
         if requested == "mock":
-            return ["mock"]
+            return ["mock"] if allow_mock_market_data() else []
 
         primary = (effective_str("MARKET_DATA_PROVIDER") or "").lower().strip()
         tail = list(self.provider_priority)
@@ -58,13 +59,15 @@ class MarketDataService:
         for name in tail:
             if name in seen:
                 continue
-            if name == "mock" and primary != "mock":
+            if name == "mock" and (primary != "mock" or not allow_mock_market_data()):
                 continue
             ordered.append(name)
             seen.add(name)
 
         if not ordered:
             ordered = [p for p in tail if p != "mock"]
+        if is_production_environment():
+            ordered = [name for name in ordered if name != "mock"]
         return ordered or ["yfinance"]
 
     def get_quote(self, symbol: str, source: str | None = None) -> Dict[str, Any]:
@@ -205,6 +208,8 @@ class MarketDataService:
         if price is None:
             return
         if snapshot.get("bid") is not None and snapshot.get("ask") is not None:
+            return
+        if not allow_synthetic_market_data():
             return
         try:
             mid = float(price)

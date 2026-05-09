@@ -10,6 +10,7 @@ from sqlalchemy.engine import Engine
 from sqlalchemy.exc import SQLAlchemyError
 from sqlalchemy.orm import Session, sessionmaker
 
+from app.core.production_safety import database_url_from_env, production_database_blocker
 from app.core.settings import settings
 
 
@@ -33,6 +34,8 @@ def _health_cache_ttl_seconds() -> float:
 
 @lru_cache
 def get_engine() -> Engine | None:
+    if production_database_blocker(settings.database_url):
+        return None
     if not settings.database_url:
         return None
     try:
@@ -97,10 +100,11 @@ def check_database_health(*, force_refresh: bool = False) -> dict[str, Any]:
 
     engine = get_engine()
     if engine is None:
+        blocker = production_database_blocker(database_url_from_env() or settings.database_url)
         result: dict[str, Any] = {
-            "status": "not_configured",
+            "status": "unavailable" if blocker else "not_configured",
             "connected": False,
-            "message": "DATABASE_URL is not configured or engine creation failed.",
+            "message": "DATABASE_URL is missing or points to localhost in production." if blocker else "DATABASE_URL is not configured or engine creation failed.",
         }
     else:
         result = _check_db_with_timeout(engine, timeout=3.0)
