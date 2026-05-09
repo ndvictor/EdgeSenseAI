@@ -1,4 +1,4 @@
-name: Build EdgeSenseAI Backend Image
+name: Build and Deploy EdgeSenseAI Backend
 
 on:
   workflow_dispatch:
@@ -8,68 +8,162 @@ on:
     paths:
       - "backend/**"
       - ".github/workflows/build-backend-image.yml"
+      - "scripts/smoke_test_platform.sh"
 
-<<<<<<< HEAD
-=======
+permissions:
+  contents: read
+
 env:
+  RESOURCE_GROUP: edgesenseai-rg
+  LOCATION: eastus
   ACR_LOGIN_SERVER: opsenseaiacrbuild.azurecr.io
   IMAGE_NAME: edgesenseai-backend
   IMAGE_TAG: dev
+  CONTAINER_APP_ENV: edgesenseai-env
+  CONTAINER_APP_NAME: edgesenseai-backend
+  CONTAINER_PORT: "8900"
 
->>>>>>> pr-25-acr-workflow-fix
 jobs:
-  build-and-push:
+  build-push-deploy:
     runs-on: ubuntu-latest
 
     steps:
       - name: Checkout repo
-        uses: actions/checkout@v4
+        uses: actions/checkout@v5
 
-<<<<<<< HEAD
-      - name: Login to Azure Container Registry
-        uses: docker/login-action@v3
-        with:
-          registry: ${{ secrets.ACR_LOGIN_SERVER }}
-=======
-      - name: Validate required ACR secrets
+      - name: Validate required secrets
+        shell: bash
         run: |
           missing=0
+
           if [ -z "${{ secrets.ACR_USERNAME }}" ]; then
             echo "Missing GitHub secret: ACR_USERNAME"
             missing=1
           fi
+
           if [ -z "${{ secrets.ACR_PASSWORD }}" ]; then
             echo "Missing GitHub secret: ACR_PASSWORD"
             missing=1
           fi
+
+          if [ -z "${{ secrets.AZURE_CREDENTIALS }}" ]; then
+            echo "Missing GitHub secret: AZURE_CREDENTIALS"
+            missing=1
+          fi
+
           if [ "$missing" -ne 0 ]; then
-            echo "Add the missing secrets in GitHub: Settings -> Secrets and variables -> Actions."
+            echo "Add missing secrets in GitHub repo: Settings -> Secrets and variables -> Actions."
             exit 1
           fi
 
       - name: Login to Azure Container Registry
-        uses: docker/login-action@v3
+        uses: docker/login-action@v4
         with:
           registry: ${{ env.ACR_LOGIN_SERVER }}
->>>>>>> pr-25-acr-workflow-fix
           username: ${{ secrets.ACR_USERNAME }}
           password: ${{ secrets.ACR_PASSWORD }}
 
       - name: Build backend image
+        shell: bash
         run: |
           docker build \
             -f backend/Dockerfile \
-<<<<<<< HEAD
-            -t ${{ secrets.ACR_LOGIN_SERVER }}/edgesenseai-backend:dev \
-=======
             -t $ACR_LOGIN_SERVER/$IMAGE_NAME:$IMAGE_TAG \
->>>>>>> pr-25-acr-workflow-fix
+            -t $ACR_LOGIN_SERVER/$IMAGE_NAME:${{ github.sha }} \
             ./backend
 
       - name: Push backend image
+        shell: bash
         run: |
-<<<<<<< HEAD
-          docker push ${{ secrets.ACR_LOGIN_SERVER }}/edgesenseai-backend:dev
-=======
           docker push $ACR_LOGIN_SERVER/$IMAGE_NAME:$IMAGE_TAG
->>>>>>> pr-25-acr-workflow-fix
+          docker push $ACR_LOGIN_SERVER/$IMAGE_NAME:${{ github.sha }}
+
+      - name: Azure login
+        uses: azure/login@v2
+        with:
+          creds: ${{ secrets.AZURE_CREDENTIALS }}
+
+      - name: Ensure Azure Container Apps extension
+        shell: bash
+        run: |
+          az extension add --name containerapp --upgrade
+
+      - name: Ensure resource group exists
+        shell: bash
+        run: |
+          az group create \
+            --name "$RESOURCE_GROUP" \
+            --location "$LOCATION"
+
+      - name: Ensure Container Apps environment exists
+        shell: bash
+        run: |
+          if az containerapp env show \
+            --name "$CONTAINER_APP_ENV" \
+            --resource-group "$RESOURCE_GROUP" >/dev/null 2>&1; then
+            echo "Container Apps environment exists: $CONTAINER_APP_ENV"
+          else
+            echo "Creating Container Apps environment: $CONTAINER_APP_ENV"
+            az containerapp env create \
+              --name "$CONTAINER_APP_ENV" \
+              --resource-group "$RESOURCE_GROUP" \
+              --location "$LOCATION"
+          fi
+
+      - name: Create or update backend Container App
+        shell: bash
+        run: |
+          IMAGE="$ACR_LOGIN_SERVER/$IMAGE_NAME:${{ github.sha }}"
+
+          if az containerapp show \
+            --name "$CONTAINER_APP_NAME" \
+            --resource-group "$RESOURCE_GROUP" >/dev/null 2>&1; then
+            echo "Updating Container App image: $CONTAINER_APP_NAME"
+            az containerapp update \
+              --name "$CONTAINER_APP_NAME" \
+              --resource-group "$RESOURCE_GROUP" \
+              --image "$IMAGE"
+          else
+            echo "Creating Container App: $CONTAINER_APP_NAME"
+            az containerapp create \
+              --name "$CONTAINER_APP_NAME" \
+              --resource-group "$RESOURCE_GROUP" \
+              --environment "$CONTAINER_APP_ENV" \
+              --image "$IMAGE" \
+              --target-port "$CONTAINER_PORT" \
+              --ingress external \
+              --registry-server "$ACR_LOGIN_SERVER" \
+              --registry-username "${{ secrets.ACR_USERNAME }}" \
+              --registry-password "${{ secrets.ACR_PASSWORD }}" \
+              --min-replicas 0 \
+              --max-replicas 1 \
+              --env-vars \
+                ENVIRONMENT=production \
+                PAPER_TRADING_ENABLED=true \
+                LIVE_TRADING_ENABLED=false \
+                BROKER_EXECUTION_ENABLED=false \
+                REQUIRE_HUMAN_APPROVAL=true
+          fi
+
+      - name: Show Container App URL and image
+        shell: bash
+        run: |
+          echo "Deployed image:"
+          az containerapp show \
+            --name "$CONTAINER_APP_NAME" \
+            --resource-group "$RESOURCE_GROUP" \
+            --query "properties.template.containers[0].image" \
+            -o tsv
+
+          echo "FQDN:"
+          az containerapp show \
+            --name "$CONTAINER_APP_NAME" \
+            --resource-group "$RESOURCE_GROUP" \
+            --query "properties.configuration.ingress.fqdn" \
+            -o tsv
+
+      - name: Optional health check
+        if: ${{ secrets.BACKEND_PUBLIC_URL != '' }}
+        shell: bash
+        run: |
+          curl -fsS "${{ secrets.BACKEND_PUBLIC_URL }}/health"
