@@ -163,7 +163,13 @@ jobs:
             -o tsv
 
       - name: Optional health check
-        if: ${{ secrets.BACKEND_PUBLIC_URL != '' }}
         shell: bash
+        env:
+          BACKEND_PUBLIC_URL: ${{ secrets.BACKEND_PUBLIC_URL }}
         run: |
-          curl -fsS "${{ secrets.BACKEND_PUBLIC_URL }}/health"
+          if [ -z "$BACKEND_PUBLIC_URL" ]; then
+            echo "Skipping health check because BACKEND_PUBLIC_URL is not configured."
+            exit 0
+          fi
+
+          curl -fsS "$BACKEND_PUBLIC_URL/health"
