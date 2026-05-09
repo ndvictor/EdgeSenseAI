@@ -45,8 +45,8 @@ def enforce_phase2_safety(*, agent_key: str, inputs: dict[str, Any], context: di
         blockers.append("asset_class_not_supported_v1")
 
     horizon = sanitized.get("horizon")
-    if isinstance(horizon, str) and horizon.strip().lower() not in {"day_trading", "day_trade"}:
-        blockers.append("horizon_not_supported_v1")
+    if isinstance(horizon, str) and horizon.strip().lower() != "day_trading":
+        blockers.append("horizon_not_supported_for_autonomous_workflow")
 
     # Agent-specific hardening
     if agent_key in {"close_review_agent", "execution_planner_agent"}:

@@ -27,10 +27,6 @@ def _horizon_for_universe(horizon: str) -> str:
     h = (horizon or "day_trading").lower().strip()
     if h in ("day_trading", "day_trade"):
         return "day_trade"
-    if h == "swing":
-        return "swing"
-    if h == "one_month":
-        return "one_month"
     return "day_trade"
 
 

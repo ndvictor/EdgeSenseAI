@@ -151,6 +151,25 @@ function DataPipelineCard({ prSystems, run }: { prSystems?: Record<string, unkno
   );
 }
 
+function SmallAccountFeasibilityCard({ run }: { run: OrchestratorRunRecord | null }) {
+  const blockers = Array.isArray(run?.small_account_blockers) ? (run.small_account_blockers as string[]) : [];
+  const warnings = Array.isArray(run?.small_account_warnings) ? (run.small_account_warnings as string[]) : [];
+  return (
+    <section className="rounded-2xl border border-emerald-400/15 bg-[#070c12]/95 p-4">
+      <h3 className="text-xs font-semibold uppercase tracking-[0.2em] text-slate-500">Small account feasibility</h3>
+      <p className="mt-1 text-xs text-slate-500">$1,000 account gate before strategy eligibility and execution planning.</p>
+      <div className="mt-3 grid gap-2 sm:grid-cols-2 lg:grid-cols-4">
+        <FieldCard label="decision" value={String(run?.small_account_decision ?? "not_run")} tone={run?.small_account_decision === "blocked" ? "bad" : run?.small_account_decision === "degraded" ? "warn" : run?.small_account_decision ? "good" : "default"} />
+        <FieldCard label="max_risk_dollars" value={run?.max_risk_dollars != null ? `$${Number(run.max_risk_dollars).toFixed(2)}` : "—"} />
+        <FieldCard label="max_daily_loss_dollars" value={run?.max_daily_loss_dollars != null ? `$${Number(run.max_daily_loss_dollars).toFixed(2)}` : "—"} />
+        <FieldCard label="feasible_symbols" value={Array.isArray(run?.feasible_symbols) ? (run.feasible_symbols as string[]).join(", ") || "—" : "—"} />
+        <FieldCard label="blockers" value={blockers.length ? blockers.join(", ") : "None"} tone={blockers.length ? "bad" : "good"} />
+        <FieldCard label="warnings" value={warnings.length ? warnings.join(", ") : "None"} tone={warnings.length ? "warn" : "good"} />
+      </div>
+    </section>
+  );
+}
+
 function BlockersWarningsCard({ blockers = [], warnings = [] }: { blockers?: string[]; warnings?: string[] }) {
   return (
     <section className="rounded-2xl border border-emerald-400/15 bg-[#070c12]/95 p-4">
@@ -994,6 +1013,7 @@ export default function WorkflowRunbookPage() {
           <SafetyBoundaryCard run={displayRun} />
           <DataModeCard run={displayRun} />
           <DataPipelineCard prSystems={prSystems} run={displayRun} />
+          <SmallAccountFeasibilityCard run={displayRun} />
           <AgentTimelineCard timeline={timeline} onLoadAgentTrace={loadAgentTrace} agentTraceLoading={agentTraceLoading} />
           <ApprovalBoundaryCard run={displayRun} pendingApprovals={pendingApprovals != null ? String(pendingApprovals) : "—"} />
           <BlockersWarningsCard blockers={displayRun?.blockers ?? []} warnings={displayRun?.warnings ?? []} />

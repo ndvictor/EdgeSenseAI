@@ -108,6 +108,14 @@ _AGENTS: dict[str, AgentDescriptor] = {
         agent_type="deterministic_agent",
         status="ready",
     ),
+    "small_account_feasibility_agent": _d(
+        agent_key="small_account_feasibility_agent",
+        display_name="Small Account Feasibility Agent",
+        role="Stage 7 small-account feasibility",
+        stage_number=7,
+        agent_type="deterministic_agent",
+        status="ready",
+    ),
     "strategy_eligibility_agent": _d(
         agent_key="strategy_eligibility_agent",
         display_name="Strategy Eligibility Agent",

@@ -47,10 +47,12 @@ class FeatureStoreRunResponse(BaseModel):
     normalized_snapshot: NormalizedMarketSnapshot
     storage_mode: str = "in_memory"
     warnings: list[str] = Field(default_factory=list)
+    provider_statuses: list[dict[str, Any]] = Field(default_factory=list)
 
 
 _MARKET_DATA = MarketDataService()
 _FEATURE_ROWS: list[FeatureStoreRow] = []
+_FEATURE_ROW_PERSISTENCE: dict[str, dict[str, Any]] = {}
 
 
 def _build_feature_row(
@@ -84,8 +86,15 @@ def _build_feature_row(
 
 def store_feature_row(row: FeatureStoreRow) -> FeatureStoreRow:
     _FEATURE_ROWS.append(row)
-    save_feature_store_row(row)
+    _FEATURE_ROW_PERSISTENCE[row.id] = save_feature_store_row(row)
     return row
+
+
+def get_feature_row_persistence_status(feature_row_id: str) -> dict[str, Any]:
+    return _FEATURE_ROW_PERSISTENCE.get(
+        feature_row_id,
+        {"persisted": False, "data_source": "in_memory_fallback", "warning": "Persistence status unavailable."},
+    )
 
 
 def get_latest_feature_rows() -> list[FeatureStoreRow]:
@@ -121,9 +130,12 @@ def run_feature_store_pipeline(request: FeatureStoreRunRequest) -> FeatureStoreR
     )
     normalized = normalize_market_snapshot(snapshot, asset_class=request.asset_class, data_source=quality_report.data_source)
     row = store_feature_row(_build_feature_row(normalized, quality_report, request.horizon))
+    persisted = get_feature_row_persistence_status(row.id)
     return FeatureStoreRunResponse(
         row=row,
         quality_report=quality_report,
         normalized_snapshot=normalized,
+        storage_mode="postgres" if persisted.get("persisted") else "in_memory",
         warnings=quality_report.warnings,
+        provider_statuses=list(snapshot.get("provider_statuses") or []),
     )

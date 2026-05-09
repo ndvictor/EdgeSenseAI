@@ -23,12 +23,43 @@ class WorkflowCarryForwardState(BaseModel):
     selected_model_keys: list[str] = Field(default_factory=list)
     proof_status: str | None = None
     qlib_available: bool | None = None
+    qlib_version: str | None = None
     qlib_artifact_id: str | None = None
+    qlib_artifact_counts: dict[str, int] = Field(default_factory=dict)
+    proof_id: str | None = None
+    evidence_blockers: list[str] = Field(default_factory=list)
+    evidence_warnings: list[str] = Field(default_factory=list)
+    provider_status: dict[str, Any] = Field(default_factory=dict)
+    provider_name: str | None = None
+    source_mode: str | None = None
+    using_mock_data: bool = False
+    usable_symbols: list[str] = Field(default_factory=list)
+    rejected_symbols: list[str] = Field(default_factory=list)
+    latest_snapshot_status: str | None = None
+    latest_snapshot_count: int = 0
+    feature_store_status: str | None = None
+    feature_row_count: int = 0
+    persistence_status: str | None = None
+    freshness_status: str | None = None
+    kafka_status: str = "configured_optional_not_active"
+    latest_price: float | None = None
+    spread_bps: float | None = None
+    avg_dollar_volume: float | None = None
+    planned_risk_dollars: float | None = None
+    open_positions: int = 0
+    day_trades_used: int = 0
     account_equity: float = 1000.0
     max_risk_per_trade_percent: float = 0.5
     max_daily_loss_percent: float = 1.5
     max_open_positions: int = 1
     max_trades_per_day: int = 3
+    small_account_decision: str | None = None
+    max_risk_dollars: float | None = None
+    max_daily_loss_dollars: float | None = None
+    feasible_symbols: list[str] = Field(default_factory=list)
+    small_account_rejected_symbols: list[str] = Field(default_factory=list)
+    small_account_blockers: list[str] = Field(default_factory=list)
+    small_account_warnings: list[str] = Field(default_factory=list)
     approval_id: str | None = None
     blockers: list[str] = Field(default_factory=list)
     warnings: list[str] = Field(default_factory=list)

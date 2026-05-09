@@ -8,6 +8,9 @@ from app.core.effective_runtime import effective_bool, effective_int
 from app.services.agent_runtime.redis_runtime import get_active_workflow_state
 from app.services.workflow_governance.models import WorkflowGovernanceCheckRequest, WorkflowGovernanceCheckResponse, WorkflowGovernanceStatusResponse, iso_utc_now
 
+SUPPORTED_AUTONOMOUS_HORIZONS = ["day_trading"]
+BLOCKED_AUTONOMOUS_HORIZONS = ["swing_trading", "swing", "multi_day", "overnight", "position_trade"]
+
 
 def _db_session():
     try:
@@ -95,8 +98,8 @@ def check_governance(req: WorkflowGovernanceCheckRequest) -> WorkflowGovernanceC
     # Scope enforcement
     if str(req.asset_class).strip().lower() != "stock":
         blockers.append("asset_class_not_supported_v1")
-    if str(req.horizon).strip().lower() not in {"day_trading", "day_trade"}:
-        blockers.append("horizon_not_supported_v1")
+    if str(req.horizon).strip().lower() != "day_trading":
+        blockers.append("horizon_not_supported_for_autonomous_workflow")
 
     # Approval + submit enforcement
     if bool(req.allow_submit):
@@ -112,6 +115,8 @@ def check_governance(req: WorkflowGovernanceCheckRequest) -> WorkflowGovernanceC
         "max_daily_workflow_runs": max_daily_workflow_runs,
         "today_workflow_runs": today,
         "per_symbol_cooldown_seconds": 300,
+        "supported_horizons": SUPPORTED_AUTONOMOUS_HORIZONS,
+        "blocked_horizons": BLOCKED_AUTONOMOUS_HORIZONS,
     }
     if today >= max_daily_workflow_runs:
         blockers.append("max_daily_workflow_runs_exceeded")

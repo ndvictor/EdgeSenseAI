@@ -3,6 +3,9 @@ from __future__ import annotations
 from dataclasses import dataclass
 from typing import Any
 
+SUPPORTED_AUTONOMOUS_HORIZONS = ["day_trading"]
+BLOCKED_AUTONOMOUS_HORIZONS = ["swing_trading", "swing", "multi_day", "overnight", "position_trade"]
+
 
 @dataclass(frozen=True)
 class OrchestratorSafetyResult:
@@ -24,7 +27,8 @@ def enforce_orchestrator_safety(req: dict[str, Any]) -> OrchestratorSafetyResult
         blockers.append("live_trading_enabled_blocked_v1")
     if str(s.get("asset_class", "stock")).lower() != "stock":
         blockers.append("asset_class_not_supported_v1")
-    if str(s.get("horizon", "day_trading")).lower() not in {"day_trading", "day_trade"}:
-        blockers.append("horizon_not_supported_v1")
+    if str(s.get("horizon", "day_trading")).lower() != "day_trading":
+        blockers.append("horizon_not_supported_for_autonomous_workflow")
+        s["supported_horizons"] = SUPPORTED_AUTONOMOUS_HORIZONS
     return OrchestratorSafetyResult(sanitized_request=s, blockers=sorted(set(blockers)), warnings=sorted(set(warnings)))
 

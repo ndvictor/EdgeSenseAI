@@ -13,6 +13,39 @@ from app.services.model_evidence.models import (
 _MEMORY: dict[str, ModelEvidenceOut] = {}
 
 
+def evaluate_model_evidence(records: list[ModelEvidenceOut]) -> dict:
+    ready: list[ModelEvidenceOut] = []
+    blocked_models: list[str] = []
+    not_trained_models: list[str] = []
+    warnings: list[str] = []
+    for record in records:
+        if (record.horizon or "").lower() != "day_trading":
+            warnings.append(f"model_not_applicable_to_autonomous_horizon:{record.model_key}")
+            continue
+        status = (record.status or "").lower()
+        warnings.extend(record.warnings or [])
+        if record.blockers or status == "blocked":
+            blocked_models.append(record.model_key)
+        elif status in {"not_trained", "registered", "recorded"} or record.training_status in {None, "not_trained", "missing"}:
+            not_trained_models.append(record.model_key)
+        elif status in {"ready", "degraded", "research_only"}:
+            ready.append(record)
+    ready_sorted = sorted(
+        ready,
+        key=lambda r: (
+            r.rank if r.rank is not None else 9999,
+            -(r.score if r.score is not None else 0.0),
+            r.model_key,
+        ),
+    )
+    return {
+        "selected_model_keys": [r.model_key for r in ready_sorted],
+        "blocked_models": sorted(set(blocked_models)),
+        "not_trained_models": sorted(set(not_trained_models)),
+        "warnings": sorted(set(warnings)),
+    }
+
+
 def _db_session():
     try:
         from app.db.init_db import init_db
@@ -48,7 +81,11 @@ def get_model_evidence_status() -> ModelEvidenceStatusResponse:
             persistence_mode = "memory"
         finally:
             session.close()
-    return ModelEvidenceStatusResponse(updated_at=iso_utc_now(), summary={"persistence_mode": persistence_mode, "records_count": count})
+    latest = get_latest_model_evidence()
+    return ModelEvidenceStatusResponse(
+        updated_at=iso_utc_now(),
+        summary={"persistence_mode": persistence_mode, "records_count": count, "latest_model_status": latest.status if latest else "none"},
+    )
 
 
 def save_model_evidence(body: ModelEvidenceCreate) -> ModelEvidenceOut:

@@ -22,9 +22,21 @@ def _force_memory_persistence(monkeypatch):
     _RUN_CACHE.clear()
     monkeypatch.setattr(orchestrator_service, "_db_session", lambda: None)
     monkeypatch.setattr(orchestrator_service, "write_event", lambda *_args, **_kwargs: None)
-    monkeypatch.setattr(orchestrator_service, "default_stage_plan", lambda **_kwargs: ["account_owner_policy_agent", "watchlist_builder_agent", "strategy_selection_agent", "execution_planner_agent"])
+    monkeypatch.setattr(
+        orchestrator_service,
+        "default_stage_plan",
+        lambda **_kwargs: [
+            "account_owner_policy_agent",
+            "watchlist_builder_agent",
+            "strategy_selection_agent",
+            "qlib_research_agent",
+            "small_account_feasibility_agent",
+            "strategy_eligibility_agent",
+            "execution_planner_agent",
+        ],
+    )
     monkeypatch.setattr(governance_service, "get_active_workflow_state", lambda *_args, **_kwargs: None)
-    monkeypatch.setattr(orchestrator_service, "orchestrator_pipeline_agent_count", lambda: 4)
+    monkeypatch.setattr(orchestrator_service, "orchestrator_pipeline_agent_count", lambda: 7)
     monkeypatch.setattr(governance_service, "effective_bool", lambda key: key in {"BROKER_EXECUTION_ENABLED", "LIVE_TRADING_ENABLED", "PAPER_TRADING_ENABLED", "REQUIRE_HUMAN_APPROVAL", "WORKFLOW_ENABLED"})
 
     def fake_create_workflow_run(req: WorkflowRunCreateRequest) -> WorkflowRunRecord:
@@ -58,6 +70,19 @@ def _force_memory_persistence(monkeypatch):
             result.update({"proof_status": "backtest_required", "proof_id": "proof_preview"})
         elif agent_key == "qlib_research_agent":
             result.update({"qlib_available": False, "warnings": ["qlib_unavailable"]})
+        elif agent_key == "small_account_feasibility_agent":
+            result.update(
+                {
+                    "decision": "pass",
+                    "account_equity": inputs.get("account_equity", 1000.0),
+                    "max_risk_dollars": 5.0,
+                    "max_daily_loss_dollars": 15.0,
+                    "feasible_symbols": [symbol],
+                    "rejected_symbols": [],
+                    "blockers": [],
+                    "warnings": [],
+                }
+            )
         elif agent_key == "execution_approval_agent":
             result.update({"approval": {"approval_id": "ap_test_preview"}})
         elif agent_key == "narrative_review_agent":
@@ -137,7 +162,7 @@ def test_orchestrator_stage_timeline_uses_default_stage_plan():
     run = _run_orchestrator()
 
     keys = [row["agent_key"] for row in run["stage_timeline"]]
-    for key in ["account_owner_policy_agent", "watchlist_builder_agent", "strategy_selection_agent", "execution_planner_agent"]:
+    for key in ["account_owner_policy_agent", "watchlist_builder_agent", "strategy_selection_agent", "small_account_feasibility_agent", "execution_planner_agent"]:
         assert key in keys
 
 
@@ -159,6 +184,28 @@ def test_execution_planner_uses_small_account_default_in_orchestrator_context():
     snapshot = timeline["execution_planner_agent"]["pipeline_inputs_snapshot"]
 
     assert snapshot["account_equity"] <= 1000.0
+    assert snapshot["max_risk_dollars"] == 5.0
+    assert snapshot["max_daily_loss_dollars"] == 15.0
+
+
+def test_small_account_stage_in_plan_before_strategy_eligibility():
+    from app.services.workflow_orchestrator.stage_plan import default_stage_plan
+
+    plan = default_stage_plan()
+
+    assert "small_account_feasibility_agent" in plan
+    assert plan.index("small_account_feasibility_agent") < plan.index("strategy_eligibility_agent")
+
+
+def test_orchestrator_snapshots_include_small_account_fields():
+    run = _run_orchestrator()
+    timeline = _timeline_by_agent(run)
+    snapshot = timeline["strategy_eligibility_agent"]["pipeline_inputs_snapshot"]
+
+    assert snapshot["small_account_decision"] == "pass"
+    assert snapshot["max_risk_dollars"] == 5.0
+    assert snapshot["max_daily_loss_dollars"] == 15.0
+    assert snapshot["feasible_symbols"] == ["AMD"]
 
 
 def test_orchestrator_response_does_not_leak_legacy_10000_account_default():

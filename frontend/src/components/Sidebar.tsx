@@ -4,43 +4,56 @@ import Link from "next/link";
 import { usePathname, useSearchParams } from "next/navigation";
 import {
   BookOpen,
-  BrainCircuit,
-  Database,
-  Import,
-  Layers2,
-  LineChart,
-  ListChecks,
-  Rss,
-  Settings,
-  ShieldCheck,
-  SlidersHorizontal,
-  Radar,
   FlaskConical,
+  Home,
+  ShieldCheck,
   Workflow,
   BriefcaseBusiness,
-  Cpu,
+  Settings,
 } from "lucide-react";
 
 type NavItem = { label: string; href: string; icon: any; activeAlso?: string[] };
 
 const MAIN_ITEMS: NavItem[] = [
-  { label: "Command Center", href: "/command-center", icon: SlidersHorizontal },
-  { label: "Agent Runtime", href: "/agent-runtime", icon: BrainCircuit },
-  { label: "Market Radar", href: "/market-radar", icon: Radar },
-  { label: "Data source", href: "/datasource", icon: Database, activeAlso: ["/data-sources"] },
-  { label: "Data ingestion", href: "/data-ingestion", icon: Import },
-  { label: "Data feed", href: "/data-feed", icon: Rss },
-  { label: "Data validation", href: "/data-quality", icon: ListChecks },
-  { label: "Feature pipeline", href: "/feature-pipeline", icon: Layers2 },
-  { label: "Model Lab", href: "/model/lab", icon: Cpu },
-  { label: "Research Lab", href: "/research-lab", icon: FlaskConical },
-  { label: "Qlib", href: "/qlib", icon: LineChart },
-  { label: "Strategy Workflow", href: "/strategy-workflow", icon: Workflow },
-  { label: "Workflow Runbook", href: "/workflow-runbook", icon: BookOpen },
-  { label: "Trading Desk", href: "/trading-desk", icon: BriefcaseBusiness },
-  { label: "Performance & Governance", href: "/performance-governance", icon: ShieldCheck },
-  { label: "Settings", href: "/settings", icon: Settings },
-  { label: "Archive", href: "/edgesense/archive", icon: BookOpen },
+  { label: "Home", href: "/", icon: Home },
+  {
+    label: "Autonomous Day-Trading",
+    href: "/daytrading-workflow",
+    icon: Workflow,
+    activeAlso: [
+      "/workflow-runbook",
+      "/agent-runtime",
+      "/approval-queue",
+      "/audit-log",
+      "/workflow-governance",
+      "/workflow-scheduler",
+      "/platform-readiness",
+      "/research-evidence",
+    ],
+  },
+  {
+    label: "Legacy Manual Trading",
+    href: "/manual-trading",
+    icon: BriefcaseBusiness,
+    activeAlso: [
+      "/tradenow",
+      "/trading-desk",
+      "/command-center",
+      "/candidate-engine",
+      "/candidates",
+      "/edge-signals",
+      "/auto-execution-monitor",
+    ],
+  },
+  {
+    label: "Lab",
+    href: "/lab",
+    icon: FlaskConical,
+    activeAlso: ["/qlib", "/model/lab", "/research-lab"],
+  },
+  { label: "Owner", href: "/owner", icon: Settings },
+  { label: "Ops", href: "/ops", icon: ShieldCheck },
+  { label: "Settings", href: "/settings", icon: BookOpen },
 ];
 
 function navItemActive(pathname: string, searchParams: ReturnType<typeof useSearchParams>, item: NavItem): boolean {
@@ -59,7 +72,7 @@ export function Sidebar() {
 
   return (
     <aside className="flex min-h-screen w-68 shrink-0 flex-col border-r border-emerald-400/10 bg-[#05080d] px-3 py-5">
-      <Link href="/command-center" className="mb-8 flex items-center gap-3 px-1">
+      <Link href="/" className="mb-8 flex items-center gap-3 px-1">
         <div className="flex h-11 w-11 items-center justify-center rounded-2xl border border-emerald-400/50 bg-emerald-400/10 text-xl font-black tracking-tight text-emerald-300">
           E
         </div>

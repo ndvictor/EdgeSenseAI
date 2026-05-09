@@ -11,10 +11,28 @@ from app.services.model_ranker_service import ModelRankerRequest, run_model_rank
 
 def select_models(*, symbol: str, asset_class: str, horizon: str, strategy_key: str | None) -> dict[str, Any]:
     """Use model registry/orchestrator and attach governed ranking output."""
+    if (horizon or "").strip().lower() != "day_trading":
+        return {
+            "model_ranker_run_id": None,
+            "selected_model_key": None,
+            "ranked_models": [],
+            "selected_model_keys": [],
+            "completed_models": [],
+            "blocked_models": [],
+            "not_trained_models": [],
+            "model_outputs": [],
+            "model_score_summary": {"completed_count": 0, "blocked_count": 0},
+            "qlib_artifact_refs": [],
+            "blockers": ["horizon_not_supported_for_autonomous_workflow"],
+            "warnings": [],
+            "supported_horizons": ["day_trading"],
+            "next_agent": "strategy_eligibility_agent",
+            "next_action": "Autonomous workflow is day-trading only.",
+        }
     ranker = run_model_ranker(
         ModelRankerRequest(
             strategy_key=strategy_key,
-            horizon=horizon,
+            horizon="day_trading",
             asset_class=asset_class,
             include_research_candidates=True,
             require_owner_approved_for_selection=True,
@@ -24,7 +42,7 @@ def select_models(*, symbol: str, asset_class: str, horizon: str, strategy_key: 
     req = ModelRunRequest(
         symbols=[symbol.upper()],
         asset_class=asset_class,
-        horizon="day_trade" if horizon in {"day_trading", "day_trade"} else horizon,
+        horizon="day_trade",
         source="auto",
         strategy_key=strategy_key,
         selected_models=[ranker.selected_model_key] if ranker.selected_model_key else None,
@@ -42,7 +60,7 @@ def select_models(*, symbol: str, asset_class: str, horizon: str, strategy_key: 
                     model_name=item.get("model_name") or item.get("model") or (entry.display_name if entry else mk),
                     model_family=str(getattr(entry, "type", "unknown")) if entry else "unknown",
                     asset_class=asset_class,
-                    horizon=horizon,
+                    horizon="day_trading",
                     status=str(item.get("status") or bucket_name),
                     score=item.get("rank_score") or item.get("score"),
                     confidence=item.get("confidence"),

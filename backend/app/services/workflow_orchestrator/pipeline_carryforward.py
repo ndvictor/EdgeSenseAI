@@ -30,6 +30,26 @@ def _clean_symbols(values: Any) -> list[str]:
     return [str(s).strip().upper() for s in values if str(s).strip()]
 
 
+def _first_dict(values: Any, symbol: str | None = None) -> dict[str, Any]:
+    if not isinstance(values, list):
+        return {}
+    for value in values:
+        if not isinstance(value, dict):
+            continue
+        if symbol is None or str(value.get("symbol", "")).strip().upper() == symbol:
+            return value
+    return {}
+
+
+def _float_or_none(value: Any) -> float | None:
+    if value is None:
+        return None
+    try:
+        return float(value)
+    except (TypeError, ValueError):
+        return None
+
+
 def apply_stage_carryforward(*, agent_key: str, agent_result: AgentRunResult, state: WorkflowCarryForwardState) -> list[str]:
     """Carry typed workflow state forward for downstream agents. Returns advisory warnings."""
     warnings: list[str] = []
@@ -46,6 +66,40 @@ def apply_stage_carryforward(*, agent_key: str, agent_result: AgentRunResult, st
     if agent_key == "data_readiness_agent":
         _append_strings(warnings, tr.get("warnings"))
         _append_strings(state.warnings, tr.get("warnings"))
+        _append_strings(state.blockers, tr.get("blockers"))
+        if isinstance(tr.get("provider_status"), dict):
+            state.provider_status = dict(tr["provider_status"])
+        for attr in (
+            "provider_name",
+            "source_mode",
+            "latest_snapshot_status",
+            "feature_store_status",
+            "persistence_status",
+            "freshness_status",
+            "kafka_status",
+        ):
+            if tr.get(attr) is not None:
+                setattr(state, attr, str(tr[attr]))
+        if "using_mock_data" in tr:
+            state.using_mock_data = bool(tr["using_mock_data"])
+        state.usable_symbols = _clean_symbols(tr.get("usable_symbols"))
+        state.rejected_symbols = _clean_symbols(tr.get("rejected_symbols"))
+        if state.usable_symbols:
+            state.symbols = state.usable_symbols
+            state.symbol = state.usable_symbols[0]
+            state.selected_symbol = state.symbol
+        if tr.get("latest_snapshot_count") is not None:
+            state.latest_snapshot_count = int(tr.get("latest_snapshot_count") or 0)
+        if tr.get("feature_row_count") is not None:
+            state.feature_row_count = int(tr.get("feature_row_count") or 0)
+        artifacts = tr.get("artifacts") if isinstance(tr.get("artifacts"), dict) else {}
+        feature_row = _first_dict(artifacts.get("feature_rows"), state.selected_symbol or state.symbol)
+        snapshot = _first_dict(artifacts.get("latest_snapshots"), state.selected_symbol or state.symbol)
+        state.latest_price = _float_or_none(feature_row.get("last_price") or snapshot.get("price") or snapshot.get("last") or snapshot.get("close"))
+        state.spread_bps = _float_or_none(feature_row.get("spread_bps"))
+        volume = _float_or_none(feature_row.get("volume") or snapshot.get("volume"))
+        if state.latest_price is not None and volume is not None:
+            state.avg_dollar_volume = round(state.latest_price * volume, 2)
     elif agent_key == "market_condition_agent":
         mc = tr.get("market_context")
         if isinstance(mc, dict):
@@ -72,6 +126,8 @@ def apply_stage_carryforward(*, agent_key: str, agent_result: AgentRunResult, st
         ps = tr.get("proof_status")
         if ps:
             state.proof_status = str(ps)
+        _append_strings(state.evidence_blockers, tr.get("blockers"))
+        _append_strings(state.evidence_warnings, tr.get("warnings"))
     elif agent_key == "model_selection_agent":
         smk = tr.get("selected_model_key")
         if smk:
@@ -82,19 +138,48 @@ def apply_stage_carryforward(*, agent_key: str, agent_result: AgentRunResult, st
         artifact = tr.get("qlib_artifact_id")
         if artifact:
             state.qlib_artifact_id = str(artifact)
+        _append_strings(state.evidence_blockers, tr.get("blockers"))
+        _append_strings(state.evidence_warnings, tr.get("warnings"))
     elif agent_key == "backtest_validation_agent":
         ps = tr.get("proof_status")
         if ps:
             state.proof_status = str(ps)
         proof_id = tr.get("proof_id")
         if proof_id:
+            state.proof_id = str(proof_id)
             state.market_context = {**state.market_context, "proof_id": str(proof_id)}
-    elif agent_key == "qlib_research_agent":
-        if "qlib_available" in tr:
-            state.qlib_available = bool(tr["qlib_available"])
         artifact = tr.get("qlib_artifact_id")
         if artifact:
             state.qlib_artifact_id = str(artifact)
+        _append_strings(state.evidence_blockers, tr.get("blockers"))
+        _append_strings(state.evidence_warnings, tr.get("warnings"))
+    elif agent_key == "qlib_research_agent":
+        if "qlib_available" in tr:
+            state.qlib_available = bool(tr["qlib_available"])
+        if tr.get("qlib_version") is not None:
+            state.qlib_version = str(tr["qlib_version"])
+        artifact = tr.get("qlib_artifact_id")
+        if artifact:
+            state.qlib_artifact_id = str(artifact)
+        if isinstance(tr.get("qlib_artifact_counts"), dict):
+            state.qlib_artifact_counts = {str(k): int(v or 0) for k, v in tr["qlib_artifact_counts"].items()}
+        _append_strings(state.evidence_blockers, tr.get("blockers"))
+        _append_strings(state.evidence_warnings, tr.get("warnings"))
+    elif agent_key == "small_account_feasibility_agent":
+        if tr.get("decision") is not None:
+            state.small_account_decision = str(tr["decision"])
+        if tr.get("account_equity") is not None:
+            state.account_equity = float(tr["account_equity"])
+        if tr.get("max_risk_dollars") is not None:
+            state.max_risk_dollars = float(tr["max_risk_dollars"])
+        if tr.get("max_daily_loss_dollars") is not None:
+            state.max_daily_loss_dollars = float(tr["max_daily_loss_dollars"])
+        state.feasible_symbols = _clean_symbols(tr.get("feasible_symbols"))
+        state.small_account_rejected_symbols = _clean_symbols(tr.get("rejected_symbols"))
+        state.small_account_blockers = [str(x) for x in (tr.get("blockers") or []) if x]
+        state.small_account_warnings = [str(x) for x in (tr.get("warnings") or []) if x]
+        _append_strings(state.blockers, tr.get("blockers"))
+        _append_strings(state.warnings, tr.get("warnings"))
 
     if state.strategy_key and not state.symbol and state.symbols:
         state.symbol = str(state.symbols[0]).strip().upper()

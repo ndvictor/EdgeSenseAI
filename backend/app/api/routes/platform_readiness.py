@@ -401,9 +401,26 @@ def get_platform_readiness_status() -> dict[str, Any]:
     from app.services.proof_registry.service import get_proof_registry_status
     from app.services.model_evidence.service import get_model_evidence_status
     from app.services.strategy_evidence.service import get_strategy_evidence_status
+    from app.services.feature_store_service import get_feature_store_status
+    from app.services.persistence_service import get_persistence_status
+    from app.services.small_account_feasibility.service import readiness_summary as small_account_readiness_summary
     from app.core.effective_runtime import effective_bool
+    from app.core.effective_runtime import effective_str
 
     db = check_database_health()
+    provider = (effective_str("MARKET_DATA_PROVIDER") or os.environ.get("MARKET_DATA_PROVIDER") or "yfinance").lower()
+    feature_store = get_feature_store_status()
+    persistence = get_persistence_status()
+    qlib_status = get_qlib_automation_status()
+    proof_status = get_proof_registry_status().model_dump()
+    model_status = get_model_evidence_status().model_dump()
+    strategy_status = get_strategy_evidence_status().model_dump()
+    small_account_feasibility = small_account_readiness_summary()
+    data_pipeline_soft_warnings: list[str] = ["kafka_optional_not_active"]
+    if persistence.get("postgres_persistence_status") != "connected":
+        data_pipeline_soft_warnings.append("persistence_memory_fallback")
+    if provider == "yfinance":
+        data_pipeline_soft_warnings.append("yfinance_is_research_grade_provider")
     systems = {
         "database": db,
         "redis": {"configured": bool(os.environ.get("REDIS_URL"))},
@@ -413,10 +430,10 @@ def get_platform_readiness_status() -> dict[str, Any]:
         "audit_log": get_audit_log_status().model_dump(),
         "workflow_scheduler": scheduler_status().model_dump(),
         "governance": get_governance_status().model_dump(),
-        "qlib_integration": get_qlib_automation_status(),
-        "proof_registry": get_proof_registry_status().model_dump(),
-        "model_evidence": get_model_evidence_status().model_dump(),
-        "strategy_evidence": get_strategy_evidence_status().model_dump(),
+        "qlib_integration": qlib_status,
+        "proof_registry": proof_status,
+        "model_evidence": model_status,
+        "strategy_evidence": strategy_status,
         "execution_gates": {
             "workflow_enabled": effective_bool("WORKFLOW_ENABLED"),
             "execution_enabled": effective_bool("EXECUTION_ENABLED"),
@@ -433,7 +450,35 @@ def get_platform_readiness_status() -> dict[str, Any]:
             "mixed_endpoint_risk": "pass" if _workflow_runbook_uses_orchestrator_only() else "fail",
             "broker_submit_blocked": True,
             "llm_decisioning_blocked": True,
+            "supported_horizons": ["day_trading"],
+            "blocked_horizons": ["swing_trading", "swing", "multi_day", "overnight", "position_trade"],
         },
+        "data_pipeline": {
+            "provider_status": "configured" if provider else "unknown",
+            "provider_name": provider or "unknown",
+            "feature_store_status": feature_store.get("status", "unknown"),
+            "feature_row_count": feature_store.get("row_count", 0),
+            "persistence_status": persistence.get("postgres_persistence_status", "unknown"),
+            "freshness_status": "checked_per_run",
+            "kafka_status": "configured_optional_not_active",
+            "qlib_status": qlib_status.get("status", "unknown") if isinstance(qlib_status, dict) else "unknown",
+            "hard_blockers": [],
+            "soft_warnings": data_pipeline_soft_warnings,
+            "next_action": "Run /api/workflow-orchestrator/run in dry-run mode to verify provider freshness for selected symbols.",
+        },
+        "evidence_pipeline": {
+            "qlib_status": qlib_status.get("status", "unknown") if isinstance(qlib_status, dict) else "unknown",
+            "proof_registry_status": proof_status.get("status", "unknown"),
+            "model_evidence_status": model_status.get("status", "unknown"),
+            "strategy_evidence_status": strategy_status.get("status", "unknown"),
+            "latest_proof_status": proof_status.get("summary", {}).get("latest_proof_status", "unknown"),
+            "latest_model_status": model_status.get("summary", {}).get("latest_model_status", "unknown"),
+            "latest_strategy_status": strategy_status.get("summary", {}).get("latest_strategy_status", "unknown"),
+            "hard_blockers": [],
+            "soft_warnings": ["qlib_optional_not_required_for_workflow"] if not qlib_status.get("qlib_available") else [],
+            "next_action": "Use proof, model, and strategy evidence records to gate backtest validation and downstream selection.",
+        },
+        "small_account_feasibility": small_account_feasibility,
     }
 
     missing_backend_components = []

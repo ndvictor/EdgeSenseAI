@@ -13,6 +13,48 @@ from app.services.strategy_evidence.models import (
 _MEMORY: dict[str, StrategyEvidenceOut] = {}
 
 
+def evaluate_strategy_evidence(records: list[StrategyEvidenceOut], market_context: dict | None = None) -> dict:
+    _ = market_context or {}
+    blockers: list[str] = []
+    warnings: list[str] = []
+    candidates: list[StrategyEvidenceOut] = []
+    for record in records:
+        if (record.horizon or "").lower() != "day_trading":
+            warnings.append(f"strategy_not_applicable_to_autonomous_horizon:{record.strategy_key}")
+            continue
+        status = (record.status or "").lower()
+        warnings.extend(record.warnings or [])
+        if record.blockers or status == "blocked" or record.proof_status == "blocked":
+            blockers.extend(record.blockers or [f"strategy_blocked:{record.strategy_key}"])
+            continue
+        if status in {"ready", "degraded", "research_only", "recorded"}:
+            candidates.append(record)
+    ranked = sorted(
+        candidates,
+        key=lambda r: (
+            -(r.strategy_score if r.strategy_score is not None else 0.0),
+            -(r.regime_fit if r.regime_fit is not None else 0.0),
+            r.strategy_key,
+        ),
+    )
+    return {
+        "selected_strategy_key": ranked[0].strategy_key if ranked else None,
+        "ranked_strategies": [
+            {
+                "strategy_key": r.strategy_key,
+                "status": r.status,
+                "strategy_score": r.strategy_score,
+                "regime_fit": r.regime_fit,
+                "proof_status": r.proof_status,
+                "selected_model_keys": r.selected_model_keys,
+            }
+            for r in ranked
+        ],
+        "warnings": sorted(set(warnings)),
+        "blockers": sorted(set(blockers)),
+    }
+
+
 def _db_session():
     try:
         from app.db.init_db import init_db
@@ -48,7 +90,11 @@ def get_strategy_evidence_status() -> StrategyEvidenceStatusResponse:
             persistence_mode = "memory"
         finally:
             session.close()
-    return StrategyEvidenceStatusResponse(updated_at=iso_utc_now(), summary={"persistence_mode": persistence_mode, "records_count": count})
+    latest = get_latest_strategy_evidence()
+    return StrategyEvidenceStatusResponse(
+        updated_at=iso_utc_now(),
+        summary={"persistence_mode": persistence_mode, "records_count": count, "latest_strategy_status": latest.status if latest else "none"},
+    )
 
 
 def save_strategy_evidence(body: StrategyEvidenceCreate) -> StrategyEvidenceOut:

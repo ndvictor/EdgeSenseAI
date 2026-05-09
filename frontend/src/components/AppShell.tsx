@@ -17,8 +17,9 @@ export function AppShell({ children }: { children: React.ReactNode }) {
   const isPublicRoute = publicRoutes.has(pathname);
   const isOwnerPlatformRoute = pathname === "/owner" || pathname.startsWith("/owner/");
   const isOpsPlatformRoute = pathname === "/ops" || pathname.startsWith("/ops/");
+  const isDayTradingPlatformRoute = pathname === "/daytrading-workflow" || pathname.startsWith("/daytrading-workflow/");
 
-  if (isPublicRoute || isOwnerPlatformRoute || isOpsPlatformRoute) {
+  if (isPublicRoute || isOwnerPlatformRoute || isOpsPlatformRoute || isDayTradingPlatformRoute) {
     return <main className="min-h-screen bg-[#03070b]">{children}</main>;
   }
 

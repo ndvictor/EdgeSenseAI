@@ -48,7 +48,32 @@ def _probe_qlib() -> tuple[bool, str | None, list[str]]:
         version = getattr(qlib, "__version__", None)
         return True, str(version) if version else None, []
     except Exception as exc:
-        return False, None, [f"qlib_unavailable: {exc}"]
+        return False, None, ["qlib_not_installed_or_not_configured", f"qlib_unavailable: {exc}"]
+
+
+def _normalize_artifact_type(value: str | None) -> str:
+    raw = (value or "report").lower().strip()
+    mapping = {
+        "signal_scores": "signal",
+        "signals": "signal",
+        "score": "signal",
+        "model_artifact": "model",
+        "model_artifacts": "model",
+        "backtests": "backtest",
+    }
+    normalized = mapping.get(raw, raw)
+    return normalized if normalized in {"signal", "backtest", "model", "dataset", "report"} else "report"
+
+
+def _normalize_artifact_status(value: str | None, *, qlib_available: bool, blockers: list[str]) -> str:
+    raw = (value or "recorded").lower().strip()
+    mapping = {"completed": "ready", "registered": "ready", "ok": "ready"}
+    normalized = mapping.get(raw, raw)
+    if normalized == "unavailable":
+        return "unavailable"
+    if blockers and normalized not in {"simulated", "recorded"}:
+        return "failed" if qlib_available else "unavailable"
+    return normalized if normalized in {"ready", "unavailable", "failed", "recorded", "simulated"} else "recorded"
 
 
 def _qlib_runner_status() -> dict[str, Any]:
@@ -84,12 +109,29 @@ def _qlib_runner_status() -> dict[str, Any]:
 
 def get_qlib_status() -> QlibStatusResponse:
     runner = _qlib_runner_status()
+    artifacts = list(_MEMORY.values())
+    artifact_count = len(artifacts)
+    latest_signal_count = len([a for a in artifacts if _normalize_artifact_type(a.artifact_type) == "signal"])
+    latest_backtest_count = len([a for a in artifacts if _normalize_artifact_type(a.artifact_type) == "backtest"])
+    latest_model_count = len([a for a in artifacts if _normalize_artifact_type(a.artifact_type) == "model"])
+    blockers = list(dict.fromkeys(runner["blockers"]))
+    configured = bool(runner["qlib_available"] and runner["provider_uri"])
+    next_action = (
+        "Qlib is optional and workflow can continue unless selected strategy requires Qlib evidence."
+        if not runner["qlib_available"]
+        else "Review registered Qlib artifacts before using Qlib-backed evidence."
+    )
     return QlibStatusResponse(
         updated_at=iso_utc_now(),
         qlib_available=bool(runner["qlib_available"]),
         qlib_version=runner["qlib_version"],
+        configured=configured,
+        artifact_count=artifact_count,
+        latest_signal_count=latest_signal_count,
+        latest_backtest_count=latest_backtest_count,
+        latest_model_count=latest_model_count,
         summary={
-            "artifacts_cached": len(_MEMORY),
+            "artifacts_cached": artifact_count,
             "jobs_cached": len(_JOB_MEMORY),
             "execution_ready": runner["execution_ready"],
             "execution_enabled": runner["execution_enabled"],
@@ -97,8 +139,9 @@ def get_qlib_status() -> QlibStatusResponse:
             "default_config_path": runner["default_config_path"],
             "provider_uri_configured": bool(runner["provider_uri"]),
         },
-        blockers=list(runner["blockers"]),
-        warnings=[],
+        blockers=blockers,
+        warnings=[] if runner["qlib_available"] else ["qlib_optional_not_required_for_workflow"],
+        next_action=next_action,
     )
 
 
@@ -146,22 +189,26 @@ def _save_artifact_row(out: QlibArtifactOut) -> None:
 def record_artifact(body: QlibArtifactCreate) -> QlibArtifactOut:
     now = iso_utc_now()
     artifact_id = body.artifact_id or new_artifact_id("qa")
+    artifact_type = _normalize_artifact_type(body.artifact_type)
+    blockers = list(body.blockers or [])
+    artifact_status = _normalize_artifact_status(body.artifact_status, qlib_available=bool(body.qlib_available), blockers=blockers)
     out = QlibArtifactOut(
         artifact_id=artifact_id,
-        artifact_type=body.artifact_type,
+        artifact_type=artifact_type,
         model_key=body.model_key,
         strategy_key=body.strategy_key,
         symbol=body.symbol.upper() if isinstance(body.symbol, str) else None,
+        symbols=[str(s).upper() for s in (body.symbols or ([body.symbol] if body.symbol else [])) if s],
         asset_class=body.asset_class,
         horizon=body.horizon,
         qlib_available=bool(body.qlib_available),
         qlib_version=body.qlib_version,
-        artifact_status=body.artifact_status,
+        artifact_status=artifact_status,
         artifact_path=body.artifact_path,
         metrics=dict(body.metrics or {}),
         scores=dict(body.scores or {}),
         metadata=dict(body.metadata or {}),
-        blockers=list(body.blockers or []),
+        blockers=blockers,
         warnings=list(body.warnings or []),
         created_at=now,
         updated_at=now,
@@ -184,15 +231,16 @@ def list_artifacts(limit: int = 50) -> list[QlibArtifactOut]:
                 out.append(
                     QlibArtifactOut(
                         artifact_id=r.artifact_id,
-                        artifact_type=r.artifact_type,
+                        artifact_type=_normalize_artifact_type(r.artifact_type),
                         model_key=r.model_key,
                         strategy_key=r.strategy_key,
                         symbol=r.symbol,
+                        symbols=[r.symbol] if r.symbol else [],
                         asset_class=r.asset_class,
                         horizon=r.horizon,
                         qlib_available=bool(r.qlib_available),
                         qlib_version=r.qlib_version,
-                        artifact_status=r.artifact_status,
+                        artifact_status=_normalize_artifact_status(r.artifact_status, qlib_available=bool(r.qlib_available), blockers=list(r.blockers or [])),
                         artifact_path=r.artifact_path,
                         metrics=r.metrics or {},
                         scores=r.scores or {},
@@ -214,30 +262,43 @@ def list_artifacts(limit: int = 50) -> list[QlibArtifactOut]:
 
 
 def get_latest_signal_scores() -> QlibArtifactOut | None:
-    items = [a for a in list_artifacts(limit=50) if a.artifact_type == "signal_scores"]
+    items = [a for a in list_artifacts(limit=50) if _normalize_artifact_type(a.artifact_type) == "signal"]
     return items[0] if items else None
 
 
 def save_signal_scores(body: QlibSignalScoreCreate) -> QlibArtifactOut:
     available, version, blockers = _probe_qlib()
+    symbols = [str(s).upper() for s in (body.symbols or [body.symbol]) if s]
+    scores = dict(body.scores or {})
+    warnings: list[str] = []
+    artifact_status = "recorded"
+    artifact_blockers = list(blockers)
+    if not available:
+        warnings.append("qlib_unavailable_scores_are_placeholder")
+        artifact_status = "simulated" if symbols else "unavailable"
+        scores = scores or {symbol: {"score": 0.0, "source": "placeholder_not_trained"} for symbol in symbols}
+    elif not any(_normalize_artifact_type(a.artifact_type) == "model" and a.artifact_status in {"ready", "recorded"} for a in list_artifacts(limit=100)):
+        artifact_status = "unavailable"
+        artifact_blockers.append("no_qlib_model_artifact_registered")
     return record_artifact(
         QlibArtifactCreate(
             artifact_id=body.artifact_id or new_artifact_id("qs"),
-            artifact_type="signal_scores",
+            artifact_type="signal",
             model_key=body.model_key,
             strategy_key=body.strategy_key,
-            symbol=body.symbol,
+            symbol=symbols[0] if symbols else body.symbol,
+            symbols=symbols,
             asset_class=body.asset_class,
             horizon=body.horizon,
             qlib_available=bool(available),
             qlib_version=version,
-            artifact_status="recorded",
+            artifact_status=artifact_status,
             artifact_path=None,
             metrics=body.metrics,
-            scores=body.scores,
-            metadata={**(body.metadata or {}), "source": body.source},
-            blockers=blockers,
-            warnings=[],
+            scores=scores,
+            metadata={**(body.metadata or {}), "source": body.source, "trained_model_backed": bool(available and artifact_status == "recorded")},
+            blockers=artifact_blockers,
+            warnings=warnings,
         )
     )
 
@@ -297,7 +358,7 @@ def record_backtest_artifact(body: QlibBacktestRecordCreate) -> QlibArtifactOut:
     artifact = record_artifact(
         QlibArtifactCreate(
             artifact_id=body.artifact_id or new_artifact_id("qb"),
-            artifact_type="backtest",
+                artifact_type="backtest",
             model_key=body.model_key,
             strategy_key=body.strategy_key,
             symbol=body.symbol,
@@ -305,7 +366,7 @@ def record_backtest_artifact(body: QlibBacktestRecordCreate) -> QlibArtifactOut:
             horizon=body.horizon,
             qlib_available=bool(available),
             qlib_version=version,
-            artifact_status="recorded",
+            artifact_status="recorded" if available else "unavailable",
             artifact_path=body.artifact_path,
             metrics=body.metrics,
             scores={},
@@ -325,7 +386,7 @@ def register_model_artifact(body: QlibModelArtifactRegisterCreate) -> QlibArtifa
     return record_artifact(
         QlibArtifactCreate(
             artifact_id=body.artifact_id or new_artifact_id("qm"),
-            artifact_type="model_artifact",
+                artifact_type="model",
             model_key=body.model_key,
             strategy_key=None,
             symbol=None,
@@ -333,7 +394,7 @@ def register_model_artifact(body: QlibModelArtifactRegisterCreate) -> QlibArtifa
             horizon=body.horizon,
             qlib_available=bool(available),
             qlib_version=version,
-            artifact_status="registered",
+            artifact_status="ready" if available else "unavailable",
             artifact_path=body.artifact_path,
             metrics=body.metrics,
             scores={},
@@ -357,6 +418,11 @@ def get_qlib_automation_status() -> dict[str, Any]:
         "jobs_cached": len(_JOB_MEMORY),
         "blockers": st.blockers,
         "warnings": st.warnings,
+        "artifact_count": st.artifact_count,
+        "latest_signal_count": st.latest_signal_count,
+        "latest_backtest_count": st.latest_backtest_count,
+        "latest_model_count": st.latest_model_count,
+        "next_action": st.next_action,
     }
 
 
@@ -432,7 +498,7 @@ def _run_qrun_job(job_type: str, payload: dict[str, Any]) -> dict[str, Any]:
         artifact = record_artifact(
             QlibArtifactCreate(
                 artifact_id=payload.get("artifact_id") or new_artifact_id("qj"),
-                artifact_type="backtest" if job_type == "backtest" else "signal_scores",
+                artifact_type="backtest" if job_type == "backtest" else "signal",
                 model_key=payload.get("model_key"),
                 strategy_key=payload.get("strategy_key"),
                 symbol=payload.get("symbol"),

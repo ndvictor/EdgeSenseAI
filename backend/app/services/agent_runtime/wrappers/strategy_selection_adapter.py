@@ -9,11 +9,25 @@ from app.services.strategy_evidence.service import save_strategy_evidence
 
 def select_strategy(*, market_phase: str, active_loop: str, regime: str, horizon: str) -> dict[str, Any]:
     """Use existing strategy ranking service and persist a strategy evidence record."""
+    if (horizon or "").strip().lower() != "day_trading":
+        return {
+            "selected_strategy_key": None,
+            "strategy_ranking_run_id": None,
+            "strategy_debate_run_id": None,
+            "ranked_strategies": [],
+            "active_strategies": [],
+            "research_candidates": [],
+            "strategy_score": None,
+            "blockers": ["horizon_not_supported_for_autonomous_workflow"],
+            "warnings": [],
+            "supported_horizons": ["day_trading"],
+            "next_action": "Autonomous workflow is day-trading only.",
+        }
     req = StrategyRankingRequest(
         market_phase=market_phase,
         active_loop=active_loop,
         regime=regime,
-        horizon=horizon,
+        horizon="day_trade",
         account_equity=10000,
         buying_power=10000,
         strategy_keys=None,
@@ -21,8 +35,9 @@ def select_strategy(*, market_phase: str, active_loop: str, regime: str, horizon
         research_mode=False,
     )
     resp = run_strategy_ranking(req)
-    ranked = [r.model_dump() for r in resp.ranked_strategies]
-    top = resp.top_strategy_key
+    ranked = [r.model_dump() for r in resp.ranked_strategies if getattr(r, "horizon", "day_trading") in {"day_trading", "day_trade", None}]
+    day_strategy_keys = {str(r.get("strategy_key")) for r in ranked}
+    top = resp.top_strategy_key if resp.top_strategy_key in day_strategy_keys else None
 
     if top:
         top_item = next((r for r in resp.ranked_strategies if r.strategy_key == top), None)

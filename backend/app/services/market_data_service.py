@@ -39,15 +39,19 @@ class MarketDataService:
         }
 
     def _priority_for_source(self, source: str | None = None) -> list[str]:
-        if source and source.strip() and source.lower().strip() != "auto":
-            return [source.lower().strip()]
+        requested = source.lower().strip() if source and source.strip() else "auto"
+        if requested == "mock":
+            return ["mock"]
 
         primary = (effective_str("MARKET_DATA_PROVIDER") or "").lower().strip()
         tail = list(self.provider_priority)
         ordered: list[str] = []
         seen: set[str] = set()
 
-        if primary:
+        if requested not in {"auto", "runtime", "manual", "candidate"}:
+            ordered.append(requested)
+            seen.add(requested)
+        elif primary:
             ordered.append(primary)
             seen.add(primary)
 

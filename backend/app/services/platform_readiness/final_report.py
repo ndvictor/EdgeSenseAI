@@ -32,6 +32,7 @@ _EXPECTED_READY_AGENT_KEYS_PHASE_2_3: frozenset[str] = frozenset(
         "model_selection_agent",
         "backtest_validation_agent",
         "qlib_research_agent",
+        "small_account_feasibility_agent",
         "workflow_orchestrator_agent",
     }
 )
@@ -238,12 +239,30 @@ def build_final_readiness_status() -> dict[str, Any]:
         warnings.append(f"qlib_status_unexpected_error:{exc}")
 
     # Safety flags (policy + effective gates; no secrets).
-    from app.core.effective_runtime import effective_bool
+    from app.core.effective_runtime import effective_bool, effective_str
+    from app.services.feature_store_service import get_feature_store_status
+    from app.services.model_evidence.service import get_model_evidence_status
+    from app.services.persistence_service import get_persistence_status
+    from app.services.proof_registry.service import get_proof_registry_status
+    from app.services.small_account_feasibility.service import readiness_summary as small_account_readiness_summary
+    from app.services.strategy_evidence.service import get_strategy_evidence_status
 
     no_default_broker_submit = not effective_bool("BROKER_EXECUTION_ENABLED")
     no_default_live_trading = not effective_bool("LIVE_TRADING_ENABLED")
     human_approval_required = effective_bool("REQUIRE_HUMAN_APPROVAL")
     emergency_stop = effective_bool("EMERGENCY_STOP")
+    provider = (effective_str("MARKET_DATA_PROVIDER") or "yfinance").lower()
+    feature_store = get_feature_store_status()
+    persistence = get_persistence_status()
+    data_pipeline_soft_warnings: list[str] = ["kafka_optional_not_active"]
+    if persistence.get("postgres_persistence_status") != "connected":
+        data_pipeline_soft_warnings.append("persistence_memory_fallback")
+    if provider == "yfinance":
+        data_pipeline_soft_warnings.append("yfinance_is_research_grade_provider")
+    proof_status = get_proof_registry_status().model_dump()
+    model_status = get_model_evidence_status().model_dump()
+    strategy_status = get_strategy_evidence_status().model_dump()
+    small_account_feasibility = small_account_readiness_summary()
 
     platform_completion = {
         "agent_runtime_complete": not any(e["path"] == "/api/agent-runtime/status" and e["present"] != "ok" for e in endpoints),
@@ -272,6 +291,8 @@ def build_final_readiness_status() -> dict[str, Any]:
         "mixed_endpoint_risk": "pass" if _workflow_runbook_uses_orchestrator_only() else "fail",
         "broker_submit_blocked": True,
         "llm_decisioning_blocked": True,
+        "supported_horizons": ["day_trading"],
+        "blocked_horizons": ["swing_trading", "swing", "multi_day", "overnight", "position_trade"],
     }
 
     status: Status = "ok"
@@ -300,6 +321,32 @@ def build_final_readiness_status() -> dict[str, Any]:
             "emergency_stop": bool(emergency_stop),
         },
         "endpoint_boundaries": endpoint_boundaries,
+        "data_pipeline": {
+            "provider_status": "configured" if provider else "unknown",
+            "provider_name": provider or "unknown",
+            "feature_store_status": feature_store.get("status", "unknown"),
+            "feature_row_count": feature_store.get("row_count", 0),
+            "persistence_status": persistence.get("postgres_persistence_status", "unknown"),
+            "freshness_status": "checked_per_run",
+            "kafka_status": "configured_optional_not_active",
+            "qlib_status": "safe_optional" if qlib_safe else "unexpected_error",
+            "hard_blockers": [],
+            "soft_warnings": data_pipeline_soft_warnings,
+            "next_action": "Run a dry-run orchestrator preview to verify provider freshness for selected symbols.",
+        },
+        "evidence_pipeline": {
+            "qlib_status": "safe_optional" if qlib_safe else "unexpected_error",
+            "proof_registry_status": proof_status.get("status", "unknown"),
+            "model_evidence_status": model_status.get("status", "unknown"),
+            "strategy_evidence_status": strategy_status.get("status", "unknown"),
+            "latest_proof_status": proof_status.get("summary", {}).get("latest_proof_status", "unknown"),
+            "latest_model_status": model_status.get("summary", {}).get("latest_model_status", "unknown"),
+            "latest_strategy_status": strategy_status.get("summary", {}).get("latest_strategy_status", "unknown"),
+            "hard_blockers": [],
+            "soft_warnings": ["qlib_optional_not_required_for_workflow"] if qlib_safe else ["qlib_status_unexpected_error"],
+            "next_action": "Use normalized evidence records to gate backtest validation and model/strategy selection.",
+        },
+        "small_account_feasibility": small_account_feasibility,
         "storage": {
             "postgres_mode": pg_mode,
             "redis_mode": redis_mode,

@@ -15,6 +15,7 @@ _ORCHESTRATOR_PIPELINE_AGENT_KEYS: tuple[str, ...] = (
     "model_selection_agent",
     "backtest_validation_agent",
     "qlib_research_agent",
+    "small_account_feasibility_agent",
     "strategy_eligibility_agent",
     "trigger_monitor_agent",
     "execution_planner_agent",

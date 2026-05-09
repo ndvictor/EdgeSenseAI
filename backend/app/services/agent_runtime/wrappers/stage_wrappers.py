@@ -18,6 +18,7 @@ WRAPPED_AGENT_KEYS = frozenset(
         "model_selection_agent",
         "backtest_validation_agent",
         "qlib_research_agent",
+        "small_account_feasibility_agent",
         # Phase 2 stage wrappers
         "session_router_agent",
         "workflow_router_agent",
@@ -98,6 +99,11 @@ def _wrap_result(
         warnings = list(payload.get("warnings") or [])
         if payload.get("next_action"):
             next_action = str(payload.get("next_action"))
+    if isinstance(tool_response, dict):
+        blockers.extend(str(x) for x in (tool_response.get("blockers") or []) if x)
+        warnings.extend(str(x) for x in (tool_response.get("warnings") or []) if x)
+        if tool_response.get("next_action"):
+            next_action = str(tool_response.get("next_action"))
 
     # Merge safety warnings/blockers
     blockers = sorted(set(blockers + safety.blockers))
@@ -364,7 +370,10 @@ def run_wrapped_agent(*, agent_key: str, inputs: dict[str, Any], context: dict[s
 
         sym = _first_symbol(s)
         account_equity = _orchestrator_account_equity(s) if orchestrator_context else 10000.0
-        max_risk = float(s.get("max_risk_per_trade_percent") or (0.5 if orchestrator_context else 1.0))
+        if orchestrator_context and s.get("max_risk_dollars") is not None:
+            max_risk = round((float(s.get("max_risk_dollars") or 0.0) / account_equity) * 100.0, 4) if account_equity > 0 else 0.5
+        else:
+            max_risk = float(s.get("max_risk_per_trade_percent") or (0.5 if orchestrator_context else 1.0))
         max_position = 5.0 if orchestrator_context else 20.0
 
         default_req = {

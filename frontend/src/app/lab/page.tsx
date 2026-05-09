@@ -273,6 +273,10 @@ export default function LabPlatformPage() {
             Lab stages are product stages. The orchestrator uses a linear runtime agent sequence. Some components are manual tools or evidence
             registries, not autonomous agents.
           </p>
+          <p className="mt-2 max-w-4xl text-sm text-slate-300">
+            The Lab is for strategy testing, model testing, training, evidence review, and promotion candidates. Promotion into the autonomous
+            workflow is proof/evidence gated and does not enable live trading.
+          </p>
           <p className="mt-2 text-xs text-slate-500">
             Updated {data.updated_at} · Mode <span className="text-slate-400">{data.data_mode}</span>
           </p>

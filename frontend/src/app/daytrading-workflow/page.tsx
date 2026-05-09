@@ -1,0 +1,926 @@
+"use client";
+
+import Link from "next/link";
+import { usePathname } from "next/navigation";
+import { useCallback, useEffect, useMemo, useState } from "react";
+import {
+  api,
+  getAgentRuntimeLatest,
+  getApprovalQueueItems,
+  getLatestModelEvidenceRecord,
+  getLatestProofRegistryRecord,
+  getLatestStrategyEvidenceRecord,
+  getLatestWorkflowOrchestratorRun,
+  getPlatformReadinessStatus,
+  getQlibStatus,
+  listWorkflowOrchestratorRuns,
+  runWorkflowOrchestrator,
+  type ApprovalQueueItemRecord,
+  type OrchestratorRunRecord,
+  type OrchestratorRunRequest,
+} from "@/lib/api";
+
+type TabId = "home" | "command" | "workflow" | "watchlist" | "data" | "strategy" | "evidence" | "execution" | "debug";
+
+type FetchState<T> = {
+  data: T | null;
+  error: string | null;
+};
+
+type StageTimelineItem = {
+  stage?: number;
+  agent_key?: string;
+  status?: string;
+  at?: string;
+  run_id?: string;
+  pipeline_inputs_snapshot?: Record<string, unknown>;
+} & Record<string, unknown>;
+
+type ReadinessStatus = Record<string, unknown>;
+type QlibStatus = Record<string, unknown>;
+type EvidenceStatus = { status?: string; record?: Record<string, unknown> | null } & Record<string, unknown>;
+
+type DashboardData = {
+  latest: FetchState<{ status: string; run: OrchestratorRunRecord | null }>;
+  runs: FetchState<{ status: string; runs: OrchestratorRunRecord[] }>;
+  agentRuntime: FetchState<Record<string, unknown>>;
+  readiness: FetchState<ReadinessStatus>;
+  finalReadiness: FetchState<Record<string, unknown>>;
+  qlib: FetchState<QlibStatus>;
+  proof: FetchState<EvidenceStatus>;
+  model: FetchState<EvidenceStatus>;
+  strategy: FetchState<EvidenceStatus>;
+  approvals: FetchState<{ status: string; items: ApprovalQueueItemRecord[] }>;
+  watchlist: FetchState<Record<string, unknown>>;
+  paper: FetchState<Record<string, unknown>>;
+  accountRisk: FetchState<Record<string, unknown>>;
+};
+
+const PLATFORM_PAGES: Array<{ id: TabId; label: string; href: string; group: string; eyebrow: string }> = [
+  { id: "home", label: "Home", href: "/daytrading-workflow", group: "Command", eyebrow: "Status" },
+  { id: "command", label: "Command Center", href: "/daytrading-workflow/command-center", group: "Command", eyebrow: "Operate" },
+  { id: "workflow", label: "Workflow", href: "/daytrading-workflow/workflow", group: "Autonomous Pipeline", eyebrow: "Agents" },
+  { id: "watchlist", label: "Live Watchlist", href: "/daytrading-workflow/live-watchlist", group: "Autonomous Pipeline", eyebrow: "Market" },
+  { id: "data", label: "Data Pipeline", href: "/daytrading-workflow/data-pipeline", group: "Autonomous Pipeline", eyebrow: "Data" },
+  { id: "strategy", label: "Strategy & Models", href: "/daytrading-workflow/strategy-models", group: "Intelligence", eyebrow: "Selection" },
+  { id: "evidence", label: "Qlib & Evidence", href: "/daytrading-workflow/qlib-evidence", group: "Intelligence", eyebrow: "Proof" },
+  { id: "execution", label: "Execution & Approval", href: "/daytrading-workflow/execution-approval", group: "Risk & Approval", eyebrow: "Gates" },
+  { id: "debug", label: "Issues / Debug", href: "/daytrading-workflow/issues-debug", group: "Risk & Approval", eyebrow: "Diagnostics" },
+];
+
+function platformGroups() {
+  const grouped = new Map<string, typeof PLATFORM_PAGES>();
+  PLATFORM_PAGES.forEach((page) => grouped.set(page.group, [...(grouped.get(page.group) ?? []), page]));
+  return Array.from(grouped.entries());
+}
+
+function sectionFromPath(pathname: string): TabId {
+  if (pathname.endsWith("/command-center")) return "command";
+  if (pathname.endsWith("/workflow")) return "workflow";
+  if (pathname.endsWith("/live-watchlist")) return "watchlist";
+  if (pathname.endsWith("/data-pipeline")) return "data";
+  if (pathname.endsWith("/strategy-models")) return "strategy";
+  if (pathname.endsWith("/qlib-evidence")) return "evidence";
+  if (pathname.endsWith("/execution-approval")) return "execution";
+  if (pathname.endsWith("/issues-debug")) return "debug";
+  return "home";
+}
+
+const STAGES: Array<{ key: string; name: string; summary: string }> = [
+  { key: "data_readiness_agent", name: "DataReadinessAgent", summary: "Checks provider data, usable symbols, freshness, feature rows, and persistence." },
+  { key: "session_router_agent", name: "SessionRouterAgent", summary: "Confirms the US equities session context for day trading." },
+  { key: "market_condition_agent", name: "MarketConditionAgent", summary: "Scans regime, volatility, liquidity, and market context." },
+  { key: "workflow_router_agent", name: "WorkflowRouterAgent", summary: "Routes the paper-first workflow through the next safe stage." },
+  { key: "watchlist_builder_agent", name: "WatchlistBuilderAgent", summary: "Builds the usable watchlist and selects the candidate symbol." },
+  { key: "strategy_selection_agent", name: "StrategySelectionAgent", summary: "Ranks day-trading strategies and chooses the current strategy candidate." },
+  { key: "model_selection_agent", name: "ModelSelectionAgent", summary: "Selects available model evidence for the strategy and symbol." },
+  { key: "qlib_research_agent", name: "QlibResearchAgent", summary: "Checks optional Qlib research, signal, model, and backtest artifacts." },
+  { key: "backtest_validation_agent", name: "BacktestValidationAgent", summary: "Validates proof and backtest evidence without faking a proven status." },
+  { key: "small_account_feasibility_agent", name: "SmallAccountFeasibilityAgent", summary: "Applies $1,000 account constraints before eligibility and execution planning." },
+  { key: "strategy_eligibility_agent", name: "StrategyEligibilityAgent", summary: "Confirms the selected strategy can continue through paper-first gates." },
+  { key: "trigger_monitor_agent", name: "TriggerMonitorAgent", summary: "Checks whether the strategy trigger is active for the selected symbol." },
+  { key: "execution_planner_agent", name: "ExecutionPlannerAgent", summary: "Plans a non-submitting paper execution with small-account risk limits." },
+  { key: "execution_approval_agent", name: "ExecutionApprovalAgent", summary: "Creates or checks human approval. It does not submit broker orders." },
+  { key: "position_monitor_agent", name: "PositionMonitorAgent", summary: "Monitors paper positions and thesis state in preview." },
+  { key: "close_review_agent", name: "CloseReviewAgent", summary: "Reviews close or reduce conditions without broker submission." },
+  { key: "post_trade_evaluator_agent", name: "PostTradeEvaluatorAgent", summary: "Evaluates paper outcomes for evidence and learning." },
+  { key: "learning_loop_agent", name: "LearningLoopAgent", summary: "Feeds safe learning signals back into research and evidence." },
+];
+
+const EMPTY: DashboardData = {
+  latest: { data: null, error: null },
+  runs: { data: null, error: null },
+  agentRuntime: { data: null, error: null },
+  readiness: { data: null, error: null },
+  finalReadiness: { data: null, error: null },
+  qlib: { data: null, error: null },
+  proof: { data: null, error: null },
+  model: { data: null, error: null },
+  strategy: { data: null, error: null },
+  approvals: { data: null, error: null },
+  watchlist: { data: null, error: null },
+  paper: { data: null, error: null },
+  accountRisk: { data: null, error: null },
+};
+
+async function bestEffort<T>(fn: () => Promise<T>): Promise<FetchState<T>> {
+  try {
+    return { data: await fn(), error: null };
+  } catch (error) {
+    return { data: null, error: error instanceof Error ? error.message : String(error) };
+  }
+}
+
+function asRecord(value: unknown): Record<string, unknown> {
+  return value && typeof value === "object" && !Array.isArray(value) ? (value as Record<string, unknown>) : {};
+}
+
+function asList(value: unknown): unknown[] {
+  return Array.isArray(value) ? value : [];
+}
+
+function text(value: unknown, fallback = "-"): string {
+  if (value === null || value === undefined || value === "") return fallback;
+  if (typeof value === "boolean") return value ? "true" : "false";
+  if (Array.isArray(value)) return value.length ? value.map((x) => text(x)).join(", ") : fallback;
+  if (typeof value === "object") return JSON.stringify(value);
+  return String(value);
+}
+
+function num(value: unknown): number | null {
+  const n = Number(value);
+  return Number.isFinite(n) ? n : null;
+}
+
+function money(value: unknown): string {
+  const n = num(value);
+  return n === null ? "-" : `$${n.toFixed(2)}`;
+}
+
+function nested(source: unknown, path: string[]): unknown {
+  let current: unknown = source;
+  for (const key of path) {
+    current = asRecord(current)[key];
+  }
+  return current;
+}
+
+function timeline(run: OrchestratorRunRecord | null): StageTimelineItem[] {
+  return asList(run?.stage_timeline).map((row) => asRecord(row) as StageTimelineItem);
+}
+
+function stageByKey(run: OrchestratorRunRecord | null): Record<string, StageTimelineItem> {
+  return Object.fromEntries(timeline(run).map((row) => [String(row.agent_key || ""), row]));
+}
+
+function stageResult(row: StageTimelineItem | undefined): Record<string, unknown> {
+  return asRecord(row?.pipeline_inputs_snapshot);
+}
+
+function statusTone(value: unknown): string {
+  const s = text(value, "").toLowerCase();
+  if (["blocked", "failed", "fail", "not_ready"].includes(s)) return "border-red-400/40 bg-red-500/15 text-red-100";
+  if (["warn", "warning", "degraded", "partial", "waiting approval", "paused_for_approval"].includes(s)) return "border-amber-400/40 bg-amber-500/15 text-amber-100";
+  if (["running"].includes(s)) return "border-sky-400/40 bg-sky-500/15 text-sky-100";
+  if (["completed", "completed_preview", "pass", "ready", "ok", "safe"].includes(s)) return "border-emerald-400/40 bg-emerald-500/15 text-emerald-100";
+  return "border-slate-500/40 bg-slate-500/10 text-slate-300";
+}
+
+function stageVisualState({
+  row,
+  isCurrent,
+  isApprovalBoundary,
+  blockers,
+  warnings,
+}: {
+  row: StageTimelineItem | undefined;
+  isCurrent: boolean;
+  isApprovalBoundary: boolean;
+  blockers: unknown[];
+  warnings: unknown[];
+}) {
+  const status = text(row?.status, "").toLowerCase();
+  const hasRun = Boolean(row);
+  const blocked = status === "blocked" || status === "failed" || blockers.length > 0;
+  const warned = warnings.length > 0;
+
+  if (blocked) {
+    return {
+      label: "blocked",
+      card: "border-red-300/45 bg-red-500/12 shadow-[0_0_38px_rgba(248,113,113,0.18)]",
+      rail: "bg-red-300 shadow-[0_0_18px_rgba(252,165,165,0.9)]",
+      badge: "border-red-300/45 bg-red-500/20 text-red-100",
+    };
+  }
+  if (isCurrent) {
+    return {
+      label: "running",
+      card: "border-emerald-300/55 bg-emerald-400/12 shadow-[0_0_46px_rgba(16,185,129,0.26)] ring-1 ring-emerald-300/20",
+      rail: "animate-pulse bg-emerald-200 shadow-[0_0_22px_rgba(110,231,183,1)]",
+      badge: "border-emerald-300/45 bg-emerald-400/20 text-emerald-50",
+    };
+  }
+  if (isApprovalBoundary) {
+    return {
+      label: hasRun ? "approval gate" : "approval pending",
+      card: "border-amber-300/45 bg-amber-500/10 shadow-[0_0_36px_rgba(251,191,36,0.16)]",
+      rail: "bg-amber-300 shadow-[0_0_18px_rgba(252,211,77,0.85)]",
+      badge: "border-amber-300/45 bg-amber-500/20 text-amber-100",
+    };
+  }
+  if (warned) {
+    return {
+      label: "warning",
+      card: "border-amber-300/35 bg-amber-500/8 shadow-[0_0_28px_rgba(251,191,36,0.10)]",
+      rail: "bg-amber-300/90 shadow-[0_0_14px_rgba(252,211,77,0.65)]",
+      badge: "border-amber-300/40 bg-amber-500/16 text-amber-100",
+    };
+  }
+  if (hasRun) {
+    return {
+      label: "completed",
+      card: "border-emerald-300/35 bg-emerald-500/8 shadow-[0_0_30px_rgba(16,185,129,0.12)]",
+      rail: "bg-emerald-300 shadow-[0_0_16px_rgba(110,231,183,0.75)]",
+      badge: "border-emerald-300/40 bg-emerald-500/16 text-emerald-100",
+    };
+  }
+  return {
+    label: "pending",
+    card: "border-white/10 bg-white/[0.035]",
+    rail: "bg-slate-700",
+    badge: "border-slate-500/40 bg-slate-500/10 text-slate-300",
+  };
+}
+
+function Badge({ children, tone = "safe" }: { children: React.ReactNode; tone?: "safe" | "warn" | "blocked" | "running" | "paper" }) {
+  const cls =
+    tone === "blocked"
+      ? "border-red-400/40 bg-red-500/15 text-red-100"
+      : tone === "warn"
+        ? "border-amber-400/40 bg-amber-500/15 text-amber-100"
+        : tone === "running"
+          ? "border-emerald-300/45 bg-emerald-400/15 text-emerald-100"
+          : tone === "paper"
+            ? "border-emerald-300/35 bg-emerald-400/10 text-emerald-100"
+            : "border-emerald-400/40 bg-emerald-500/15 text-emerald-100";
+  return <span className={`inline-flex rounded-full border px-2.5 py-1 text-[10px] font-bold uppercase tracking-wide ${cls}`}>{children}</span>;
+}
+
+function Card({ title, subtitle, children, error }: { title: string; subtitle?: string; children: React.ReactNode; error?: string | null }) {
+  return (
+    <section className="rounded-3xl border border-emerald-400/15 bg-[#070c12]/70 p-4 shadow-[0_24px_80px_rgba(0,0,0,0.32)] backdrop-blur-xl">
+      <div className="mb-3 flex items-start justify-between gap-3">
+        <div>
+          <h3 className="text-sm font-semibold uppercase tracking-[0.18em] text-slate-400">{title}</h3>
+          {subtitle ? <p className="mt-1 text-xs leading-5 text-slate-500">{subtitle}</p> : null}
+        </div>
+        {error ? <Badge tone="warn">Unavailable</Badge> : null}
+      </div>
+      {error ? <p className="rounded-xl border border-amber-400/20 bg-amber-500/10 p-3 text-sm text-amber-100">{error}</p> : children}
+    </section>
+  );
+}
+
+function Metric({ label, value, tone }: { label: string; value: React.ReactNode; tone?: string }) {
+  return (
+    <div className="rounded-2xl border border-emerald-400/10 bg-black/25 px-3 py-2 shadow-[inset_0_1px_0_rgba(16,185,129,0.05)] backdrop-blur">
+      <div className="text-[10px] font-semibold uppercase tracking-[0.16em] text-slate-500">{label}</div>
+      <div className={`mt-1 break-words text-sm font-semibold ${tone || "text-slate-100"}`}>{value}</div>
+    </div>
+  );
+}
+
+function IssueList({ items, empty = "None" }: { items: unknown; empty?: string }) {
+  const rows = asList(items).map((item) => text(item)).filter(Boolean);
+  if (!rows.length) return <p className="text-sm text-slate-500">{empty}</p>;
+  return <ul className="space-y-1 text-sm text-slate-300">{rows.map((item) => <li key={item}>- {item}</li>)}</ul>;
+}
+
+function DebugPanel({ title, value }: { title: string; value: unknown }) {
+  return (
+    <details className="rounded-2xl border border-white/10 bg-black/25 p-3">
+      <summary className="cursor-pointer text-sm font-semibold text-slate-200">{title}</summary>
+      <pre className="mt-3 max-h-96 overflow-auto rounded-xl bg-black/40 p-3 text-xs leading-5 text-slate-300">{JSON.stringify(value, null, 2)}</pre>
+    </details>
+  );
+}
+
+function SecondaryLinks() {
+  const links = [
+    ["/workflow-runbook", "Runbook"],
+    ["/agent-runtime", "Agent Runtime"],
+    ["/approval-queue", "Approval Queue"],
+    ["/audit-log", "Audit Log"],
+    ["/workflow-governance", "Governance"],
+    ["/workflow-scheduler", "Scheduler"],
+    ["/platform-readiness", "Platform Readiness"],
+    ["/research-evidence", "Research Evidence"],
+  ];
+  return (
+    <div className="mt-6 flex flex-wrap gap-2 border-t border-white/10 pt-4">
+      {links.map(([href, label]) => (
+        <Link key={href} href={href} className="rounded-lg border border-white/10 px-3 py-1.5 text-xs text-slate-400 transition hover:border-emerald-400/30 hover:text-emerald-200">
+          {label}
+        </Link>
+      ))}
+    </div>
+  );
+}
+
+function RunWorkflowPanel({ onRun, busy }: { onRun: (symbols: string, stopStage: number) => Promise<void>; busy: boolean }) {
+  const [symbols, setSymbols] = useState("AMD");
+  const [stopStage, setStopStage] = useState(100);
+  return (
+    <Card title="Run Safe Paper Workflow" subtitle="Locked to stock, day_trading, paper_first, dry_run, human approval, and allow_submit=false.">
+      <div className="grid gap-3 lg:grid-cols-[1fr_180px_auto]">
+        <label className="text-xs font-semibold uppercase tracking-[0.14em] text-slate-500">
+          Symbols
+          <input
+            value={symbols}
+            onChange={(event) => setSymbols(event.target.value.toUpperCase())}
+            className="mt-2 w-full rounded-xl border border-white/10 bg-black/30 px-3 py-2 text-sm normal-case tracking-normal text-slate-100 outline-none focus:border-emerald-400/50"
+            placeholder="AMD, NVDA"
+          />
+        </label>
+        <label className="text-xs font-semibold uppercase tracking-[0.14em] text-slate-500">
+          Stop stage
+          <select
+            value={stopStage}
+            onChange={(event) => setStopStage(Number(event.target.value))}
+            className="mt-2 w-full rounded-xl border border-white/10 bg-black/30 px-3 py-2 text-sm normal-case tracking-normal text-slate-100 outline-none focus:border-emerald-400/50"
+          >
+            {[5, 10, 14, 18, 100].map((value) => (
+              <option key={value} value={value}>
+                {value === 100 ? "Full preview" : `Stage ${value}`}
+              </option>
+            ))}
+          </select>
+        </label>
+        <button
+          type="button"
+          disabled={busy}
+          onClick={() => onRun(symbols, stopStage)}
+          className="self-end rounded-xl border border-emerald-400/50 bg-emerald-500/20 px-4 py-2 text-sm font-bold text-emerald-100 transition hover:bg-emerald-500/30 disabled:opacity-50"
+        >
+          {busy ? "Running..." : "Run Safe Paper Workflow"}
+        </button>
+      </div>
+      <div className="mt-3 grid gap-2 text-xs text-slate-400 md:grid-cols-3">
+        <div className="rounded-lg border border-white/10 bg-black/20 p-2">horizon: day_trading</div>
+        <div className="rounded-lg border border-white/10 bg-black/20 p-2">mode: paper_first</div>
+        <div className="rounded-lg border border-white/10 bg-black/20 p-2">allow_submit: false</div>
+      </div>
+    </Card>
+  );
+}
+
+export default function DayTradingWorkflowPage() {
+  const pathname = usePathname();
+  const activeTab = sectionFromPath(pathname);
+  const [data, setData] = useState<DashboardData>(EMPTY);
+  const [loading, setLoading] = useState(true);
+  const [runBusy, setRunBusy] = useState(false);
+  const [runMessage, setRunMessage] = useState<string | null>(null);
+
+  const refresh = useCallback(async () => {
+    setLoading(true);
+    const [latest, runs, agentRuntime, readiness, finalReadiness, qlib, proof, model, strategy, approvals, watchlist, paper, accountRisk] = await Promise.all([
+      bestEffort(() => getLatestWorkflowOrchestratorRun()),
+      bestEffort(() => listWorkflowOrchestratorRuns(20)),
+      bestEffort(() => getAgentRuntimeLatest()),
+      bestEffort(() => getPlatformReadinessStatus() as Promise<ReadinessStatus>),
+      bestEffort(() => api.getFinalReadiness() as Promise<Record<string, unknown>>),
+      bestEffort(() => getQlibStatus()),
+      bestEffort(() => getLatestProofRegistryRecord() as Promise<EvidenceStatus>),
+      bestEffort(() => getLatestModelEvidenceRecord() as Promise<EvidenceStatus>),
+      bestEffort(() => getLatestStrategyEvidenceRecord() as Promise<EvidenceStatus>),
+      bestEffort(() => getApprovalQueueItems(50)),
+      bestEffort(() => api.getLiveWatchlist() as Promise<Record<string, unknown>>),
+      bestEffort(() => api.getAlpacaPaperSnapshot() as Promise<Record<string, unknown>>),
+      bestEffort(() => api.getAccountRisk() as Promise<Record<string, unknown>>),
+    ]);
+    setData({ latest, runs, agentRuntime, readiness, finalReadiness, qlib, proof, model, strategy, approvals, watchlist, paper, accountRisk });
+    setLoading(false);
+  }, []);
+
+  useEffect(() => {
+    void refresh();
+  }, [refresh]);
+
+  const run = data.latest.data?.run ?? null;
+  const stageMap = useMemo(() => stageByKey(run), [run]);
+  const latestSnapshot = timeline(run).at(-1)?.pipeline_inputs_snapshot ?? {};
+  const readinessSystems = asRecord(data.readiness.data?.systems);
+  const executionGates = asRecord(readinessSystems.execution_gates);
+  const dataPipeline = asRecord(readinessSystems.data_pipeline);
+  const evidencePipeline = asRecord(readinessSystems.evidence_pipeline);
+  const smallAccountReadiness = asRecord(readinessSystems.small_account_feasibility ?? data.finalReadiness.data?.small_account_feasibility);
+  const proofRecord = asRecord(data.proof.data?.record);
+  const modelRecord = asRecord(data.model.data?.record);
+  const strategyRecord = asRecord(data.strategy.data?.record);
+  const approvalItems = data.approvals.data?.items ?? [];
+  const openPositions = asList(data.paper.data?.positions);
+  const paperAccount = asRecord(data.paper.data?.account);
+  const accountRisk = asRecord(data.accountRisk.data);
+  const watchlistSymbols = asList(data.watchlist.data?.symbols ?? data.watchlist.data?.watchlist ?? data.watchlist.data?.items);
+
+  const runWorkflow = useCallback(
+    async (symbolsText: string, stopStage: number) => {
+      const parsedSymbols = symbolsText.split(",").map((symbol) => symbol.trim().toUpperCase()).filter(Boolean);
+      if (!parsedSymbols.length) {
+        setRunMessage("Enter at least one symbol.");
+        return;
+      }
+      setRunBusy(true);
+      setRunMessage(null);
+      const payload: OrchestratorRunRequest = {
+        workflow_name: "US Stock Day-Trading Paper Workflow v1",
+        asset_class: "stock",
+        horizon: "day_trading",
+        mode: "paper_first",
+        source: "runtime",
+        symbols: parsedSymbols,
+        max_candidates: 5,
+        stop_at_stage: stopStage,
+        dry_run: true,
+        require_human_approval: true,
+        allow_submit: false,
+        simulated_position: false,
+        simulated_closed_trade: false,
+        metadata: { account_equity: 1000, dashboard_run: true },
+      };
+      try {
+        const response = await runWorkflowOrchestrator(payload);
+        setRunMessage(`Latest run status: ${response.run.status}`);
+        await refresh();
+      } catch (error) {
+        setRunMessage(error instanceof Error ? error.message : String(error));
+      } finally {
+        setRunBusy(false);
+      }
+    },
+    [refresh],
+  );
+
+  const status = run?.status ?? "idle";
+  const blocked = status === "blocked" || (run?.blockers?.length ?? 0) > 0;
+  const waitingApproval = Boolean(run?.approval_required || run?.approval_id);
+  const warning = !blocked && ((run?.warnings?.length ?? 0) > 0 || status === "paused_for_approval");
+
+  return (
+    <div className="flex min-h-screen bg-[#03070b] text-slate-100">
+      <aside className="flex min-h-screen w-80 shrink-0 flex-col border-r border-emerald-400/10 bg-[#05080d]/90 px-4 py-5 shadow-[22px_0_80px_rgba(0,0,0,0.45)] backdrop-blur-2xl">
+        <Link href="/daytrading-workflow" className="mb-7 flex items-center gap-3 px-1">
+          <div className="relative flex h-12 w-12 items-center justify-center rounded-2xl border border-emerald-300/50 bg-emerald-300/10 text-xl font-black text-emerald-200 shadow-[0_0_34px_rgba(16,185,129,0.28)]">
+            E
+            <span className="absolute -right-1 -top-1 h-3 w-3 rounded-full border border-[#02060a] bg-emerald-300" />
+          </div>
+          <div>
+            <div className="text-xl font-semibold tracking-tight text-emerald-200">Day-Trading OS</div>
+            <div className="text-[11px] uppercase tracking-[0.24em] text-slate-500">Hedge fund command</div>
+          </div>
+        </Link>
+
+        <nav className="space-y-5 overflow-y-auto pr-1">
+          {platformGroups().map(([group, pages]) => (
+            <div key={group}>
+              <div className="mb-2 px-2 text-[10px] font-semibold uppercase tracking-[0.28em] text-slate-500">{group}</div>
+              <div className="space-y-1.5">
+                {pages.map((page) => {
+                  const active = activeTab === page.id;
+                  return (
+                    <Link
+                      key={page.href}
+                      href={page.href}
+                      className={`group flex items-center gap-3 rounded-2xl px-3 py-2.5 text-sm font-medium transition-all ${
+                        active
+                          ? "border border-emerald-400/40 bg-emerald-400/10 text-white shadow-[0_0_30px_rgba(16,185,129,0.16)]"
+                          : "border border-transparent text-slate-300 hover:border-emerald-400/15 hover:bg-emerald-400/[0.04] hover:text-emerald-100"
+                      }`}
+                    >
+                      <span className={`h-2.5 w-2.5 rounded-full ${active ? "bg-emerald-300 shadow-[0_0_16px_rgba(110,231,183,0.8)]" : "bg-slate-700 group-hover:bg-emerald-400/60"}`} />
+                      <span className="flex-1">{page.label}</span>
+                      <span className="text-[9px] font-bold uppercase tracking-wider text-slate-600">{page.eyebrow}</span>
+                    </Link>
+                  );
+                })}
+              </div>
+            </div>
+          ))}
+        </nav>
+
+        <div className="mt-auto rounded-3xl border border-emerald-300/15 bg-black/25 p-4">
+          <div className="mb-2 flex flex-wrap gap-2">
+            <Badge tone={blocked ? "blocked" : warning ? "warn" : "safe"}>{blocked ? "Blocked" : warning ? "Warning" : "Safe"}</Badge>
+            <Badge tone="paper">Paper Only</Badge>
+          </div>
+          <div className="text-xs leading-5 text-slate-400">US stocks, day trading, paper-first, human approval. Broker submission remains blocked.</div>
+        </div>
+      </aside>
+
+      <main className="relative min-h-screen flex-1 overflow-hidden bg-emerald-950">
+        <div className="pointer-events-none absolute inset-0 bg-[radial-gradient(circle_at_28%_0%,rgba(16,185,129,0.18),transparent_30%),radial-gradient(circle_at_100%_20%,rgba(20,184,166,0.10),transparent_28%),radial-gradient(circle_at_0%_100%,rgba(16,185,129,0.08),transparent_30%)]" />
+        <div className="pointer-events-none absolute inset-0 opacity-25 [background-image:linear-gradient(rgba(16,185,129,0.07)_1px,transparent_1px),linear-gradient(90deg,rgba(16,185,129,0.06)_1px,transparent_1px)] [background-size:56px_56px]" />
+        <div className="relative z-10 space-y-5 p-6">
+      {runMessage ? <div className="rounded-2xl border border-emerald-400/20 bg-emerald-500/10 p-3 text-sm text-emerald-100">{runMessage}</div> : null}
+
+      {activeTab === "home" ? (
+        <div className="space-y-4">
+          <div className="flex flex-col gap-3 rounded-[2rem] border border-emerald-400/15 bg-[#05080d]/70 p-5 shadow-[0_28px_110px_rgba(0,0,0,0.42)] backdrop-blur-2xl lg:flex-row lg:items-end lg:justify-between">
+            <div>
+              <div className="mb-2 flex flex-wrap gap-2">
+                <Badge tone="safe">Portfolio Home</Badge>
+                <Badge tone="paper">Paper Account</Badge>
+              </div>
+              <h1 className="text-3xl font-black tracking-tight text-white">Account Home</h1>
+              <p className="mt-2 max-w-3xl text-sm leading-6 text-slate-400">
+                Portfolio value, buying power, account risk, and open paper positions for the autonomous day-trading workspace.
+              </p>
+            </div>
+            <button
+              type="button"
+              onClick={() => refresh()}
+              disabled={loading}
+              className="rounded-xl border border-emerald-400/20 bg-emerald-400/[0.06] px-4 py-2 text-sm font-semibold text-emerald-100 hover:border-emerald-400/35 disabled:opacity-50"
+            >
+              {loading ? "Refreshing..." : "Refresh"}
+            </button>
+          </div>
+          <div className="grid gap-4 xl:grid-cols-[1fr_0.95fr]">
+            <Card title="Portfolio & Buying Power" subtitle="Combined paper account snapshot and account risk profile." error={data.paper.error || data.accountRisk.error}>
+              <div className="grid gap-2 md:grid-cols-2 xl:grid-cols-3">
+                <Metric label="Portfolio value" value={money(paperAccount.portfolio_value ?? paperAccount.equity ?? accountRisk.account_equity)} />
+                <Metric label="Buying power" value={money(paperAccount.buying_power ?? accountRisk.buying_power)} />
+                <Metric label="Cash" value={money(paperAccount.cash ?? accountRisk.cash)} />
+                <Metric label="Account equity" value={money(accountRisk.account_equity ?? paperAccount.equity)} />
+                <Metric label="Paper account status" value={text(paperAccount.status ?? data.paper.data?.status)} />
+                <Metric label="Day trades used" value={text(paperAccount.daytrade_count)} />
+              </div>
+            </Card>
+            <Card title="Account Risk" subtitle="Risk guardrails used by the autonomous paper-first workflow." error={data.accountRisk.error}>
+              <div className="grid gap-2 md:grid-cols-2">
+                <Metric label="Max risk / trade" value={`${text(accountRisk.max_risk_per_trade_percent)}%`} />
+                <Metric label="Max daily loss" value={`${text(accountRisk.max_daily_loss_percent)}%`} />
+                <Metric label="Max position size" value={`${text(accountRisk.max_position_size_percent)}%`} />
+                <Metric label="Min reward:risk" value={text(accountRisk.min_reward_risk_ratio)} />
+                <Metric label="Risk style" value={text(accountRisk.preferred_risk_style)} />
+                <Metric label="Paper only" value={text(accountRisk.paper_only ?? true)} />
+              </div>
+            </Card>
+          </div>
+          <Card title="Open Positions" subtitle="Paper/open positions if the paper account endpoint reports any." error={data.paper.error}>
+            {openPositions.length ? (
+              <div className="grid gap-3 xl:grid-cols-2">
+                {openPositions.map((position, index) => {
+                  const row = asRecord(position);
+                  return (
+                    <div key={`${text(row.symbol, "position")}-${index}`} className="rounded-2xl border border-emerald-400/10 bg-black/25 p-4">
+                      <div className="mb-3 flex items-center justify-between gap-3">
+                        <div className="text-lg font-bold text-slate-50">{text(row.symbol)}</div>
+                        <Badge tone="paper">{text(row.side ?? "paper")}</Badge>
+                      </div>
+                      <div className="grid gap-2 md:grid-cols-3">
+                        <Metric label="Qty" value={text(row.qty)} />
+                        <Metric label="Market value" value={money(row.market_value)} />
+                        <Metric label="Current price" value={money(row.current_price)} />
+                        <Metric label="Avg entry" value={money(row.avg_entry_price)} />
+                        <Metric label="Unrealized P/L" value={money(row.unrealized_pl)} />
+                        <Metric label="P/L %" value={row.unrealized_plpc != null ? `${(Number(row.unrealized_plpc) * 100).toFixed(2)}%` : "-"} />
+                      </div>
+                    </div>
+                  );
+                })}
+              </div>
+            ) : (
+              <p className="text-sm text-slate-500">No open paper positions reported.</p>
+            )}
+          </Card>
+        </div>
+      ) : null}
+
+      {activeTab === "command" ? (
+        <div className="space-y-4">
+          <header className="rounded-[2rem] border border-emerald-400/15 bg-[#05080d]/70 p-5 shadow-[0_28px_110px_rgba(0,0,0,0.42)] backdrop-blur-2xl">
+            <div className="flex flex-col gap-4 xl:flex-row xl:items-start xl:justify-between">
+              <div>
+                <div className="mb-2 flex flex-wrap gap-2">
+                  <Badge tone={blocked ? "blocked" : warning ? "warn" : "safe"}>{blocked ? "Blocked" : warning ? "Warning" : "Safe"}</Badge>
+                  {status === "running" ? <Badge tone="running">Running</Badge> : null}
+                  {waitingApproval ? <Badge tone="warn">Waiting Approval</Badge> : null}
+                  <Badge tone="paper">Paper Only</Badge>
+                </div>
+                <h1 className="text-3xl font-black tracking-tight text-white">Autonomous Day-Trading Command Center</h1>
+                <p className="mt-2 max-w-4xl text-sm leading-6 text-slate-400">
+                  A human-readable dashboard for the paper-first autonomous workflow. It explains what the agents are doing, what data and evidence
+                  they used, and which gates are blocking or warning before any execution boundary.
+                </p>
+              </div>
+              <button
+                type="button"
+                onClick={() => refresh()}
+                disabled={loading}
+                className="rounded-xl border border-white/10 bg-white/[0.04] px-4 py-2 text-sm font-semibold text-slate-200 hover:border-emerald-400/30 disabled:opacity-50"
+              >
+                {loading ? "Refreshing..." : "Refresh"}
+              </button>
+            </div>
+            <div className="mt-5 grid gap-2 md:grid-cols-3 xl:grid-cols-6">
+              <Metric label="Workflow status" value={status} tone={blocked ? "text-red-100" : "text-emerald-100"} />
+              <Metric label="Last run time" value={text(run?.updated_at ?? run?.created_at)} />
+              <Metric label="Current agent" value={text(run?.current_agent_key)} />
+              <Metric label="Current stage" value={text(run?.current_stage)} />
+              <Metric label="Selected symbol" value={text(run?.selected_symbol ?? run?.symbol ?? latestSnapshot.selected_symbol ?? latestSnapshot.symbol)} />
+              <Metric label="Selected strategy" value={text(run?.selected_strategy_key ?? run?.strategy_key)} />
+              <Metric label="Selected model" value={text(run?.selected_model_key)} />
+              <Metric label="Proof status" value={text(run?.proof_status)} />
+              <Metric label="Small-account decision" value={text(run?.small_account_decision)} />
+              <Metric label="Approval required" value={text(run?.approval_required ?? false)} />
+              <Metric label="Execution boundary" value={text(run?.execution_boundary_reached ?? false)} />
+              <Metric label="submitted / broker / llm" value={`${text(run?.submitted_order ?? false)} / ${text(run?.broker_called ?? false)} / ${text(run?.llm_used ?? false)}`} />
+            </div>
+          </header>
+          <RunWorkflowPanel onRun={runWorkflow} busy={runBusy} />
+          <div className="grid gap-4 xl:grid-cols-2">
+            <Card title="Workflow Health" error={data.latest.error}>
+              <div className="grid gap-2 md:grid-cols-2">
+                <Metric label="status" value={status} />
+                <Metric label="current stage" value={text(run?.current_stage)} />
+                <Metric label="current agent" value={text(run?.current_agent_key)} />
+                <Metric label="last run" value={text(run?.updated_at ?? run?.created_at)} />
+                <Metric label="next action" value={text(run?.next_action)} />
+                <Metric label="blockers / warnings" value={`${run?.blockers?.length ?? 0} / ${run?.warnings?.length ?? 0}`} />
+              </div>
+            </Card>
+            <Card title="Safety Boundary">
+              <div className="grid gap-2 md:grid-cols-2">
+                <Metric label="paper_first" value="true" tone="text-emerald-100" />
+                <Metric label="day_trading_only" value="true" tone="text-emerald-100" />
+                <Metric label="human_approval_required" value={text(run?.approval_required ?? executionGates.require_human_approval ?? true)} />
+                <Metric label="submitted_order" value={text(run?.submitted_order ?? false)} tone={run?.submitted_order ? "text-red-100" : "text-emerald-100"} />
+                <Metric label="broker_called" value={text(run?.broker_called ?? false)} tone={run?.broker_called ? "text-red-100" : "text-emerald-100"} />
+                <Metric label="llm_used" value={text(run?.llm_used ?? false)} tone={run?.llm_used ? "text-red-100" : "text-emerald-100"} />
+                <Metric label="live_trading_blocked" value={String(!executionGates.live_trading_enabled)} />
+                <Metric label="broker_execution_blocked" value={String(!executionGates.broker_execution_enabled)} />
+              </div>
+            </Card>
+            <Card title="Data Status" error={data.readiness.error}>
+              <div className="grid gap-2 md:grid-cols-2">
+                <Metric label="source_mode" value={text(run?.source_mode)} />
+                <Metric label="using_mock_data" value={text(run?.using_mock_data ?? false)} />
+                <Metric label="provider_status" value={text(run?.provider_status ?? dataPipeline.provider_status)} />
+                <Metric label="provider_name" value={text(run?.provider_name ?? dataPipeline.provider_name)} />
+                <Metric label="usable_symbols" value={text(run?.usable_symbols)} />
+                <Metric label="rejected_symbols" value={text(run?.rejected_symbols)} />
+                <Metric label="snapshots / features" value={`${text(run?.latest_snapshot_count ?? 0)} / ${text(run?.feature_row_count ?? 0)}`} />
+                <Metric label="persistence / freshness / kafka" value={`${text(run?.persistence_status)} / ${text(run?.freshness_status)} / ${text(run?.kafka_status ?? "configured_optional_not_active")}`} />
+              </div>
+            </Card>
+            <Card title="Evidence Status">
+              <div className="grid gap-2 md:grid-cols-2">
+                <Metric label="qlib_available" value={text(run?.qlib_available ?? data.qlib.data?.qlib_available)} />
+                <Metric label="qlib_artifact_count" value={text(data.qlib.data?.artifact_count ?? nested(run, ["qlib_artifact_counts", "total"]))} />
+                <Metric label="proof_status" value={text(run?.proof_status ?? proofRecord.proof_status)} />
+                <Metric label="selected_model_key" value={text(run?.selected_model_key)} />
+                <Metric label="selected_strategy_key" value={text(run?.selected_strategy_key ?? run?.strategy_key)} />
+                <Metric label="evidence warnings/blockers" value={`${asList(run?.evidence_warnings).length} / ${asList(run?.evidence_blockers).length}`} />
+              </div>
+            </Card>
+            <Card title="Small Account Gate" error={smallAccountReadiness.enabled === undefined && !run ? "No small-account run data yet." : null}>
+              <div className="grid gap-2 md:grid-cols-2">
+                <Metric label="account_equity" value={money(run?.account_equity ?? smallAccountReadiness.account_equity_default ?? 1000)} />
+                <Metric label="max_risk_dollars" value={money(run?.max_risk_dollars)} />
+                <Metric label="max_daily_loss_dollars" value={money(run?.max_daily_loss_dollars)} />
+                <Metric label="decision" value={text(run?.small_account_decision ?? smallAccountReadiness.status)} />
+                <Metric label="feasible_symbols" value={text(run?.feasible_symbols)} />
+                <Metric label="rejected_symbols" value={text(run?.small_account_rejected_symbols)} />
+              </div>
+              <div className="mt-3 grid gap-3 md:grid-cols-2">
+                <div><div className="mb-1 text-xs font-semibold text-red-100">Blockers</div><IssueList items={run?.small_account_blockers} /></div>
+                <div><div className="mb-1 text-xs font-semibold text-amber-100">Warnings</div><IssueList items={run?.small_account_warnings} /></div>
+              </div>
+            </Card>
+            <Card title="Approval / Execution" subtitle="Approval unlocks a gated workflow step. It does not submit a broker order." error={data.approvals.error}>
+              <div className="grid gap-2 md:grid-cols-2">
+                <Metric label="approval_required" value={text(run?.approval_required ?? false)} />
+                <Metric label="approval_id" value={text(run?.approval_id)} />
+                <Metric label="execution_boundary_reached" value={text(run?.execution_boundary_reached ?? false)} />
+                <Metric label="approval_items" value={approvalItems.length} />
+                <Metric label="open paper positions" value={openPositions.length} />
+                <Metric label="monitoring status" value={text(data.paper.data?.status ?? "not_available")} />
+              </div>
+            </Card>
+          </div>
+        </div>
+      ) : null}
+
+      {activeTab === "workflow" ? (
+        <Card title="Autonomous Agent Pipeline" subtitle="Process flow from data readiness through learning loop. Cards are driven by the latest orchestrator stage timeline.">
+          <div className="grid gap-3 xl:grid-cols-3">
+            {STAGES.map((stage, index) => {
+              const row = stageMap[stage.key];
+              const snapshot = stageResult(row);
+              const isCurrent = run?.current_agent_key === stage.key;
+              const blockers = asList(snapshot.small_account_blockers ?? snapshot.evidence_blockers ?? run?.blockers).slice(0, 3);
+              const warnings = asList(snapshot.small_account_warnings ?? snapshot.evidence_warnings ?? run?.warnings).slice(0, 3);
+              const visual = stageVisualState({
+                row,
+                isCurrent,
+                isApprovalBoundary: stage.key === "execution_approval_agent",
+                blockers,
+                warnings,
+              });
+              return (
+                <div key={stage.key} className={`relative overflow-hidden rounded-2xl border p-4 transition-all duration-500 ${visual.card}`}>
+                  <div className={`absolute inset-x-0 top-0 h-1 ${visual.rail}`} />
+                  <div className="pointer-events-none absolute -right-10 -top-10 h-24 w-24 rounded-full bg-white/5 blur-2xl" />
+                  <div className="mb-2 flex items-center justify-between gap-2">
+                    <div className="text-[10px] font-bold uppercase tracking-[0.16em] text-slate-500">Stage {index + 1}</div>
+                    <span className={`rounded-full border px-2 py-0.5 text-[10px] font-bold uppercase ${visual.badge}`}>{visual.label}</span>
+                  </div>
+                  <div className="text-base font-semibold text-slate-50">{stage.name}</div>
+                  <p className="mt-2 min-h-12 text-xs leading-5 text-slate-400">{stage.summary}</p>
+                  <div className="mt-3 text-xs text-slate-300">
+                    <div><span className="text-slate-500">Decision:</span> {text(snapshot.small_account_decision ?? snapshot.proof_status ?? snapshot.selected_strategy_key ?? snapshot.selected_model_key ?? row?.status)}</div>
+                    <div><span className="text-slate-500">Key output:</span> {text(snapshot.selected_symbol ?? snapshot.feasible_symbols ?? snapshot.strategy_key ?? snapshot.qlib_artifact_id ?? snapshot.latest_snapshot_count)}</div>
+                  </div>
+                  {blockers.length ? <div className="mt-3 text-xs text-red-100"><IssueList items={blockers} /></div> : null}
+                  {warnings.length ? <div className="mt-3 text-xs text-amber-100"><IssueList items={warnings} /></div> : null}
+                  {stage.key === "execution_approval_agent" ? <div className="mt-3 rounded-lg border border-amber-400/20 bg-amber-500/10 p-2 text-xs text-amber-100">Approval boundary. No broker submission.</div> : null}
+                </div>
+              );
+            })}
+          </div>
+          <SecondaryLinks />
+        </Card>
+      ) : null}
+
+      {activeTab === "watchlist" ? (
+        <div className="grid gap-4 xl:grid-cols-2">
+          <Card title="Market Status" error={data.watchlist.error}>
+            <div className="grid gap-2 md:grid-cols-2">
+              <Metric label="regime" value={text(latestSnapshot.regime ?? nested(latestSnapshot, ["market_context", "regime"]))} />
+              <Metric label="market condition" value={text(nested(latestSnapshot, ["market_context", "liquidity_state"]))} />
+              <Metric label="volatility" value={text(nested(latestSnapshot, ["market_context", "volatility_state"]))} />
+              <Metric label="watchlist endpoint" value={data.watchlist.error ? "unavailable" : "available"} />
+            </div>
+          </Card>
+          <Card title="Watchlist">
+            <Metric label="current watchlist symbols" value={text(watchlistSymbols.length ? watchlistSymbols : run?.symbols ?? run?.usable_symbols)} />
+            <div className="mt-3 grid gap-3 md:grid-cols-2">
+              <div><div className="mb-1 text-xs font-semibold text-emerald-100">Usable symbols</div><IssueList items={run?.usable_symbols} empty="None yet" /></div>
+              <div><div className="mb-1 text-xs font-semibold text-red-100">Rejected symbols</div><IssueList items={run?.rejected_symbols} empty="None" /></div>
+            </div>
+          </Card>
+          <Card title="Selected Candidate">
+            <div className="grid gap-2 md:grid-cols-2">
+              <Metric label="selected symbol" value={text(run?.selected_symbol ?? run?.symbol)} />
+              <Metric label="latest price" value={money(latestSnapshot.latest_price)} />
+              <Metric label="spread bps" value={text(latestSnapshot.spread_bps)} />
+              <Metric label="avg dollar volume" value={money(latestSnapshot.avg_dollar_volume)} />
+            </div>
+          </Card>
+          <Card title="Open Positions / Monitoring" error={data.paper.error}>
+            <Metric label="open paper positions" value={openPositions.length} />
+            <div className="mt-3 space-y-2">
+              {openPositions.length ? openPositions.map((position, index) => <div key={index} className="rounded-xl border border-white/10 bg-black/20 p-3 text-sm text-slate-300">{text(position)}</div>) : <p className="text-sm text-slate-500">No open paper positions reported.</p>}
+            </div>
+          </Card>
+        </div>
+      ) : null}
+
+      {activeTab === "data" ? (
+        <div className="grid gap-4 xl:grid-cols-2">
+          {[
+            ["Data Source Used", run?.source_mode ?? dataPipeline.provider_name],
+            ["Provider Status", run?.provider_status ?? dataPipeline.provider_status],
+            ["Snapshot Status", `${text(run?.latest_snapshot_status)} (${text(run?.latest_snapshot_count ?? 0)})`],
+            ["Feature Store Status", `${text(run?.feature_store_status ?? dataPipeline.feature_store_status)} (${text(run?.feature_row_count ?? 0)} rows)`],
+            ["Persistence Status", run?.persistence_status ?? dataPipeline.persistence_status],
+            ["Freshness Status", run?.freshness_status ?? dataPipeline.freshness_status],
+            ["Kafka Status", run?.kafka_status ?? "Configured optional, not active in workflow"],
+          ].map(([title, value]) => (
+            <Card key={String(title)} title={String(title)}><Metric label="status" value={text(value)} /></Card>
+          ))}
+          <Card title="Missing Features">
+            <div className="grid gap-2 md:grid-cols-2">
+              <Metric label="missing snapshot" value={String(!run?.latest_snapshot_count)} />
+              <Metric label="missing price" value={String(latestSnapshot.latest_price == null)} />
+              <Metric label="missing volume" value={String(latestSnapshot.volume == null)} />
+              <Metric label="missing spread" value={String(latestSnapshot.spread_bps == null)} />
+              <Metric label="missing relative volume" value={String(latestSnapshot.relative_volume == null)} />
+              <Metric label="feature rows unavailable" value={String(!run?.feature_row_count)} />
+              <Metric label="persistence fallback used" value={String(run?.persistence_status === "memory_fallback" || dataPipeline.persistence_status === "memory_fallback")} />
+            </div>
+          </Card>
+        </div>
+      ) : null}
+
+      {activeTab === "strategy" ? (
+        <div className="grid gap-4 xl:grid-cols-2">
+          <Card title="Strategy">
+            <div className="grid gap-2 md:grid-cols-2">
+              <Metric label="selected strategy" value={text(run?.selected_strategy_key ?? strategyRecord.strategy_key)} />
+              <Metric label="strategy status" value={text(strategyRecord.status ?? evidencePipeline.strategy_evidence_status)} />
+              <Metric label="strategy score" value={text(strategyRecord.strategy_score)} />
+              <Metric label="why selected" value={text(strategyRecord.regime_fit ? `regime_fit=${strategyRecord.regime_fit}` : "Selected by strategy evidence and workflow gates when available.")} />
+            </div>
+            <div className="mt-3 grid gap-3 md:grid-cols-2">
+              <div><div className="mb-1 text-xs font-semibold text-red-100">Blockers</div><IssueList items={strategyRecord.blockers} /></div>
+              <div><div className="mb-1 text-xs font-semibold text-amber-100">Warnings</div><IssueList items={strategyRecord.warnings} /></div>
+            </div>
+          </Card>
+          <Card title="Models">
+            <div className="grid gap-2 md:grid-cols-2">
+              <Metric label="selected model" value={text(run?.selected_model_key ?? modelRecord.model_key)} />
+              <Metric label="model family" value={text(modelRecord.model_family)} />
+              <Metric label="model status" value={text(modelRecord.status ?? evidencePipeline.model_evidence_status)} />
+              <Metric label="confidence / score / rank" value={`${text(modelRecord.confidence)} / ${text(modelRecord.score)} / ${text(modelRecord.rank)}`} />
+              <Metric label="not trained models" value={text(nested(data.model.data, ["summary", "not_trained_models"]))} />
+              <Metric label="blocked models" value={text(nested(data.model.data, ["summary", "blocked_models"]))} />
+            </div>
+          </Card>
+        </div>
+      ) : null}
+
+      {activeTab === "evidence" ? (
+        <div className="grid gap-4 xl:grid-cols-2">
+          <Card title="Qlib Research Evidence" subtitle="Qlib is optional. Qlib evidence can support research/model/backtest validation but does not execute trades." error={data.qlib.error}>
+            <div className="grid gap-2 md:grid-cols-2">
+              <Metric label="used for" value="research, model evidence, signal scoring, backtest references" />
+              <Metric label="installed/configured" value={`${text(data.qlib.data?.qlib_available)} / ${text(data.qlib.data?.configured)}`} />
+              <Metric label="artifact counts" value={text(data.qlib.data?.artifact_count ?? nested(run, ["qlib_artifact_counts", "total"]))} />
+              <Metric label="latest signal/backtest/model" value={`${text(data.qlib.data?.latest_signal_count)} / ${text(data.qlib.data?.latest_backtest_count)} / ${text(data.qlib.data?.latest_model_count)}`} />
+              <Metric label="used in workflow" value={text(run?.qlib_artifact_id ? "artifact referenced" : "not required")} />
+              <Metric label="warning" value={data.qlib.data?.qlib_available === false ? "Qlib unavailable; workflow may continue unless strategy requires Qlib evidence." : "None"} />
+            </div>
+          </Card>
+          <Card title="Proof Registry">
+            <div className="grid gap-2 md:grid-cols-2">
+              <Metric label="proof registry status" value={text(evidencePipeline.proof_registry_status)} />
+              <Metric label="proof_status" value={text(run?.proof_status ?? proofRecord.proof_status)} />
+              <Metric label="backtest status" value={text(proofRecord.backtest_status ?? proofRecord.proof_type)} />
+              <Metric label="paper status" value={text(proofRecord.paper_status)} />
+              <Metric label="sample size" value={text(proofRecord.sample_size)} />
+              <Metric label="avg R / max DD / win rate" value={`${text(proofRecord.avg_r_multiple)} / ${text(proofRecord.max_drawdown_r)} / ${text(proofRecord.win_rate)}`} />
+            </div>
+          </Card>
+        </div>
+      ) : null}
+
+      {activeTab === "execution" ? (
+        <div className="grid gap-4 xl:grid-cols-2">
+          <Card title="Execution Planner" subtitle="Approval unlocks a gated workflow step. It does not submit a broker order.">
+            <div className="grid gap-2 md:grid-cols-2">
+              <Metric label="planner status" value={text(stageMap.execution_planner_agent?.status ?? "not_run")} />
+              <Metric label="planned action" value={text(nested(stageMap.execution_planner_agent, ["pipeline_inputs_snapshot", "selected_symbol"]) ? "paper plan preview" : "none")} />
+              <Metric label="planned risk" value={money(latestSnapshot.planned_risk_dollars)} />
+              <Metric label="max risk dollars" value={money(run?.max_risk_dollars)} />
+              <Metric label="max daily loss" value={money(run?.max_daily_loss_dollars)} />
+              <Metric label="execution boundary reached" value={text(run?.execution_boundary_reached ?? false)} />
+            </div>
+          </Card>
+          <Card title="Approval Items" error={data.approvals.error}>
+            <Metric label="approval required" value={text(run?.approval_required ?? false)} />
+            <div className="mt-3 space-y-2">
+              {approvalItems.length ? approvalItems.slice(0, 6).map((item) => <div key={item.approval_id} className="rounded-xl border border-white/10 bg-black/20 p-3 text-sm text-slate-300">{item.approval_id} - {item.status}</div>) : <p className="text-sm text-slate-500">No approval items reported.</p>}
+            </div>
+          </Card>
+          <Card title="Paper Trades / Monitoring" error={data.paper.error}>
+            <div className="grid gap-2 md:grid-cols-2">
+              <Metric label="open paper trades" value={openPositions.length} />
+              <Metric label="monitoring status" value={text(data.paper.data?.status ?? "not_available")} />
+            </div>
+          </Card>
+        </div>
+      ) : null}
+
+      {activeTab === "debug" ? (
+        <div className="space-y-4">
+          <div className="grid gap-4 xl:grid-cols-2">
+            <Card title="Hard Blockers"><IssueList items={[...(run?.blockers ?? []), ...asList(data.finalReadiness.data?.blockers)]} /></Card>
+            <Card title="Soft Warnings"><IssueList items={[...(run?.warnings ?? []), ...asList(data.finalReadiness.data?.warnings)]} /></Card>
+            <Card title="Missing / Failing Components"><IssueList items={[...asList(data.finalReadiness.data?.missing_core_units), ...Object.entries(data).filter(([, value]) => value.error).map(([key, value]) => `${key}: ${value.error}`)]} /></Card>
+            <Card title="Common Workflow Issues">
+              <IssueList
+                items={[
+                  run?.freshness_status === "stale" ? "stale data" : null,
+                  data.qlib.data?.qlib_available === false ? "Qlib unavailable" : null,
+                  run?.persistence_status === "memory_fallback" ? "persistence fallback" : null,
+                  run?.proof_status === "backtest_required" || run?.proof_status === "proof_required" ? "proof missing" : null,
+                  run?.small_account_decision === "blocked" ? "small account blocked" : null,
+                ].filter(Boolean)}
+              />
+            </Card>
+          </div>
+          <DebugPanel title="Raw orchestrator response" value={data.latest.data} />
+          <DebugPanel title="Raw readiness response" value={data.readiness.data} />
+          <DebugPanel title="Raw Qlib response" value={data.qlib.data} />
+          <DebugPanel title="Raw evidence response" value={{ proof: data.proof.data, model: data.model.data, strategy: data.strategy.data }} />
+          <DebugPanel title="Raw agent runtime latest" value={data.agentRuntime.data} />
+        </div>
+      ) : null}
+        </div>
+      </main>
+    </div>
+  );
+}

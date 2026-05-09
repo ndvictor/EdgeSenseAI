@@ -14,6 +14,77 @@ from app.services.proof_registry.models import (
 _MEMORY: dict[str, ProofRegistryRecordOut] = {}
 
 
+def _float_or_none(value: Any) -> float | None:
+    try:
+        return float(value) if value is not None else None
+    except (TypeError, ValueError):
+        return None
+
+
+def evaluate_proof_status(record_or_metrics: Any) -> dict[str, Any]:
+    """Normalize proof metrics into paper-first evidence status; never invent proof."""
+    data = record_or_metrics.model_dump() if hasattr(record_or_metrics, "model_dump") else dict(record_or_metrics or {})
+    blockers = [str(x) for x in data.get("blockers", []) if x]
+    warnings = [str(x) for x in data.get("warnings", []) if x]
+    existing_status = str(data.get("proof_status") or "").strip()
+
+    if existing_status == "research_only" or data.get("evidence_type") == "research_only":
+        return {"proof_status": "research_only", "blockers": blockers, "warnings": warnings, "next_action": "Research-only evidence cannot promote strategy proof."}
+
+    sample_size = int(data.get("sample_size") or data.get("trades") or 0)
+    avg_r = _float_or_none(data.get("avg_r_multiple"))
+    max_dd = _float_or_none(data.get("max_drawdown_r"))
+    rule_violation = _float_or_none(data.get("rule_violation_rate")) or 0.0
+    slippage_fail = _float_or_none(data.get("slippage_fail_rate"))
+    win_rate = _float_or_none(data.get("win_rate"))
+    sharpe = _float_or_none(data.get("sharpe_ratio"))
+
+    if rule_violation > 0:
+        blockers.append("rule_violation_rate_positive")
+    if max_dd is not None and max_dd <= -8:
+        blockers.append("max_drawdown_too_severe")
+    if blockers:
+        return {
+            "proof_status": "blocked",
+            "sample_size": sample_size,
+            "win_rate": win_rate,
+            "avg_r_multiple": avg_r,
+            "sharpe_ratio": sharpe,
+            "max_drawdown_r": max_dd,
+            "slippage_fail_rate": slippage_fail,
+            "rule_violation_rate": rule_violation,
+            "blockers": sorted(set(blockers)),
+            "warnings": sorted(set(warnings)),
+            "next_action": "Resolve proof blockers before eligibility checks.",
+        }
+
+    has_metrics = sample_size > 0 or avg_r is not None or max_dd is not None
+    if not has_metrics:
+        status = "backtest_required" if data.get("strategy_key") or data.get("model_key") else "proof_required"
+        warnings.append("proof_metrics_missing")
+    elif sample_size >= 100 and (avg_r or 0) > 0.10 and (max_dd is None or max_dd > -8) and rule_violation == 0:
+        status = "proven"
+    elif sample_size >= 30 and (avg_r or 0) > 0.05 and (max_dd is None or max_dd > -5) and rule_violation == 0:
+        status = "paper_passed"
+    else:
+        status = "proof_required"
+        warnings.append("proof_sample_or_quality_below_threshold")
+
+    return {
+        "proof_status": status,
+        "sample_size": sample_size,
+        "win_rate": win_rate,
+        "avg_r_multiple": avg_r,
+        "sharpe_ratio": sharpe,
+        "max_drawdown_r": max_dd,
+        "slippage_fail_rate": slippage_fail,
+        "rule_violation_rate": rule_violation,
+        "blockers": sorted(set(blockers)),
+        "warnings": sorted(set(warnings)),
+        "next_action": "Proceed to strategy eligibility checks." if status in {"proven", "paper_passed"} else "Record more backtest or paper evidence before proof-dependent promotion.",
+    }
+
+
 def _db_session():
     try:
         from app.db.init_db import init_db
@@ -49,15 +120,17 @@ def get_proof_registry_status() -> ProofRegistryStatusResponse:
             persistence_mode = "memory"
         finally:
             session.close()
+    latest = get_latest_proof_record()
     return ProofRegistryStatusResponse(
         updated_at=iso_utc_now(),
-        summary={"persistence_mode": persistence_mode, "records_count": count, "llm_used": False},
+        summary={"persistence_mode": persistence_mode, "records_count": count, "llm_used": False, "latest_proof_status": latest.proof_status if latest else "none"},
     )
 
 
 def save_proof_record(body: ProofRegistryRecordCreate) -> ProofRegistryRecordOut:
     now = iso_utc_now()
     proof_id = body.proof_id or new_proof_id()
+    decision = evaluate_proof_status(body)
     out = ProofRegistryRecordOut(
         proof_id=proof_id,
         symbol=body.symbol.upper(),
@@ -66,7 +139,7 @@ def save_proof_record(body: ProofRegistryRecordCreate) -> ProofRegistryRecordOut
         strategy_key=body.strategy_key,
         model_key=body.model_key,
         proof_type=body.proof_type,
-        proof_status=body.proof_status,
+        proof_status=decision["proof_status"],
         sample_size=int(body.sample_size),
         win_rate=float(body.win_rate),
         avg_r_multiple=float(body.avg_r_multiple),
@@ -78,8 +151,8 @@ def save_proof_record(body: ProofRegistryRecordCreate) -> ProofRegistryRecordOut
         paper_run_id=body.paper_run_id,
         source=body.source,
         evidence=dict(body.evidence or {}),
-        blockers=list(body.blockers or []),
-        warnings=list(body.warnings or []),
+        blockers=list(decision.get("blockers") or []),
+        warnings=list(decision.get("warnings") or []),
         created_at=now,
         updated_at=now,
     )

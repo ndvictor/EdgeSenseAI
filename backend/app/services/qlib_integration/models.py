@@ -13,9 +13,15 @@ class QlibStatusResponse(BaseModel):
     updated_at: str
     qlib_available: bool
     qlib_version: str | None = None
+    configured: bool = False
+    artifact_count: int = 0
+    latest_signal_count: int = 0
+    latest_backtest_count: int = 0
+    latest_model_count: int = 0
     summary: dict = Field(default_factory=dict)
     blockers: list[str] = Field(default_factory=list)
     warnings: list[str] = Field(default_factory=list)
+    next_action: str = ""
 
 
 class QlibSignalScoreCreate(BaseModel):
@@ -23,6 +29,7 @@ class QlibSignalScoreCreate(BaseModel):
 
     artifact_id: str | None = None
     symbol: str = "AMD"
+    symbols: list[str] = Field(default_factory=list)
     asset_class: str = "stock"
     horizon: str = "day_trading"
     strategy_key: str | None = None
@@ -70,6 +77,7 @@ class QlibArtifactCreate(BaseModel):
     model_key: str | None = None
     strategy_key: str | None = None
     symbol: str | None = None
+    symbols: list[str] = Field(default_factory=list)
     asset_class: str = "stock"
     horizon: str = "day_trading"
     qlib_available: bool = False
@@ -91,6 +99,7 @@ class QlibArtifactOut(BaseModel):
     model_key: str | None
     strategy_key: str | None
     symbol: str | None
+    symbols: list[str] = Field(default_factory=list)
     asset_class: str
     horizon: str
     qlib_available: bool
