@@ -32,6 +32,53 @@ function tabFromSearchParams(sp: URLSearchParams | null): Tab | null {
   return null;
 }
 
+function asList(value: unknown): unknown[] {
+  return Array.isArray(value) ? value : [];
+}
+
+function stringList(value: unknown): string[] {
+  return asList(value).map((x) => String(x));
+}
+
+function nestedRecord(value: Record<string, unknown> | null, key: string): Record<string, unknown> {
+  const nested = value?.[key];
+  return nested && typeof nested === "object" && !Array.isArray(nested) ? (nested as Record<string, unknown>) : {};
+}
+
+function evidenceStatusClass(value: unknown): string {
+  const s = String(value ?? "").toLowerCase();
+  if (s === "ok" || s === "ready" || s === "available" || s === "recorded") return "border-emerald-500/45 bg-emerald-500/15 text-emerald-200";
+  if (s === "unavailable" || s === "partial" || s === "warn") return "border-amber-500/45 bg-amber-500/15 text-amber-100";
+  if (s === "fail" || s === "blocked" || s === "error") return "border-red-500/45 bg-red-500/15 text-red-100";
+  return "border-slate-600/60 bg-slate-800/40 text-slate-300";
+}
+
+function EvidenceCard({ title, children }: { title: string; children: React.ReactNode }) {
+  return (
+    <section className="rounded-2xl border border-emerald-400/10 bg-[#070c12]/95 p-4">
+      <h3 className="text-xs font-semibold uppercase tracking-[0.2em] text-slate-500">{title}</h3>
+      <div className="mt-3">{children}</div>
+    </section>
+  );
+}
+
+function StatGrid({ rows }: { rows: Array<[string, React.ReactNode, string?]> }) {
+  return (
+    <div className="grid gap-2 sm:grid-cols-2 lg:grid-cols-4">
+      {rows.map(([label, value, tone]) => (
+        <div key={label} className={`rounded-xl border px-3 py-2 ${tone ?? "border-white/[0.06] bg-black/20"}`}>
+          <div className="text-[10px] font-semibold uppercase tracking-[0.18em] text-slate-500">{label}</div>
+          <div className="mt-1 break-words text-sm font-medium text-slate-100">{value}</div>
+        </div>
+      ))}
+    </div>
+  );
+}
+
+function StatusPill({ value }: { value: unknown }) {
+  return <span className={`inline-flex rounded-lg border px-2 py-0.5 text-[11px] font-medium ${evidenceStatusClass(value)}`}>{String(value ?? "—")}</span>;
+}
+
 export default function ResearchEvidencePage() {
   const router = useRouter();
   const pathname = usePathname();
@@ -237,6 +284,16 @@ export default function ResearchEvidencePage() {
     }
   }
 
+  const qlibAvailable = Boolean(qlibStatus?.qlib_available ?? qlibStatus?.available ?? qlibStatus?.enabled ?? false);
+  const qlibVersion = String(qlibStatus?.qlib_version ?? qlibStatus?.version ?? "—");
+  const latestSignalCount = asList(latestSig?.signals ?? latestSig?.scores ?? latestSig?.records).length || (latestSig ? 1 : 0);
+  const latestBacktestCount = artifacts.filter((a) => String(a.artifact_type ?? a.type ?? "").toLowerCase().includes("backtest")).length;
+  const qlibBlockers = stringList(qlibStatus?.blockers ?? qlibAuto?.blockers);
+  const qlibWarnings = stringList(qlibStatus?.warnings ?? qlibAuto?.warnings);
+  const qlibNextAction =
+    String(qlibStatus?.next_action ?? qlibAuto?.next_action ?? (qlibAvailable ? "Review latest evidence before strategy proof decisions." : "Continue workflow without Qlib unless selected strategy requires Qlib evidence."));
+  const qlibAutomationSummary = nestedRecord(qlibAuto, "summary");
+
   return (
     <div className="w-full p-4 lg:p-8">
       <div className="mb-8 flex flex-wrap items-start justify-between gap-4">
@@ -281,16 +338,72 @@ export default function ResearchEvidencePage() {
 
       {tab === "qlib" ? (
         <div className="space-y-6">
-          <div className="grid gap-3 lg:grid-cols-2">
-            <div className="rounded-xl border border-white/10 bg-[#070c12] p-4 text-xs">
-              <div className="text-[10px] font-semibold uppercase tracking-[0.2em] text-slate-500">Qlib status</div>
-              <pre className="mt-2 max-h-48 overflow-auto text-[11px] text-slate-300">{JSON.stringify(qlibStatus, null, 2)}</pre>
+          <EvidenceCard title="QlibStatusCard">
+            <StatGrid
+              rows={[
+                ["qlib_available", String(qlibAvailable), qlibAvailable ? "border-emerald-400/25 bg-emerald-500/10" : "border-amber-400/25 bg-amber-500/10"],
+                ["qlib_version", qlibVersion],
+                ["artifact_count", String(artifacts.length)],
+                ["latest_signal_count", String(latestSignalCount)],
+                ["latest_backtest_count", String(latestBacktestCount)],
+                ["next_action", qlibNextAction],
+              ]}
+            />
+            {!qlibAvailable ? (
+              <p className="mt-3 rounded-xl border border-amber-400/20 bg-amber-500/10 px-3 py-2 text-sm text-amber-100">
+                Qlib is optional. Workflow can continue without Qlib unless the selected strategy requires Qlib evidence.
+              </p>
+            ) : null}
+          </EvidenceCard>
+          <EvidenceCard title="QlibArtifactsCard">
+            <div className="grid gap-2 md:grid-cols-3">
+              {artifacts.slice(0, 6).map((a, i) => (
+                <div key={String(a.artifact_id ?? i)} className="rounded-xl border border-white/[0.06] bg-black/20 p-3 text-xs">
+                  <div className="font-mono text-emerald-200/90">{String(a.artifact_id ?? "artifact")}</div>
+                  <div className="mt-1 text-slate-400">{String(a.artifact_type ?? a.type ?? "—")}</div>
+                  <div className="mt-1 truncate text-[10px] text-slate-500">{String(a.artifact_path ?? a.path ?? "—")}</div>
+                </div>
+              ))}
+              {!artifacts.length ? <p className="text-sm text-slate-500">No artifacts recorded.</p> : null}
             </div>
-            <div className="rounded-xl border border-white/10 bg-[#070c12] p-4 text-xs">
-              <div className="text-[10px] font-semibold uppercase tracking-[0.2em] text-slate-500">Automation status</div>
-              <pre className="mt-2 max-h-48 overflow-auto text-[11px] text-slate-300">{JSON.stringify(qlibAuto, null, 2)}</pre>
-            </div>
+          </EvidenceCard>
+          <div className="grid gap-4 lg:grid-cols-2">
+            <EvidenceCard title="LatestSignalCard">
+              <StatGrid
+                rows={[
+                  ["count", String(latestSignalCount)],
+                  ["symbol", String(latestSig?.symbol ?? latestSig?.ticker ?? "—")],
+                  ["artifact_id", String(latestSig?.artifact_id ?? "—")],
+                  ["status", <StatusPill key="signal-status" value={latestSig?.status ?? (latestSig ? "recorded" : "missing")} />],
+                ]}
+              />
+            </EvidenceCard>
+            <EvidenceCard title="LatestBacktestCard">
+              <StatGrid
+                rows={[
+                  ["count", String(latestBacktestCount)],
+                  ["automation_status", <StatusPill key="auto-status" value={qlibAuto?.status ?? "—"} />],
+                  ["persistence", String(qlibAutomationSummary.persistence_mode ?? qlibAuto?.persistence_mode ?? "—")],
+                  ["next_action", qlibNextAction],
+                ]}
+              />
+            </EvidenceCard>
           </div>
+          <EvidenceCard title="BlockersWarningsCard">
+            <div className="grid gap-3 lg:grid-cols-2">
+              <div className="rounded-xl border border-red-400/15 bg-red-500/5 p-3 text-sm text-red-100/90">
+                <div className="font-semibold">Blockers</div>
+                {qlibBlockers.length ? <ul className="mt-2 space-y-1 text-xs">{qlibBlockers.map((x) => <li key={x}>{x}</li>)}</ul> : <p className="mt-2 text-xs text-slate-500">None</p>}
+              </div>
+              <div className="rounded-xl border border-amber-400/15 bg-amber-500/5 p-3 text-sm text-amber-100/90">
+                <div className="font-semibold">Warnings</div>
+                {qlibWarnings.length ? <ul className="mt-2 space-y-1 text-xs">{qlibWarnings.map((x) => <li key={x}>{x}</li>)}</ul> : <p className="mt-2 text-xs text-slate-500">None</p>}
+              </div>
+            </div>
+          </EvidenceCard>
+          <EvidenceCard title="NextActionCard">
+            <p className="text-sm text-slate-200">{qlibNextAction}</p>
+          </EvidenceCard>
           <div className="flex flex-wrap gap-2">
             <button
               type="button"
@@ -312,33 +425,12 @@ export default function ResearchEvidencePage() {
               Refresh Qlib
             </button>
           </div>
-          <div className="rounded-xl border border-emerald-400/15 bg-[#070c12] p-4">
-            <div className="text-xs font-semibold uppercase tracking-[0.2em] text-slate-500">Latest signals artifact</div>
-            <pre className="mt-2 max-h-40 overflow-auto text-[11px] text-slate-300">{JSON.stringify(latestSig, null, 2)}</pre>
-          </div>
-          <div className="rounded-2xl border border-emerald-400/10 bg-[#070c12]/95 p-4">
-            <h3 className="text-xs font-semibold uppercase text-slate-500">Artifacts</h3>
-            <div className="mt-2 overflow-x-auto">
-              <table className="w-full min-w-[640px] border-collapse text-left text-[11px]">
-                <thead>
-                  <tr className="border-b border-white/10 text-slate-500">
-                    <th className="pb-2">artifact_id</th>
-                    <th className="pb-2">type</th>
-                    <th className="pb-2">path</th>
-                  </tr>
-                </thead>
-                <tbody>
-                  {artifacts.map((a) => (
-                    <tr key={String(a.artifact_id ?? Math.random())} className="border-b border-white/[0.04] text-slate-300">
-                      <td className="py-2 font-mono text-emerald-200/80">{String(a.artifact_id ?? "—")}</td>
-                      <td className="py-2">{String(a.artifact_type ?? "—")}</td>
-                      <td className="py-2 font-mono text-[10px]">{String(a.artifact_path ?? "—")}</td>
-                    </tr>
-                  ))}
-                </tbody>
-              </table>
-            </div>
-          </div>
+          <details className="rounded-2xl border border-white/10 bg-[#070c12]/95 p-4">
+            <summary className="cursor-pointer text-xs font-semibold uppercase tracking-[0.2em] text-slate-500">Advanced Debug JSON</summary>
+            <pre className="mt-3 max-h-80 overflow-auto rounded-xl border border-white/10 bg-black/40 p-3 text-[10px] text-slate-300">
+              {JSON.stringify({ qlibStatus, qlibAuto, latestSig, artifacts }, null, 2)}
+            </pre>
+          </details>
           <div className="grid gap-4 lg:grid-cols-3">
             <div className="rounded-xl border border-white/10 bg-[#0a1018] p-3">
               <div className="text-xs text-slate-500">Score signals (JSON)</div>
@@ -367,9 +459,9 @@ export default function ResearchEvidencePage() {
 
       {tab === "proof" ? (
         <div className="space-y-4">
-          <div className="rounded-xl border border-white/10 bg-[#070c12] p-4 text-xs">
-            <pre className="max-h-32 overflow-auto text-[11px]">{JSON.stringify(proofSt, null, 2)}</pre>
-          </div>
+          <EvidenceCard title="ProofEvidenceCard">
+            <StatGrid rows={[["status", <StatusPill key="proof-status" value={proofSt?.status ?? "—"} />], ["record_count", String(proofRecs.length)], ["storage", String(proofSt?.persistence_mode ?? "read_fallback_available")], ["next_action", String(proofSt?.next_action ?? "Review proof status before autonomous strategy promotion.")]]} />
+          </EvidenceCard>
           <div className="rounded-xl border border-white/10 bg-[#0a1018] p-3">
             <div className="text-xs text-slate-500">Create proof record (JSON)</div>
             <textarea className="mt-2 w-full rounded border border-white/10 bg-black/30 p-2 font-mono text-[10px]" rows={5} value={proofForm} onChange={(e) => setProofForm(e.target.value)} />
@@ -399,14 +491,18 @@ export default function ResearchEvidencePage() {
               </tbody>
             </table>
           </div>
+          <details className="rounded-2xl border border-white/10 bg-[#070c12]/95 p-4">
+            <summary className="cursor-pointer text-xs font-semibold uppercase tracking-[0.2em] text-slate-500">Advanced Debug JSON</summary>
+            <pre className="mt-3 max-h-60 overflow-auto rounded-xl border border-white/10 bg-black/40 p-3 text-[10px] text-slate-300">{JSON.stringify(proofSt, null, 2)}</pre>
+          </details>
         </div>
       ) : null}
 
       {tab === "model" ? (
         <div className="space-y-4">
-          <div className="rounded-xl border border-white/10 bg-[#070c12] p-4 text-xs">
-            <pre className="max-h-32 overflow-auto text-[11px]">{JSON.stringify(modelSt, null, 2)}</pre>
-          </div>
+          <EvidenceCard title="ModelEvidenceCard">
+            <StatGrid rows={[["status", <StatusPill key="model-status" value={modelSt?.status ?? "—"} />], ["record_count", String(modelRecs.length)], ["storage", String(modelSt?.persistence_mode ?? "read_fallback_available")], ["next_action", String(modelSt?.next_action ?? "Review model evidence before selection decisions.")]]} />
+          </EvidenceCard>
           <div className="rounded-xl border border-white/10 bg-[#0a1018] p-3">
             <div className="text-xs text-slate-500">Create model evidence (JSON)</div>
             <textarea className="mt-2 w-full rounded border border-white/10 bg-black/30 p-2 font-mono text-[10px]" rows={5} value={modelForm} onChange={(e) => setModelForm(e.target.value)} />
@@ -434,14 +530,18 @@ export default function ResearchEvidencePage() {
               </tbody>
             </table>
           </div>
+          <details className="rounded-2xl border border-white/10 bg-[#070c12]/95 p-4">
+            <summary className="cursor-pointer text-xs font-semibold uppercase tracking-[0.2em] text-slate-500">Advanced Debug JSON</summary>
+            <pre className="mt-3 max-h-60 overflow-auto rounded-xl border border-white/10 bg-black/40 p-3 text-[10px] text-slate-300">{JSON.stringify(modelSt, null, 2)}</pre>
+          </details>
         </div>
       ) : null}
 
       {tab === "strategy" ? (
         <div className="space-y-4">
-          <div className="rounded-xl border border-white/10 bg-[#070c12] p-4 text-xs">
-            <pre className="max-h-32 overflow-auto text-[11px]">{JSON.stringify(stratSt, null, 2)}</pre>
-          </div>
+          <EvidenceCard title="StrategyEvidenceCard">
+            <StatGrid rows={[["status", <StatusPill key="strategy-status" value={stratSt?.status ?? "—"} />], ["record_count", String(stratRecs.length)], ["storage", String(stratSt?.persistence_mode ?? "read_fallback_available")], ["next_action", String(stratSt?.next_action ?? "Review strategy evidence before eligibility decisions.")]]} />
+          </EvidenceCard>
           <div className="rounded-xl border border-white/10 bg-[#0a1018] p-3">
             <div className="text-xs text-slate-500">Create strategy evidence (JSON)</div>
             <textarea className="mt-2 w-full rounded border border-white/10 bg-black/30 p-2 font-mono text-[10px]" rows={5} value={stratForm} onChange={(e) => setStratForm(e.target.value)} />
@@ -469,6 +569,10 @@ export default function ResearchEvidencePage() {
               </tbody>
             </table>
           </div>
+          <details className="rounded-2xl border border-white/10 bg-[#070c12]/95 p-4">
+            <summary className="cursor-pointer text-xs font-semibold uppercase tracking-[0.2em] text-slate-500">Advanced Debug JSON</summary>
+            <pre className="mt-3 max-h-60 overflow-auto rounded-xl border border-white/10 bg-black/40 p-3 text-[10px] text-slate-300">{JSON.stringify(stratSt, null, 2)}</pre>
+          </details>
         </div>
       ) : null}
     </div>

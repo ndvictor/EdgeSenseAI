@@ -1626,6 +1626,15 @@ export type LabInventoryUnit = {
   route?: string | null;
   endpoint_family?: string | null;
   notes?: string[];
+  product_stage?: string;
+  runtime_agent_sequence?: number | null;
+  registered?: boolean;
+  wrapped?: boolean;
+  active_in_orchestrator?: boolean;
+  ui_visible?: boolean;
+  evidence_only?: boolean;
+  manual_tool_only?: boolean;
+  readiness_status?: string;
 };
 
 export type LabInventorySummary = {

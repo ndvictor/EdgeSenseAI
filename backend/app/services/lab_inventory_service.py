@@ -1295,9 +1295,19 @@ def _build_desired_units() -> list[dict[str, Any]]:
                 "route": None,
                 "endpoint_family": None,
                 "notes": [],
+                "product_stage": ", ".join(STAGE_META[n - 1][1] for n in stages),
+                "runtime_agent_sequence": None,
+                "registered": False,
+                "wrapped": False,
+                "active_in_orchestrator": False,
+                "ui_visible": False,
+                "evidence_only": False,
+                "manual_tool_only": False,
+                "readiness_status": "missing",
             }
         )
     _apply_inventory_overrides(out)
+    _apply_operator_visibility_flags(out)
     return out
 
 
@@ -1535,6 +1545,78 @@ def _apply_inventory_overrides(units: list[dict[str, Any]]) -> None:
             endpoint_family=ep,
             notes=["Phase 4: backend control-plane endpoints implemented; frontend deferred to Phase 5."],
         )
+
+
+def _apply_operator_visibility_flags(units: list[dict[str, Any]]) -> None:
+    """Add read-only operator visibility flags for the Lab truth table."""
+
+    runtime_sequence_by_name = {
+        "Data Readiness Agent": 1,
+        "Session Router Agent": 2,
+        "Market Condition Agent": 3,
+        "Workflow Router Agent": 4,
+        "Watchlist Builder Agent": 5,
+        "Strategy Selection Agent": 6,
+        "Model Selection Agent": 7,
+        "Backtest Validation Agent": 8,
+        "Qlib Research Agent": 9,
+        "Trigger monitor agent": 10,
+        "Execution planner agent": 11,
+        "Position monitor agent": 12,
+        "Close position agent": 13,
+        "Learning loop agent": 14,
+    }
+    evidence_names = {
+        "Proof Registry",
+        "Model Evidence Registry",
+        "Strategy Evidence Registry",
+        "Qlib Integration Adapter",
+        "Qlib Signal Score Adapter",
+    }
+
+    for u in units:
+        name = str(u.get("name") or "")
+        unit_type = str(u.get("type") or "")
+        endpoint_family = str(u.get("endpoint_family") or "")
+        route = str(u.get("route") or "")
+        backend_created = u.get("backend_status") == "created"
+        frontend_created = u.get("frontend_status") == "created"
+        is_agent = "AI-Agent" in unit_type or name.endswith("Agent") or name in runtime_sequence_by_name
+        evidence_only = name in evidence_names or "Evidence Registry" in name or "Proof Registry" in name
+        manual_tool_only = (
+            backend_created
+            and not evidence_only
+            and not is_agent
+            and bool(endpoint_family)
+            and "/api/workflow-orchestrator/run" not in endpoint_family
+        )
+
+        u["product_stage"] = ", ".join(STAGE_META[n - 1][1] for n in u.get("stage_numbers", []) if 1 <= n <= len(STAGE_META))
+        u["runtime_agent_sequence"] = runtime_sequence_by_name.get(name)
+        u["registered"] = bool(backend_created and (is_agent or "Runtime" in name))
+        u["wrapped"] = bool(is_agent and (u["registered"] or endpoint_family == "/api/agent-runtime" or name in runtime_sequence_by_name))
+        u["active_in_orchestrator"] = bool(name in runtime_sequence_by_name)
+        u["ui_visible"] = bool(frontend_created and route)
+        u["evidence_only"] = bool(evidence_only)
+        u["manual_tool_only"] = bool(manual_tool_only)
+
+        if is_agent:
+            complete = bool(u["registered"] and u["wrapped"] and u["active_in_orchestrator"])
+        elif manual_tool_only:
+            complete = bool(backend_created and u["manual_tool_only"])
+        elif evidence_only:
+            complete = bool(backend_created and u["ui_visible"])
+        elif "UI Component" in unit_type:
+            complete = bool(route and u["ui_visible"] and u.get("frontend_status") == "created")
+        else:
+            complete = bool(backend_created and (frontend_created or not route))
+
+        if complete:
+            u["readiness_status"] = "complete"
+        elif backend_created or frontend_created or u.get("implementation_status") in ("partial", "created_partial"):
+            u["readiness_status"] = "partial"
+        else:
+            u["readiness_status"] = "missing"
 
 
 def _summarize_units(units: list[dict[str, Any]]) -> dict[str, Any]:

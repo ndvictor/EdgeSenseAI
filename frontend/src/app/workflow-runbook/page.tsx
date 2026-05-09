@@ -66,6 +66,195 @@ function GatePill({ label, value }: { label: string; value: boolean | undefined 
   );
 }
 
+function FieldCard({ label, value, tone = "default" }: { label: string; value: React.ReactNode; tone?: "default" | "good" | "warn" | "bad" }) {
+  const border =
+    tone === "good"
+      ? "border-emerald-400/25 bg-emerald-500/10"
+      : tone === "warn"
+        ? "border-amber-400/25 bg-amber-500/10"
+        : tone === "bad"
+          ? "border-red-400/25 bg-red-500/10"
+          : "border-white/[0.06] bg-black/20";
+  return (
+    <div className={`rounded-xl border px-3 py-2 ${border}`}>
+      <div className="text-[10px] font-semibold uppercase tracking-[0.18em] text-slate-500">{label}</div>
+      <div className="mt-1 break-words text-sm font-medium text-slate-100">{value ?? "—"}</div>
+    </div>
+  );
+}
+
+function RunStatusCard({ run }: { run: OrchestratorRunRecord | null }) {
+  return (
+    <section className="rounded-2xl border border-emerald-400/15 bg-[#070c12]/95 p-4">
+      <h3 className="text-xs font-semibold uppercase tracking-[0.2em] text-slate-500">Run status</h3>
+      <div className="mt-3 grid gap-2 sm:grid-cols-2 lg:grid-cols-5">
+        <FieldCard label="orchestrator_run_id" value={run?.orchestrator_run_id ?? "No run yet"} />
+        <FieldCard label="workflow_run_id" value={run?.workflow_run_id ?? "—"} />
+        <FieldCard label="status" value={run?.status ?? "idle"} tone={run?.status === "blocked" ? "bad" : run ? "good" : "default"} />
+        <FieldCard label="current_stage" value={String(run?.current_stage ?? "—")} />
+        <FieldCard label="current_agent_key" value={run?.current_agent_key ?? "—"} />
+      </div>
+    </section>
+  );
+}
+
+function SafetyBoundaryCard({ run }: { run: OrchestratorRunRecord | null }) {
+  return (
+    <section className="rounded-2xl border border-emerald-400/15 bg-[#070c12]/95 p-4">
+      <h3 className="text-xs font-semibold uppercase tracking-[0.2em] text-slate-500">Safety boundary</h3>
+      <p className="mt-1 text-xs text-slate-500">Autonomous preview must prove no submit, no broker call, and no LLM decisioning.</p>
+      <div className="mt-3 grid gap-2 sm:grid-cols-2 lg:grid-cols-5">
+        <FieldCard label="dry_run" value={String(run?.dry_run ?? true)} tone="good" />
+        <FieldCard label="execution_boundary_reached" value={String(run?.execution_boundary_reached ?? false)} />
+        <FieldCard label="approval_required" value={String(run?.approval_required ?? false)} tone={run?.approval_required ? "warn" : "default"} />
+        <FieldCard label="submitted_order" value={String(run?.submitted_order ?? false)} tone={run?.submitted_order ? "bad" : "good"} />
+        <FieldCard label="broker_called" value={String(run?.broker_called ?? false)} tone={run?.broker_called ? "bad" : "good"} />
+        <FieldCard label="llm_used" value={String(run?.llm_used ?? false)} tone={run?.llm_used ? "bad" : "good"} />
+        <FieldCard label="approval_id" value={String(run?.approval_id ?? "—")} />
+      </div>
+    </section>
+  );
+}
+
+function DataModeCard({ run }: { run: OrchestratorRunRecord | null }) {
+  return (
+    <section className="rounded-2xl border border-emerald-400/15 bg-[#070c12]/95 p-4">
+      <h3 className="text-xs font-semibold uppercase tracking-[0.2em] text-slate-500">Data mode</h3>
+      <div className="mt-3 grid gap-2 sm:grid-cols-2 lg:grid-cols-4">
+        <FieldCard label="source_mode" value={String(run?.source_mode ?? run?.source ?? "candidate")} />
+        <FieldCard label="using_mock_data" value={String(run?.using_mock_data ?? false)} tone={run?.using_mock_data ? "warn" : "good"} />
+        <FieldCard label="workflow mode" value={String(run?.mode ?? "paper_first")} />
+        <FieldCard label="asset / horizon" value={`${String(run?.asset_class ?? "stock")} / ${String(run?.horizon ?? "day_trading")}`} />
+      </div>
+    </section>
+  );
+}
+
+function DataPipelineCard({ prSystems, run }: { prSystems?: Record<string, unknown>; run: OrchestratorRunRecord | null }) {
+  const db = prSystems?.database as Record<string, unknown> | undefined;
+  const redis = prSystems?.redis as Record<string, unknown> | undefined;
+  return (
+    <section className="rounded-2xl border border-emerald-400/15 bg-[#070c12]/95 p-4">
+      <h3 className="text-xs font-semibold uppercase tracking-[0.2em] text-slate-500">Data pipeline</h3>
+      <p className="mt-1 text-xs text-slate-500">Kafka is optional and not active in the autonomous workflow path.</p>
+      <div className="mt-3 grid gap-2 sm:grid-cols-2 lg:grid-cols-4">
+        <FieldCard label="source_mode" value={String(run?.source_mode ?? run?.source ?? "candidate")} />
+        <FieldCard label="provider_status" value={String((prSystems?.data_sources as Record<string, unknown> | undefined)?.status ?? "provider_checked_by_stage")} />
+        <FieldCard label="feature_store_status" value="workflow_stage_optional" />
+        <FieldCard label="persistence_status" value={String(db?.connected === true ? "postgres_connected" : db?.status ?? "memory_or_unavailable")} />
+        <FieldCard label="freshness_status" value="checked_per_run" />
+        <FieldCard label="redis_status" value={String(redis?.configured === true ? "configured" : "optional_not_configured")} />
+        <FieldCard label="kafka_status" value="configured_optional_not_active" tone="warn" />
+        <FieldCard label="using_mock_data" value={String(run?.using_mock_data ?? false)} tone={run?.using_mock_data ? "warn" : "good"} />
+      </div>
+    </section>
+  );
+}
+
+function BlockersWarningsCard({ blockers = [], warnings = [] }: { blockers?: string[]; warnings?: string[] }) {
+  return (
+    <section className="rounded-2xl border border-emerald-400/15 bg-[#070c12]/95 p-4">
+      <h3 className="text-xs font-semibold uppercase tracking-[0.2em] text-slate-500">Blockers and warnings</h3>
+      <div className="mt-3 grid gap-3 lg:grid-cols-2">
+        <div className="rounded-xl border border-red-400/15 bg-red-500/5 p-3">
+          <div className="text-xs font-semibold text-red-100">Blockers</div>
+          {blockers.length ? <ul className="mt-2 space-y-1 text-xs text-red-100/90">{blockers.map((x) => <li key={x}>{x}</li>)}</ul> : <p className="mt-2 text-xs text-slate-500">None</p>}
+        </div>
+        <div className="rounded-xl border border-amber-400/15 bg-amber-500/5 p-3">
+          <div className="text-xs font-semibold text-amber-100">Warnings</div>
+          {warnings.length ? <ul className="mt-2 space-y-1 text-xs text-amber-100/90">{warnings.map((x) => <li key={x}>{x}</li>)}</ul> : <p className="mt-2 text-xs text-slate-500">None</p>}
+        </div>
+      </div>
+    </section>
+  );
+}
+
+function NextActionCard({ nextAction }: { nextAction?: string }) {
+  return (
+    <section className="rounded-2xl border border-emerald-400/15 bg-[#070c12]/95 p-4">
+      <h3 className="text-xs font-semibold uppercase tracking-[0.2em] text-slate-500">Next action</h3>
+      <p className="mt-2 text-sm text-slate-200">{nextAction || "Run the workflow preview or refresh latest state."}</p>
+    </section>
+  );
+}
+
+function AgentTimelineCard({
+  timeline,
+  onLoadAgentTrace,
+  agentTraceLoading,
+}: {
+  timeline: Array<Record<string, unknown>>;
+  onLoadAgentTrace: (runId: string) => void;
+  agentTraceLoading: string | null;
+}) {
+  return (
+    <section className="rounded-2xl border border-emerald-400/10 bg-[#070c12]/95 p-4">
+      <h3 className="text-xs font-semibold uppercase tracking-[0.2em] text-slate-500">Agent timeline</h3>
+      <div className="mt-3 space-y-2">
+        {timeline.length === 0 ? (
+          <p className="text-sm text-slate-500">No timeline until you run a workflow.</p>
+        ) : (
+          timeline.map((row, i) => {
+            const runId = String(row.run_id ?? "");
+            return (
+              <div key={`${runId}-${i}`} className="rounded-xl border border-white/[0.06] bg-[#0a1018]/80 p-3 text-sm">
+                <div className="flex flex-wrap items-center gap-2 text-xs text-slate-400">
+                  <span className="rounded bg-slate-800/80 px-2 py-0.5">stage {String(row.stage ?? row.stage_number ?? i + 1)}</span>
+                  <span className="font-medium text-slate-200">{String(row.agent_key ?? "—")}</span>
+                  <span className={chip(String(row.status ?? "")) + " rounded px-2 py-0.5"}>{String(row.status ?? "—")}</span>
+                  <span className="text-slate-500">{String(row.at ?? row.created_at ?? "")}</span>
+                  <button
+                    type="button"
+                    className="ml-auto rounded border border-white/10 bg-black/30 px-2 py-1 text-[11px] text-emerald-200 hover:border-emerald-400/30"
+                    disabled={!runId || agentTraceLoading === runId}
+                    onClick={() => onLoadAgentTrace(runId)}
+                  >
+                    {agentTraceLoading === runId ? "Loading trace…" : "Load trace"}
+                  </button>
+                </div>
+              </div>
+            );
+          })
+        )}
+      </div>
+    </section>
+  );
+}
+
+function ApprovalBoundaryCard({ run, pendingApprovals }: { run: OrchestratorRunRecord | null; pendingApprovals: React.ReactNode }) {
+  return (
+    <section className="rounded-2xl border border-emerald-400/15 bg-[#070c12]/95 p-4">
+      <h3 className="text-xs font-semibold uppercase tracking-[0.2em] text-slate-500">Approval boundary</h3>
+      <div className="mt-3 grid gap-2 sm:grid-cols-2 lg:grid-cols-4">
+        <FieldCard label="execution_boundary_reached" value={String(run?.execution_boundary_reached ?? false)} />
+        <FieldCard label="approval_required" value={String(run?.approval_required ?? false)} tone={run?.approval_required ? "warn" : "default"} />
+        <FieldCard label="approval_id" value={String(run?.approval_id ?? "—")} />
+        <FieldCard label="pending approvals" value={pendingApprovals ?? "—"} />
+      </div>
+    </section>
+  );
+}
+
+function AdvancedDebugTrace({
+  trace,
+  traceErr,
+  agentTraceByRunId,
+}: {
+  trace: WorkflowOrchestratorTraceResponse | null;
+  traceErr: string | null;
+  agentTraceByRunId: Record<string, AgentRunResultRecord | null>;
+}) {
+  return (
+    <details className="rounded-2xl border border-white/10 bg-[#070c12] p-4">
+      <summary className="cursor-pointer text-xs font-semibold uppercase tracking-[0.2em] text-slate-500">Advanced Debug Trace</summary>
+      {traceErr ? <p className="mt-3 text-xs text-red-300/90">{traceErr}</p> : null}
+      <pre className="mt-3 max-h-80 overflow-auto rounded-xl border border-white/10 bg-black/40 p-3 text-[10px] text-slate-300">
+        {JSON.stringify({ audit_events: trace?.audit_events ?? [], agent_traces: agentTraceByRunId }, null, 2)}
+      </pre>
+    </details>
+  );
+}
+
 function StageCard({ stage }: { stage: WorkflowRunbookStage }) {
   const health = stage.health?.status ?? stage.implementation_status ?? "unknown";
   const route = stage.frontend_route?.trim() || "";
@@ -801,84 +990,14 @@ export default function WorkflowRunbookPage() {
             </button>
           </div>
 
-          {displayRun ? (
-            <div className="rounded-2xl border border-white/10 bg-[#0a1018] p-4">
-              <h3 className="text-xs font-semibold uppercase tracking-[0.2em] text-slate-500">Last / latest orchestrator result</h3>
-              <dl className="mt-3 grid gap-2 text-sm sm:grid-cols-2 lg:grid-cols-3">
-                {[
-                  ["orchestrator_run_id", displayRun.orchestrator_run_id],
-                  ["workflow_run_id", displayRun.workflow_run_id],
-                  ["status", displayRun.status],
-                  ["current_stage", String(displayRun.current_stage ?? "—")],
-                  ["current_agent_key", String(displayRun.current_agent_key ?? "—")],
-                  ["approval_required", String(displayRun.approval_required)],
-                  ["approval_id", String(displayRun.approval_id ?? "—")],
-                  ["execution_boundary_reached", String(displayRun.execution_boundary_reached)],
-                  ["submitted_order", String(displayRun.submitted_order)],
-                  ["broker_called", String(displayRun.broker_called)],
-                  ["llm_used", String(displayRun.llm_used)],
-                ].map(([k, v]) => (
-                  <div key={k} className="rounded-lg border border-white/[0.06] bg-black/20 px-3 py-2">
-                    <div className="text-[10px] uppercase text-slate-500">{k}</div>
-                    <div className="break-all font-mono text-xs text-emerald-100/90">{v}</div>
-                  </div>
-                ))}
-              </dl>
-              {(displayRun.blockers?.length ?? 0) > 0 ? (
-                <div className="mt-3 text-xs text-red-200">Blockers: {displayRun.blockers.join("; ")}</div>
-              ) : null}
-              {(displayRun.warnings?.length ?? 0) > 0 ? (
-                <div className="mt-3 text-xs text-amber-100/90">Warnings: {displayRun.warnings.join("; ")}</div>
-              ) : null}
-            </div>
-          ) : null}
-
-          <div className="rounded-2xl border border-emerald-400/10 bg-[#070c12]/95 p-4">
-            <div className="flex flex-wrap items-center justify-between gap-2">
-              <h3 className="text-xs font-semibold uppercase tracking-[0.2em] text-slate-500">Stage timeline</h3>
-              <input
-                className="rounded-lg border border-white/10 bg-black/30 px-2 py-1 text-xs text-slate-200"
-                placeholder="workflow_run_id override"
-                value={activeWfId}
-                onChange={(e) => setActiveWfId(e.target.value)}
-              />
-            </div>
-            <div className="mt-3 space-y-2">
-              {timeline.length === 0 ? (
-                <p className="text-sm text-slate-500">No timeline until you run a workflow.</p>
-              ) : (
-                timeline.map((row, i) => {
-                  const runId = String(row.run_id ?? "");
-                  return (
-                    <div key={`${runId}-${i}`} className="rounded-xl border border-white/[0.06] bg-[#0a1018]/80 p-3 text-sm">
-                      <div className="flex flex-wrap gap-2 text-xs text-slate-400">
-                        <span className="rounded bg-slate-800/80 px-2 py-0.5">stage {String(row.stage ?? row.stage_number ?? i + 1)}</span>
-                        <span className="text-slate-200">{String(row.agent_key ?? "—")}</span>
-                        <span className={chip(String(row.status ?? "")) + " rounded px-2 py-0.5"}>{String(row.status ?? "—")}</span>
-                        <span className="text-slate-500">{String(row.at ?? row.created_at ?? "")}</span>
-                      </div>
-                      <div className="mt-2 font-mono text-[11px] text-slate-500">run_id {runId}</div>
-                      <button
-                        type="button"
-                        className="mt-2 rounded border border-white/10 bg-black/30 px-2 py-1 text-[11px] text-emerald-200 hover:border-emerald-400/30"
-                        disabled={!runId || agentTraceLoading === runId}
-                        onClick={() => loadAgentTrace(runId)}
-                      >
-                        {agentTraceLoading === runId ? "Loading agent trace…" : "Load agent trace (runtime)"}
-                      </button>
-                      {agentTraceByRunId[runId] ? (
-                        <pre className="mt-2 max-h-48 overflow-auto rounded border border-white/10 bg-black/40 p-2 text-[10px] text-slate-300">
-                          {JSON.stringify(agentTraceByRunId[runId]?.trace ?? [], null, 2)}
-                        </pre>
-                      ) : agentTraceByRunId[runId] === null ? (
-                        <p className="mt-2 text-xs text-red-300/90">Could not load agent run.</p>
-                      ) : null}
-                    </div>
-                  );
-                })
-              )}
-            </div>
-          </div>
+          <RunStatusCard run={displayRun} />
+          <SafetyBoundaryCard run={displayRun} />
+          <DataModeCard run={displayRun} />
+          <DataPipelineCard prSystems={prSystems} run={displayRun} />
+          <AgentTimelineCard timeline={timeline} onLoadAgentTrace={loadAgentTrace} agentTraceLoading={agentTraceLoading} />
+          <ApprovalBoundaryCard run={displayRun} pendingApprovals={pendingApprovals != null ? String(pendingApprovals) : "—"} />
+          <BlockersWarningsCard blockers={displayRun?.blockers ?? []} warnings={displayRun?.warnings ?? []} />
+          <NextActionCard nextAction={displayRun?.next_action ?? summary?.next_action} />
 
           <div className="flex flex-wrap gap-2">
             <button
@@ -917,24 +1036,7 @@ export default function WorkflowRunbookPage() {
               Stop run
             </button>
           </div>
-          {traceErr ? <p className="text-xs text-red-300/90">{traceErr}</p> : null}
-          {trace?.audit_events?.length ? (
-            <div className="rounded-2xl border border-white/10 bg-[#070c12] p-4">
-              <h3 className="text-xs font-semibold uppercase tracking-[0.2em] text-slate-500">Workflow audit trace</h3>
-              <p className="mt-1 text-xs text-slate-500">
-                From <code className="text-slate-400">GET /api/workflow-orchestrator/trace/{`{workflow_run_id}`}</code>. Agent-level tool steps appear under “Load agent trace”.
-              </p>
-              <ul className="mt-3 space-y-2 text-xs">
-                {trace.audit_events.map((ev, i) => (
-                  <li key={`${String(ev.audit_id ?? i)}`} className="rounded-lg border border-white/[0.06] bg-black/25 px-3 py-2 text-slate-300">
-                    <span className="text-slate-500">{String(ev.created_at)}</span> ·{" "}
-                    <span className="font-medium text-slate-200">{String(ev.event_type)}</span> · {String(ev.message)}
-                    <div className="mt-1 text-[10px] text-slate-500">actor {String(ev.actor)} · severity {String(ev.severity)}</div>
-                  </li>
-                ))}
-              </ul>
-            </div>
-          ) : null}
+          <AdvancedDebugTrace trace={trace} traceErr={traceErr} agentTraceByRunId={agentTraceByRunId} />
 
           <div className="rounded-2xl border border-emerald-400/10 bg-[#070c12]/95 p-4">
             <h3 className="text-xs font-semibold uppercase tracking-[0.2em] text-slate-500">Recent orchestrator runs</h3>

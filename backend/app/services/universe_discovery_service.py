@@ -296,7 +296,11 @@ def discover_universe(request: UniverseDiscoverRequest) -> UniverseDiscoverRespo
         execution_blockers: list[str] = []
         if is_mock:
             execution_blockers.append("Mock data cannot be used for execution.")
-        if not has_bid_ask or spread_percent is None:
+        if request.source == "yfinance":
+            # yfinance snapshots can synthesize a spread-like value, but they are not
+            # broker-grade bid/ask quotes for execution readiness.
+            execution_blockers.append("Bid/ask or spread unavailable; execution blocked.")
+        elif not has_bid_ask or spread_percent is None:
             execution_blockers.append("Bid/ask or spread unavailable; execution blocked.")
 
         # Simple deterministic component scores (placeholder; becomes richer as providers mature)

@@ -6,11 +6,9 @@ import {
   api,
   getAgentRuntimeAgents,
   getAgentRuntimeLatest,
-  runWorkflowOrchestrator,
   type AgentRuntimeAgentDescriptor,
   type AgentRunResultRecord,
   type CommandCenterResponse,
-  type OrchestratorRunRecord,
 } from "@/lib/api";
 import { EdgeSignalGrid, MetricCard, RecommendationTable } from "@/components/Cards";
 import { LiveWatchlistPanel } from "@/components/LiveWatchlistPanel";
@@ -209,6 +207,9 @@ function CommandCenterPanel() {
           <p className="mt-2 max-w-6xl text-sm leading-relaxed text-slate-400">
             Source-backed dashboard. No hardcoded trade numbers are shown as recommendations. If real source data is unavailable, the platform shows no-action status instead of fake buy/target/stop data.
           </p>
+          <div className="mt-4 rounded-2xl border border-sky-400/20 bg-sky-500/10 px-4 py-3 text-sm text-sky-100">
+            Command Center is a manual decision/research surface. Autonomous paper-first workflow runs from Workflow Runbook.
+          </div>
 
           <div className="mt-5 flex flex-nowrap gap-2 overflow-x-auto whitespace-nowrap pr-2 [-ms-overflow-style:none] [scrollbar-width:none] [&::-webkit-scrollbar]:hidden">
             {[

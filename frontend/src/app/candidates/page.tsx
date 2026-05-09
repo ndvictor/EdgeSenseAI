@@ -165,6 +165,10 @@ export default function CandidatesPage() {
           description="Manage symbols for the decision workflow. Add candidates from Stocks, Watchlist, or Scanner. Run the decision workflow to rank and evaluate them."
         />
 
+        <div className="mb-4 rounded-2xl border border-sky-400/20 bg-sky-500/10 px-4 py-3 text-sm text-sky-100">
+          Candidate Universe is a manual research tool. Use Workflow Runbook to run the autonomous agent workflow.
+        </div>
+
         {error && (
           <div className="mb-4 rounded-xl border border-amber-300 bg-amber-50 px-4 py-3 text-sm text-amber-700">
             <div className="flex items-center gap-2">

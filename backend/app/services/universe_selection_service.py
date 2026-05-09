@@ -406,7 +406,7 @@ def run_universe_selection(request: UniverseSelectionRequest) -> UniverseSelecti
                 blockers=r.blockers or ["Blocked by data freshness gate"],
                 warnings=r.warnings or [],
                 data_quality=r.data_quality,
-                provider=r.provider,
+                provider=r.provider or request.source or "unknown",
             ))
 
         return UniverseSelectionResponse(
@@ -447,7 +447,7 @@ def run_universe_selection(request: UniverseSelectionRequest) -> UniverseSelecti
                 blockers=r.blockers or ["Blocked by data freshness gate"],
                 warnings=r.warnings or [],
                 data_quality=r.data_quality,
-                provider=r.provider,
+                provider=r.provider or request.source or "unknown",
             ))
 
     # Now score only usable symbols

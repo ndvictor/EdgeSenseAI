@@ -85,6 +85,10 @@ export default function CandidateEnginePage() {
           ) : null}
         </div>
 
+        <div className="rounded-2xl border border-sky-400/20 bg-sky-500/10 px-4 py-3 text-sm text-sky-100">
+          Candidate Universe is a manual research tool. Use Workflow Runbook to run the autonomous agent workflow.
+        </div>
+
         <div className="flex flex-nowrap gap-2 overflow-x-auto whitespace-nowrap pr-2 [-ms-overflow-style:none] [scrollbar-width:none] [&::-webkit-scrollbar]:hidden">
           {[
             ["candidate_engine", "Candidate Engine"],

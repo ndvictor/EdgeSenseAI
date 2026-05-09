@@ -74,6 +74,16 @@ function typeAccentChipClass(unit: LabInventoryUnit): string {
   return "border-slate-600/60 bg-slate-800/40 text-slate-400";
 }
 
+function truthValue(value: boolean | undefined) {
+  return value ? "Yes" : "No";
+}
+
+function truthChip(value: boolean | undefined) {
+  return value
+    ? "border-emerald-500/45 bg-emerald-500/15 text-emerald-200"
+    : "border-slate-600/60 bg-slate-800/40 text-slate-400";
+}
+
 const TAB_LABELS: { id: LabTab; label: string }[] = [
   { id: "workflow", label: "Workflow View" },
   { id: "missing", label: "Missing Inventory" },
@@ -105,21 +115,32 @@ function UnitRow({ unit }: { unit: LabInventoryUnit }) {
   return (
     <tr className="border-b border-white/[0.06] align-top text-sm last:border-0">
       <td className="py-2.5 pr-3 font-medium text-slate-100">{unit.name}</td>
+      <td className="py-2.5 pr-3 text-xs text-slate-400">{unit.product_stage ?? unit.stage_numbers.join(", ")}</td>
+      <td className="py-2.5 pr-3 text-slate-400">{unit.runtime_agent_sequence ?? "—"}</td>
+      {[
+        ["registered", unit.registered],
+        ["wrapped", unit.wrapped],
+        ["active", unit.active_in_orchestrator],
+        ["ui", unit.ui_visible],
+        ["evidence", unit.evidence_only],
+        ["manual", unit.manual_tool_only],
+      ].map(([label, value]) => (
+        <td key={String(label)} className="py-2.5 pr-3">
+          <span className={`inline-flex rounded-lg border px-2 py-0.5 text-[11px] font-medium ${truthChip(Boolean(value))}`}>
+            {truthValue(Boolean(value))}
+          </span>
+        </td>
+      ))}
+      <td className="py-2.5 pr-3">
+        <span className={`inline-flex rounded-lg border px-2 py-0.5 text-[11px] font-medium ${statusChipClass(unit.readiness_status === "complete" ? "created" : unit.readiness_status === "partial" ? "partial" : unit.status)}`}>
+          {unit.readiness_status ?? unit.status_label}
+        </span>
+      </td>
       <td className="py-2.5 pr-3">
         <span className={`inline-flex rounded-lg border px-2 py-0.5 text-[11px] font-medium ${typeAccentChipClass(unit)}`}>
           {unit.type}
         </span>
       </td>
-      <td className="py-2.5 pr-3 text-slate-400">{unit.needed_for_baseline ? "Yes" : "No"}</td>
-      <td className="py-2.5 pr-3">
-        <span className={`inline-flex rounded-lg border px-2 py-0.5 text-[11px] font-medium ${statusChipClass(unit.status)}`}>
-          {unit.status_label}
-        </span>
-      </td>
-      <td className="py-2.5 pr-3 capitalize text-slate-400">{unit.tested_status}</td>
-      <td className="py-2.5 pr-3 text-slate-400">{unit.promotion_status}</td>
-      <td className="py-2.5 pr-3 text-xs capitalize text-slate-400">{unit.frontend_status ?? unit.implementation_status ?? "—"}</td>
-      <td className="py-2.5 pr-3 text-slate-400">{unit.uses_llm ? "Yes" : "No"}</td>
       <td className="py-2.5 pr-3 text-xs text-slate-400">{unit.what_it_should_do}</td>
       <td className="py-2.5 text-xs text-emerald-200/80">{unit.next_action}</td>
     </tr>
@@ -165,17 +186,20 @@ function StageSection({ stage, tab }: { stage: LabInventoryStage; tab: LabTab })
         </div>
       </summary>
       <div className="mt-3 overflow-x-auto">
-        <table className="w-full min-w-[960px] border-collapse text-left">
+        <table className="w-full min-w-[1500px] border-collapse text-left">
           <thead>
             <tr className="border-b border-white/10 text-[10px] font-semibold uppercase tracking-wider text-slate-500">
               <th className="pb-2 pr-3">Name</th>
-              <th className="pb-2 pr-3">Type</th>
-              <th className="pb-2 pr-3">Baseline</th>
+              <th className="pb-2 pr-3">product_stage</th>
+              <th className="pb-2 pr-3">runtime_agent_sequence</th>
+              <th className="pb-2 pr-3">registered</th>
+              <th className="pb-2 pr-3">wrapped</th>
+              <th className="pb-2 pr-3">active_in_orchestrator</th>
+              <th className="pb-2 pr-3">ui_visible</th>
+              <th className="pb-2 pr-3">evidence_only</th>
+              <th className="pb-2 pr-3">manual_tool_only</th>
               <th className="pb-2 pr-3">Status</th>
-              <th className="pb-2 pr-3">Tested</th>
-              <th className="pb-2 pr-3">Promotion</th>
-              <th className="pb-2 pr-3">Frontend</th>
-              <th className="pb-2 pr-3">LLM</th>
+              <th className="pb-2 pr-3">Type</th>
               <th className="pb-2 pr-3">Purpose</th>
               <th className="pb-2">Next action</th>
             </tr>
@@ -244,6 +268,10 @@ export default function LabPlatformPage() {
           <h1 className="text-3xl font-semibold tracking-tight text-slate-50">Lab Platform</h1>
           <p className="mt-2 max-w-3xl text-sm text-slate-400">
             Inventory tracker for scripts, AI-agents, ML/statistics models, workflows, and promotion readiness.
+          </p>
+          <p className="mt-2 max-w-4xl text-sm text-slate-300">
+            Lab stages are product stages. The orchestrator uses a linear runtime agent sequence. Some components are manual tools or evidence
+            registries, not autonomous agents.
           </p>
           <p className="mt-2 text-xs text-slate-500">
             Updated {data.updated_at} · Mode <span className="text-slate-400">{data.data_mode}</span>
