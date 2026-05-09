@@ -15,6 +15,9 @@ from app.services.alpaca_execution_service import (
     update_trade_now_config,
 )
 
+# This route is a manual/tool surface. It is not the autonomous workflow entrypoint.
+# Autonomous workflow execution must go through /api/workflow-orchestrator/run.
+
 router = APIRouter()
 
 

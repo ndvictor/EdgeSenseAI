@@ -9,6 +9,9 @@ from app.services.strategy_workflow_run_service import (
     run_strategy_workflow_from_signal,
 )
 
+# This route is a manual/tool surface. It is not the autonomous workflow entrypoint.
+# Autonomous workflow execution must go through /api/workflow-orchestrator/run.
+
 router = APIRouter()
 
 

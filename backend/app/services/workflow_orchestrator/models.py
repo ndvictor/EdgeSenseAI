@@ -29,6 +29,11 @@ class OrchestratorRunRequest(BaseModel):
     dry_run: bool = True
     require_human_approval: bool = True
     allow_submit: bool = False
+    account_equity: float = 1000.0
+    max_risk_per_trade_percent: float = 0.5
+    max_daily_loss_percent: float = 1.5
+    max_open_positions: int = 1
+    max_trades_per_day: int = 3
     simulated_position: bool = False
     simulated_closed_trade: bool = False
     idempotency_key: str | None = None

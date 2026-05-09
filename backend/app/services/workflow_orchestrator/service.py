@@ -12,9 +12,10 @@ from app.services.audit_log.service import write_event
 from app.services.workflow_governance.models import WorkflowGovernanceCheckRequest
 from app.services.workflow_governance.service import check_governance
 from app.services.workflow_orchestrator.models import OrchestratorRunRequest, OrchestratorRunResponse, OrchestratorStatusResponse, iso_utc_now, new_orchestrator_id
-from app.services.workflow_orchestrator.safety import enforce_orchestrator_safety
 from app.services.workflow_orchestrator.pipeline_carryforward import advisory_glue_next_agent_mismatch, apply_stage_carryforward
+from app.services.workflow_orchestrator.safety import enforce_orchestrator_safety
 from app.services.workflow_orchestrator.stage_plan import default_stage_plan, orchestrator_pipeline_agent_count
+from app.services.workflow_orchestrator.state_contract import WorkflowCarryForwardState
 
 _MEMORY: dict[str, OrchestratorRunResponse] = {}
 
@@ -145,38 +146,6 @@ def run_workflow(body: OrchestratorRunRequest) -> OrchestratorRunResponse:
         )
     )
     write_event(AuditEventCreate(event_type="governance_check_completed", actor="system", severity="info", message="Governance check completed", metadata=gov.model_dump()))
-    if gov.decision == "blocked":
-        wr = create_workflow_run(
-            WorkflowRunCreateRequest(
-                workflow_name=body.workflow_name,
-                asset_class=body.asset_class,
-                horizon=body.horizon,
-                mode=body.mode,
-                source=body.source,
-                metadata={**(body.metadata or {}), "governance_blocked": True},
-            )
-        )
-        resp = OrchestratorRunResponse(
-            orchestrator_run_id=new_orchestrator_id(),
-            workflow_run_id=wr.workflow_run_id,
-            status="blocked",
-            current_stage=None,
-            current_agent_key=None,
-            blockers=list(gov.blockers),
-            warnings=list(gov.warnings),
-            next_action=gov.next_action,
-            approval_required=False,
-            approval_id=None,
-            execution_boundary_reached=False,
-            submitted_order=False,
-            broker_called=False,
-            llm_used=False,
-            created_at=iso_utc_now(),
-            updated_at=iso_utc_now(),
-        )
-        _MEMORY[resp.orchestrator_run_id] = resp
-        _persist_run(resp, req=body)
-        return resp
 
     # Create workflow run
     wr = create_workflow_run(
@@ -198,17 +167,28 @@ def run_workflow(body: OrchestratorRunRequest) -> OrchestratorRunResponse:
     stage_cap = max(0, int(body.stop_at_stage or orchestrator_pipeline_agent_count()))
     stage_timeline: list[dict[str, Any]] = []
     agent_run_ids: list[str] = []
-    blockers: list[str] = []
-    warnings: list[str] = []
+    blockers: list[str] = list(gov.blockers)
+    warnings: list[str] = list(gov.warnings)
     current_stage: int | None = None
     current_agent: str | None = None
 
-    # Accumulated inputs: glue stages write symbols, strategy_key, regime, etc. for downstream agents.
-    req_inputs: dict[str, Any] = {
-        "asset_class": body.asset_class,
-        "horizon": body.horizon,
-        "symbols": list(body.symbols or []),
-    }
+    state = WorkflowCarryForwardState(
+        workflow_run_id=wr.workflow_run_id,
+        orchestrator_run_id=orchestrator_run_id,
+        asset_class=body.asset_class,
+        horizon=body.horizon,
+        mode=body.mode,
+        source="mock" if body.dry_run else body.source,
+        symbols=list(body.symbols or []),
+        account_equity=body.account_equity,
+        max_risk_per_trade_percent=body.max_risk_per_trade_percent,
+        max_daily_loss_percent=body.max_daily_loss_percent,
+        max_open_positions=body.max_open_positions,
+        max_trades_per_day=body.max_trades_per_day,
+    )
+    if body.strategy_key:
+        state.strategy_key = body.strategy_key
+        state.selected_strategy_key = body.strategy_key
 
     approval_required = bool(body.require_human_approval)
     approval_id: str | None = None
@@ -223,18 +203,11 @@ def run_workflow(body: OrchestratorRunRequest) -> OrchestratorRunResponse:
         if idx > stage_cap:
             break
 
-        # Dry-run orchestrator: deterministic mock market data only (no yfinance/broker; avoids CI rate limits).
-        req_inputs["source"] = "mock" if body.dry_run else (body.source or "auto")
-        if body.strategy_key:
-            req_inputs["strategy_key"] = body.strategy_key
-        # Hard safety overrides
-        req_inputs["allow_submit"] = False
-
         agent_result = create_agent_run(
             AgentRunRequest(
                 workflow_run_id=wr.workflow_run_id,
                 agent_key=agent_key,
-                inputs=req_inputs,
+                inputs=state.to_agent_inputs(),
                 context={
                     "source": "workflow_orchestrator",
                     "workflow_run_id": wr.workflow_run_id,
@@ -247,7 +220,7 @@ def run_workflow(body: OrchestratorRunRequest) -> OrchestratorRunResponse:
         )
         agent_run_ids.append(agent_result.run_id)
 
-        carry_warnings = apply_stage_carryforward(agent_key=agent_key, agent_result=agent_result, req_inputs=req_inputs)
+        carry_warnings = apply_stage_carryforward(agent_key=agent_key, agent_result=agent_result, state=state)
         warnings.extend(carry_warnings)
         next_planned = plan[idx] if idx < len(plan) else None
         mismatch = advisory_glue_next_agent_mismatch(agent_key=agent_key, agent_result=agent_result, next_planned_agent=next_planned)
@@ -261,9 +234,21 @@ def run_workflow(body: OrchestratorRunRequest) -> OrchestratorRunResponse:
             "status": agent_result.status,
             "at": agent_result.created_at,
             "pipeline_inputs_snapshot": {
-                k: req_inputs[k]
-                for k in ("symbols", "symbol", "strategy_key", "regime", "proof_status", "selected_model_key", "qlib_available")
-                if k in req_inputs
+                k: state.model_dump().get(k)
+                for k in (
+                    "symbols",
+                    "symbol",
+                    "selected_symbol",
+                    "strategy_key",
+                    "selected_strategy_key",
+                    "selected_model_key",
+                    "proof_status",
+                    "qlib_available",
+                    "account_equity",
+                    "submitted_order",
+                    "broker_called",
+                    "llm_used",
+                )
             },
         })
 
@@ -299,7 +284,7 @@ def run_workflow(body: OrchestratorRunRequest) -> OrchestratorRunResponse:
 
         if agent_result.status in {"blocked", "failed"}:
             write_event(AuditEventCreate(workflow_run_id=wr.workflow_run_id, orchestrator_run_id=orchestrator_run_id, event_type="workflow_blocked", actor="system", severity="warn", message="Workflow blocked by agent", metadata={"agent_key": agent_key, "blockers": agent_result.blockers}))
-            break
+            warnings.append(f"{agent_key}_reported_{agent_result.status}; preview_continued_without_submit")
 
     if blockers:
         status: str = "blocked"

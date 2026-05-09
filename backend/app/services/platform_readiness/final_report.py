@@ -134,6 +134,28 @@ def _verify_frontend_routes() -> list[dict[str, str]]:
     return out
 
 
+def _workflow_runbook_uses_orchestrator_only() -> bool:
+    page = _repo_root() / "frontend" / "src" / "app" / "workflow-runbook" / "page.tsx"
+    try:
+        text = page.read_text(encoding="utf-8")
+    except OSError:
+        return False
+    forbidden = (
+        "runDecisionWorkflow(",
+        "runStrategyWorkflow(",
+        "runSignal",
+        "updateAutoRunStatus(",
+        "postExecutionSubmit(",
+        "/api/decision-workflows/run",
+        "/api/signal-agents/run",
+        "/api/strategy-workflows/run",
+        "/api/auto-run/status",
+        "/api/tradenow/orders",
+        "/api/execution/submit",
+    )
+    return "runWorkflowOrchestrator(" in text and not any(item in text for item in forbidden)
+
+
 def _lab_core_gaps(units_flat: list[dict[str, Any]]) -> list[str]:
     by_name = {u.get("name"): u for u in units_flat}
     missing: list[str] = []
@@ -244,6 +266,14 @@ def build_final_readiness_status() -> dict[str, Any]:
     if not human_approval_required:
         blockers.append("require_human_approval_effective_false")
 
+    endpoint_boundaries = {
+        "autonomous_entrypoint": "/api/workflow-orchestrator/run",
+        "old_manual_surfaces_present": True,
+        "mixed_endpoint_risk": "pass" if _workflow_runbook_uses_orchestrator_only() else "fail",
+        "broker_submit_blocked": True,
+        "llm_decisioning_blocked": True,
+    }
+
     status: Status = "ok"
     if blockers:
         status = "blocked"
@@ -269,6 +299,7 @@ def build_final_readiness_status() -> dict[str, Any]:
             "qlib_safe_when_unavailable": bool(qlib_safe),
             "emergency_stop": bool(emergency_stop),
         },
+        "endpoint_boundaries": endpoint_boundaries,
         "storage": {
             "postgres_mode": pg_mode,
             "redis_mode": redis_mode,

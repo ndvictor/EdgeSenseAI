@@ -2,6 +2,7 @@
 
 import os
 from datetime import datetime, timezone
+from pathlib import Path
 from typing import Any, Literal
 
 from fastapi import APIRouter
@@ -326,6 +327,29 @@ def _check_edgesense_execution() -> ReadinessCheck:
     )
 
 
+def _workflow_runbook_uses_orchestrator_only() -> bool:
+    path = Path(__file__).resolve().parents[4] / "frontend" / "src" / "app" / "workflow-runbook" / "page.tsx"
+    try:
+        text = path.read_text(encoding="utf-8")
+    except OSError:
+        return False
+    forbidden = (
+        "runDecisionWorkflow(",
+        "runStrategyWorkflow(",
+        "runSignal",
+        "updateAutoRunStatus(",
+        "postExecutionSubmit(",
+        "place_trade",
+        "/api/decision-workflows/run",
+        "/api/signal-agents/run",
+        "/api/strategy-workflows/run",
+        "/api/auto-run/status",
+        "/api/tradenow/orders",
+        "/api/execution/submit",
+    )
+    return "runWorkflowOrchestrator(" in text and not any(item in text for item in forbidden)
+
+
 @router.get("/platform-readiness", response_model=PlatformReadinessResponse)
 def get_platform_readiness():
     """Get platform readiness checklist for persistence and monitoring."""
@@ -403,6 +427,13 @@ def get_platform_readiness_status() -> dict[str, Any]:
             "require_human_approval": effective_bool("REQUIRE_HUMAN_APPROVAL"),
         },
         "safety_summary": {"no_llm": True, "no_broker_calls": True, "no_execution_submit": True},
+        "endpoint_boundaries": {
+            "autonomous_entrypoint": "/api/workflow-orchestrator/run",
+            "old_manual_surfaces_present": True,
+            "mixed_endpoint_risk": "pass" if _workflow_runbook_uses_orchestrator_only() else "fail",
+            "broker_submit_blocked": True,
+            "llm_decisioning_blocked": True,
+        },
     }
 
     missing_backend_components = []

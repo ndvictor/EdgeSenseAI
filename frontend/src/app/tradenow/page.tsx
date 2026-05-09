@@ -569,9 +569,9 @@ export default function TradeNowPage() {
     <div className="w-full min-h-full p-4 lg:p-8">
       <div className="mx-auto w-full max-w-[1500px] space-y-4">
         <PageHeader
-          eyebrow="execution foundation"
+          eyebrow="manual / paper execution surface"
           title="TradeNow"
-          description="Alpaca execution adapter with dry-run default, paper endpoint support, human approval, env-only credentials, and live trading disabled unless explicitly enabled later."
+          description="Manual execution UI for dry-run and paper workflows. Autonomous workflow runs do not start here; they must use POST /api/workflow-orchestrator/run."
         />
 
         {error && <div className="rounded-xl border border-rose-500/30 bg-rose-500/10 px-4 py-3 text-sm text-rose-200">{error}</div>}
@@ -691,7 +691,7 @@ export default function TradeNowPage() {
                 <div className="rounded-xl border border-emerald-400/10 bg-black/25 p-3">
                   <div className="mb-2 flex items-center gap-2">
                     <Bot className="h-4 w-4 text-cyan-300" />
-                    <span className="text-xs font-bold text-white">Automatic</span>
+                    <span className="text-xs font-bold text-white">Manual automation gate</span>
                   </div>
                   {config ? (
                     <div className="space-y-2 text-[11px] text-slate-300">
@@ -700,14 +700,16 @@ export default function TradeNowPage() {
                         <StatusBadge value={`auto_env_${config.autonomous_execution_enabled_env}`} />
                       </div>
                       <label className="flex items-center justify-between gap-2 rounded-lg border border-white/10 bg-white/[0.03] px-2 py-1.5">
-                        <span>Auto paper (future)</span>
+                        <span>Manual paper automation toggle</span>
                         <input
                           type="checkbox"
                           checked={config.automatic_execution_user_enabled}
                           onChange={(e) => updateConfig({ automatic_execution_user_enabled: e.target.checked })}
                         />
                       </label>
-                      <p className="leading-snug text-slate-500">Requires autonomous env + gates. See Safety for blockers.</p>
+                      <p className="leading-snug text-slate-500">
+                        This controls the TradeNow manual/tool surface only. It is not the autonomous workflow controller.
+                      </p>
                       {config.autonomous_blockers?.length ? (
                         <ul className="max-h-24 space-y-1 overflow-y-auto text-amber-200/90">
                           {config.autonomous_blockers.slice(0, 4).map((b) => (

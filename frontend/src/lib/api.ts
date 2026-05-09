@@ -4353,6 +4353,8 @@ export async function getLatestWorkflowOrchestratorRun(): Promise<{ status: stri
   return request<{ status: string; run: OrchestratorRunRecord | null }>("/api/workflow-orchestrator/latest");
 }
 
+export const getWorkflowOrchestratorLatest = getLatestWorkflowOrchestratorRun;
+
 export async function listWorkflowOrchestratorRuns(limit = 20): Promise<{ status: string; runs: OrchestratorRunRecord[] }> {
   return request<{ status: string; runs: OrchestratorRunRecord[] }>(`/api/workflow-orchestrator/runs?limit=${limit}`);
 }
@@ -4421,6 +4423,8 @@ export async function listApprovalQueueItems(limit = 50, statusFilter?: string):
   return request<{ status: string; items: ApprovalQueueItemRecord[] }>(`/api/approval-queue/items?${q}`);
 }
 
+export const getApprovalQueueItems = listApprovalQueueItems;
+
 export async function getApprovalQueueItem(approvalId: string): Promise<{ status: string; item: ApprovalQueueItemRecord }> {
   return request<{ status: string; item: ApprovalQueueItemRecord }>(
     `/api/approval-queue/items/${encodeURIComponent(approvalId)}`,
@@ -4434,11 +4438,19 @@ export async function approveApprovalQueueItem(approvalId: string, body: Approva
   );
 }
 
+export function approveApprovalItem(id: string, body: ApprovalActionBody = {}): Promise<{ status: string; item: ApprovalQueueItemRecord }> {
+  return approveApprovalQueueItem(id, body);
+}
+
 export async function rejectApprovalQueueItem(approvalId: string, body: ApprovalActionBody): Promise<{ status: string; item: ApprovalQueueItemRecord }> {
   return request<{ status: string; item: ApprovalQueueItemRecord }>(
     `/api/approval-queue/items/${encodeURIComponent(approvalId)}/reject`,
     { method: "POST", body: JSON.stringify(body) },
   );
+}
+
+export function rejectApprovalItem(id: string, body: ApprovalActionBody = {}): Promise<{ status: string; item: ApprovalQueueItemRecord }> {
+  return rejectApprovalQueueItem(id, body);
 }
 
 export async function cancelApprovalQueueItem(approvalId: string, body: ApprovalActionBody): Promise<{ status: string; item: ApprovalQueueItemRecord }> {
@@ -4997,6 +5009,7 @@ export const api = {
   /** Phase 5 — orchestrator, runtime, approvals, audit, scheduler, governance, readiness v2, Qlib, evidence. */
   runWorkflowOrchestrator,
   getWorkflowOrchestratorStatus,
+  getWorkflowOrchestratorLatest,
   getLatestWorkflowOrchestratorRun,
   listWorkflowOrchestratorRuns,
   getWorkflowOrchestratorTrace,
@@ -5011,9 +5024,12 @@ export const api = {
   createAgentRun,
   getAgentRun,
   getApprovalQueueStatus,
+  getApprovalQueueItems,
   listApprovalQueueItems,
   getApprovalQueueItem,
+  approveApprovalItem,
   approveApprovalQueueItem,
+  rejectApprovalItem,
   rejectApprovalQueueItem,
   cancelApprovalQueueItem,
   getAuditLogStatus,

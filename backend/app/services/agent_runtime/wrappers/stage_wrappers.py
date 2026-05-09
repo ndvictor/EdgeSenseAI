@@ -34,6 +34,35 @@ WRAPPED_AGENT_KEYS = frozenset(
 )
 
 
+def _is_orchestrator_context(context: dict[str, Any]) -> bool:
+    return context.get("source") == "workflow_orchestrator"
+
+
+def _first_symbol(inputs: dict[str, Any], *, fallback: str = "AMD") -> str:
+    if inputs.get("symbol"):
+        return str(inputs["symbol"]).strip().upper()
+    if inputs.get("selected_symbol"):
+        return str(inputs["selected_symbol"]).strip().upper()
+    if isinstance(inputs.get("symbols"), list) and inputs["symbols"]:
+        return str(inputs["symbols"][0]).strip().upper()
+    return fallback
+
+
+def _orchestrator_account_equity(inputs: dict[str, Any]) -> float:
+    try:
+        return float(inputs.get("account_equity") or 1000.0)
+    except (TypeError, ValueError):
+        return 1000.0
+
+
+def _proof_status_for_eligibility(value: Any, *, orchestrator_context: bool) -> str:
+    raw = str(value or ("unknown" if orchestrator_context else "proven"))
+    if raw == "proof_required":
+        return "backtest_required"
+    allowed = {"proven", "paper_passed", "backtest_required", "research_only", "unknown", "blocked"}
+    return raw if raw in allowed else "unknown"
+
+
 def _wrap_result(
     *,
     agent_key: str,
@@ -102,6 +131,7 @@ def run_wrapped_agent(*, agent_key: str, inputs: dict[str, Any], context: dict[s
         }
 
     s = safety.sanitized_inputs
+    orchestrator_context = _is_orchestrator_context(context)
 
     if agent_key in GLUE_AGENT_KEYS:
         return run_glue_agent(agent_key=agent_key, inputs=inputs, context=context, safety=safety)
@@ -168,6 +198,7 @@ def run_wrapped_agent(*, agent_key: str, inputs: dict[str, Any], context: dict[s
         from app.services.workflow_router.models import WorkflowRouteRequest
         from app.services.workflow_router.service import route_next_workflow
 
+        proof_status = _proof_status_for_eligibility(s.get("proof_status"), orchestrator_context=orchestrator_context)
         default_req = {
             "session": "market_open",
             "market_condition": {
@@ -178,10 +209,10 @@ def run_wrapped_agent(*, agent_key: str, inputs: dict[str, Any], context: dict[s
                 "urgency": "high",
             },
             "strategy_or_response_status": {
-                "proof_status": "proven",
+                "proof_status": proof_status,
                 "paper_status": "passed",
                 "requires_backtest": False,
-                "already_backtested": True,
+                "already_backtested": bool(s.get("proof_status")) if orchestrator_context else True,
             },
             "account_state": {
                 "risk_budget_available": True,
@@ -189,7 +220,7 @@ def run_wrapped_agent(*, agent_key: str, inputs: dict[str, Any], context: dict[s
                 "live_trading_enabled": False,
                 "human_approval_required": True,
             },
-            "execution_state": {"broker_ready": True, "spread_pass": True, "slippage_pass": True},
+            "execution_state": {"broker_ready": False if orchestrator_context else True, "spread_pass": True, "slippage_pass": True},
         }
         req = WorkflowRouteRequest.model_validate(s.get("request", default_req) if isinstance(s.get("request"), dict) else default_req)
         resp = route_next_workflow(req)
@@ -205,6 +236,8 @@ def run_wrapped_agent(*, agent_key: str, inputs: dict[str, Any], context: dict[s
         from app.services.strategy_eligibility.models import StrategyEligibilityCheckRequest
         from app.services.strategy_eligibility.service import check_strategy_eligibility
 
+        strategy_key = str(s.get("strategy_key") or ("pending_strategy_selection" if orchestrator_context else "regime_aware_momentum_catalyst"))
+        proof_status = _proof_status_for_eligibility(s.get("proof_status"), orchestrator_context=orchestrator_context)
         default_req = {
             "workflow_context": {
                 "selected_workflow": "baseline_fast_path",
@@ -212,12 +245,12 @@ def run_wrapped_agent(*, agent_key: str, inputs: dict[str, Any], context: dict[s
                 "session": "market_open",
             },
             "strategy_candidate": {
-                "strategy_key": "regime_aware_momentum_catalyst",
+                "strategy_key": strategy_key,
                 "strategy_group": "regime_aware_momentum",
-                "proof_status": "proven",
+                "proof_status": proof_status,
                 "paper_status": "passed",
                 "requires_backtest": False,
-                "already_backtested": True,
+                "already_backtested": bool(s.get("proof_status")) if orchestrator_context else True,
             },
             "market_condition": {
                 "regime": "risk_on",
@@ -264,9 +297,8 @@ def run_wrapped_agent(*, agent_key: str, inputs: dict[str, Any], context: dict[s
         from app.services.trigger_monitoring.models import TriggerMonitoringEvaluateRequest
         from app.services.trigger_monitoring.service import evaluate_trigger
 
-        sym = "AMD"
-        if isinstance(s.get("symbols"), list) and s["symbols"]:
-            sym = str(s["symbols"][0]).upper()
+        sym = _first_symbol(s)
+        strategy_key = str(s.get("strategy_key") or ("pending_strategy_selection" if orchestrator_context else "regime_aware_momentum_catalyst"))
 
         default_req = {
             "workflow_context": {
@@ -277,7 +309,7 @@ def run_wrapped_agent(*, agent_key: str, inputs: dict[str, Any], context: dict[s
             "eligibility_context": {
                 "eligible": True,
                 "eligibility_status": "eligible",
-                "strategy_key": "regime_aware_momentum_catalyst",
+                "strategy_key": strategy_key,
                 "strategy_group": "regime_aware_momentum",
             },
             "trigger_candidate": {
@@ -330,9 +362,10 @@ def run_wrapped_agent(*, agent_key: str, inputs: dict[str, Any], context: dict[s
         from app.services.execution_planner.models import ExecutionPlannerPlanRequest
         from app.services.execution_planner.service import plan_execution
 
-        sym = "AMD"
-        if isinstance(s.get("symbols"), list) and s["symbols"]:
-            sym = str(s["symbols"][0]).upper()
+        sym = _first_symbol(s)
+        account_equity = _orchestrator_account_equity(s) if orchestrator_context else 10000.0
+        max_risk = float(s.get("max_risk_per_trade_percent") or (0.5 if orchestrator_context else 1.0))
+        max_position = 5.0 if orchestrator_context else 20.0
 
         default_req = {
             "trigger_evaluation": {
@@ -352,15 +385,15 @@ def run_wrapped_agent(*, agent_key: str, inputs: dict[str, Any], context: dict[s
                 "volume_confirms": True,
             },
             "account_state": {
-                "account_equity": 10000.0,
-                "cash": 10000.0,
+                "account_equity": account_equity,
+                "cash": account_equity,
                 "risk_budget_available": True,
-                "max_risk_per_trade_percent": 1.0,
-                "max_position_size_percent": 20.0,
+                "max_risk_per_trade_percent": max_risk,
+                "max_position_size_percent": max_position,
                 "paper_trading_enabled": True,
                 "live_trading_enabled": False,
                 "human_approval_required": True,
-                "execution_enabled": True,
+                "execution_enabled": False if orchestrator_context else True,
             },
             "planning_preferences": {
                 "order_style": "limit",
@@ -368,6 +401,7 @@ def run_wrapped_agent(*, agent_key: str, inputs: dict[str, Any], context: dict[s
                 "target_reward_risk": 2.0,
                 "atr_stop_multiplier": 1.0,
                 "max_spread_percent": 0.15,
+                "allow_submit": False,
             },
         }
         raw = s.get("request") if isinstance(s.get("request"), dict) else None
@@ -446,10 +480,13 @@ def run_wrapped_agent(*, agent_key: str, inputs: dict[str, Any], context: dict[s
         from app.services.position_monitoring.models import PositionMonitoringEvaluateRequest
         from app.services.position_monitoring.service import evaluate_position
 
+        sym = _first_symbol(s)
+        account_equity = _orchestrator_account_equity(s) if orchestrator_context else 10000.0
+        strategy_key = str(s.get("strategy_key") or ("pending_strategy_selection" if orchestrator_context else "regime_aware_momentum_catalyst"))
         default_req = {
             "position": {
                 "position_id": "pos_sample",
-                "symbol": "AMD",
+                "symbol": sym,
                 "asset_class": "stock",
                 "horizon": "day_trading",
                 "side": "long",
@@ -461,7 +498,7 @@ def run_wrapped_agent(*, agent_key: str, inputs: dict[str, Any], context: dict[s
                 "opened_at": "2026-05-07T09:40:00-05:00",
             },
             "thesis": {
-                "strategy_key": "regime_aware_momentum_catalyst",
+                "strategy_key": strategy_key,
                 "trigger_key": "rvol_vwap_breakout_confirm",
                 "vwap": 149.80,
                 "price_above_vwap": True,
@@ -470,10 +507,10 @@ def run_wrapped_agent(*, agent_key: str, inputs: dict[str, Any], context: dict[s
                 "invalidation_hit": False,
             },
             "risk_state": {
-                "account_equity": 10000,
-                "max_daily_loss_percent": 3.0,
+                "account_equity": account_equity,
+                "max_daily_loss_percent": float(s.get("max_daily_loss_percent") or (1.5 if orchestrator_context else 3.0)),
                 "current_daily_loss_percent": 0.4,
-                "max_position_size_percent": 20.0,
+                "max_position_size_percent": 5.0 if orchestrator_context else 20.0,
                 "force_close_requested": False,
                 "emergency_stop": False,
             },
@@ -497,11 +534,12 @@ def run_wrapped_agent(*, agent_key: str, inputs: dict[str, Any], context: dict[s
         from app.services.close_position.models import ClosePositionReviewRequest
         from app.services.close_position.service import review_close_position
 
+        sym = _first_symbol(s)
         default_req = {
             "position_evaluation": {
                 "evaluation_id": "pm_sample",
                 "position_id": "pos_sample",
-                "symbol": "AMD",
+                "symbol": sym,
                 "asset_class": "stock",
                 "horizon": "day_trading",
                 "position_status": "exit_review",
@@ -541,10 +579,12 @@ def run_wrapped_agent(*, agent_key: str, inputs: dict[str, Any], context: dict[s
         from app.services.post_trade_evaluation.models import PostTradeEvaluationEvaluateRequest
         from app.services.post_trade_evaluation.service import evaluate_post_trade
 
+        sym = _first_symbol(s)
+        strategy_key = str(s.get("strategy_key") or ("pending_strategy_selection" if orchestrator_context else "regime_aware_momentum_catalyst"))
         default_req = {
             "trade": {
                 "trade_id": "trade_sample",
-                "symbol": "AMD",
+                "symbol": sym,
                 "asset_class": "stock",
                 "horizon": "day_trading",
                 "side": "long",
@@ -559,7 +599,7 @@ def run_wrapped_agent(*, agent_key: str, inputs: dict[str, Any], context: dict[s
                 "closed_at": "2026-05-07T10:25:00-05:00",
                 "exit_reason": "target_hit",
             },
-            "workflow_context": {"selected_workflow": "baseline_fast_path", "strategy_key": "regime_aware_momentum_catalyst", "trigger_key": "rvol_vwap_breakout_confirm", "session": "market_open"},
+            "workflow_context": {"selected_workflow": "baseline_fast_path", "strategy_key": strategy_key, "trigger_key": "rvol_vwap_breakout_confirm", "session": "market_open"},
             "thesis_outcome": {"thesis_valid_at_exit": True, "invalidation_hit": False, "price_above_vwap_at_exit": True, "volume_confirmed_at_exit": True, "relative_strength_positive_at_exit": True},
             "execution_quality": {"planned_entry_price": 151.15, "actual_entry_price": 151.20, "planned_exit_price": 155.60, "actual_exit_price": 155.50, "max_allowed_slippage_percent": 0.15},
             "rule_compliance": {"entered_after_trigger": True, "used_approved_strategy": True, "respected_position_size": True, "respected_stop_loss": True, "respected_master_admin_gates": True, "human_approval_obtained": True},
@@ -578,8 +618,10 @@ def run_wrapped_agent(*, agent_key: str, inputs: dict[str, Any], context: dict[s
         from app.services.learning_loop.models import LearningLoopEvaluateRequest
         from app.services.learning_loop.service import evaluate_learning_loop
 
+        strategy_key = str(s.get("strategy_key") or ("pending_strategy_selection" if orchestrator_context else "regime_aware_momentum_catalyst"))
+        proof_status = str(s.get("proof_status") or ("unknown" if orchestrator_context else "paper_passed"))
         default_req = {
-            "strategy_key": "regime_aware_momentum_catalyst",
+            "strategy_key": strategy_key,
             "strategy_group": "regime_aware_momentum",
             "asset_class": "stock",
             "horizon": "day_trading",
@@ -588,7 +630,7 @@ def run_wrapped_agent(*, agent_key: str, inputs: dict[str, Any], context: dict[s
                 {"trade_id": "trade_1", "outcome_label": "target_hit", "outcome_status": "positive", "realized_pnl": 55.90, "r_multiple": 1.83, "slippage_status": "pass", "rule_compliant": True},
                 {"trade_id": "trade_2", "outcome_label": "stopped_out", "outcome_status": "negative", "realized_pnl": -29.90, "r_multiple": -1.0, "slippage_status": "pass", "rule_compliant": True},
             ],
-            "current_status": {"promotion_status": "paper_ready", "proof_status": "paper_passed", "sample_size": 12, "current_drawdown_r": -1.5, "last_10_avg_r": 0.42},
+            "current_status": {"promotion_status": "paper_ready", "proof_status": proof_status, "sample_size": 12, "current_drawdown_r": -1.5, "last_10_avg_r": 0.42},
             "thresholds": {"min_sample_size_for_promotion": 20, "min_avg_r_for_promotion": 0.35, "max_drawdown_r_before_demotion": -3.0, "max_rule_violation_rate": 0.10, "max_slippage_fail_rate": 0.15},
         }
         req = LearningLoopEvaluateRequest.model_validate(s.get("request", default_req) if isinstance(s.get("request"), dict) else default_req)
