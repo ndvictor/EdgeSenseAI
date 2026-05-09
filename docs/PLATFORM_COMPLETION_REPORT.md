@@ -1,136 +1,169 @@
-# Platform Completion Report (v1)
+# Platform Completion Report
 
-This report documents the current “platform completion” state for EdgeSenseAI with emphasis on **paper-first, US stock, day-trading** workflows and **visibility-first** UX. It intentionally does **not** grant any automatic broker submission authority.
+This report documents the EdgeSenseAI autonomous day-trading platform completion state for Phases 0-6. The platform is complete for safe paper-first operation with human approval gates. It does not enable live trading, broker submission, LLM trade decisioning, or automatic promotion.
 
-## Scope & safety baseline (v1)
+## Final Architecture
 
-- **Asset scope**: US stocks only
-- **Horizon scope**: day trading only
-- **Mode**: paper-first / visibility-first
-- **No LLM required** for the stage-spine visibility pages (Stage 3–14)
-- **No broker submission by default**
-- **Human approval required** before any future execution submission path
+The production workflow uses one autonomous entrypoint: `POST /api/workflow-orchestrator/run`. Legacy trading, scanner, decision workflow, TradeNow, backtesting, and execution routes remain available as manual/tooling surfaces, but they are not duplicate autonomous workflow run endpoints.
 
-## Phases 0–6 (execution plan status)
+Backend execution is organized around Agent Runtime wrappers, glue agents, the Workflow Orchestrator, Approval Queue, Audit Log, Workflow Scheduler, Workflow Governance, normalized Qlib/evidence registries, and platform readiness rollups. Postgres is the source of truth when configured, with memory fallback for local development. Redis is used only for hot runtime coordination and locks when available.
 
-### Phase 0 — Agent contract (recommended)
-- **Status**: recommended hardening item
-- **Why**: unify trace, idempotency, and safety boundaries across “run” entrypoints
+Frontend operations are centered on `/daytrading-workflow` and routed child sections for command, pipeline, watchlist, data, evidence, approval, and debug views. Standalone deep-dive routes remain available for runbook, agent runtime, approvals, audit, scheduler, governance, readiness, research evidence, lab, and settings.
 
-### Phase 1 — Persisted workflow run state (recommended)
-- **Status**: recommended hardening item
-- **Why**: current stage-spine “latest” values are predominantly in-process (“latest snapshot”) and are not a durable, replayable state machine.
+## Completed Phases
 
-### Phase 2 — Stage 3–14 visibility spine (complete for UI + API contract)
-- **Stage 3**: Session Router (`/session-router`)
-- **Stage 5**: Workflow Router (`/workflow-router`)
-- **Stage 7**: Strategy Eligibility (`/strategy-eligibility`)
-- **Stage 8**: Trigger Monitoring (`/trigger-monitoring`)
-- **Stage 9**: Execution Planner (preview only) (`/execution-planner`)
-- **Stage 11**: Position Monitoring (`/position-monitoring`)
-- **Stage 12**: Close Position review (preview only) (`/close-position`)
-- **Stage 13**: Post-Trade Evaluation (`/post-trade-evaluation`)
-- **Stage 14**: Learning Loop (recommendations only) (`/learning-loop`)
+- Phase 0: Agent runtime contract, safety flags, traces, and persistence fallbacks are present.
+- Phase 1: Agent runtime persistence and Redis runtime contract are present with safe fallback modes.
+- Phase 2: Stage wrapper runtime for the day-trading workflow spine is present.
+- Phase 3: Glue agents, Qlib adapter, Qlib signal scoring, proof registry, model evidence, and strategy evidence are present.
+- Phase 4: Workflow Orchestrator, safe run endpoint, approval queue, audit log, scheduler, governance, Qlib automation controls, platform readiness, and final readiness are present.
+- Phase 5: Day-trading platform UI and standalone operational routes are present.
+- Phase 6: Final readiness endpoint, smoke script, documentation, and lab inventory completion reporting are present.
 
-### Phase 3 — Glue/adapters (partially present)
-- **Scanner / candidates / decision-workflow** exist as separate “run” flows (see below).
-- **Full automatic handoff** from scanner outputs into the Stage 5→14 spine remains a future integration item.
+## Backend Endpoints
 
-### Phase 4 — Orchestrator “Run button” (partially present)
-- Existing “run” entrypoints include Command Center / decision workflows / strategy workflows / upper workflow runs.
-- A unified Stage 1–14 orchestrator that chains the stage spine in a single persisted run is a future item.
+Core autonomous workflow:
 
-### Phase 5 — Observability UI (present)
-- **Workflow Runbook** dashboard: `/workflow-runbook` (read-only; no orchestration)
-- **Lab Platform** inventory: `/lab` (read-only inventory)
+- `POST /api/workflow-orchestrator/run`
+- `GET /api/workflow-orchestrator/status/{workflow_run_id}`
+- `GET /api/workflow-orchestrator/latest`
+- `GET /api/workflow-orchestrator/runs`
+- `GET /api/workflow-orchestrator/trace/{workflow_run_id}`
+- `POST /api/workflow-orchestrator/{workflow_run_id}/pause`
+- `POST /api/workflow-orchestrator/{workflow_run_id}/resume`
+- `POST /api/workflow-orchestrator/{workflow_run_id}/stop`
 
-### Phase 6 — Scheduler/queue + approvals queue (future hardening)
-- APScheduler scaffolding exists; “configured_not_started” states may exist depending on environment.
-- A durable approvals queue for stage handoffs is recommended before any execution automation.
+Operations and governance:
 
-## Key endpoints & routes (visibility and run surfaces)
+- `GET /api/agent-runtime/status`
+- `POST /api/agent-runtime/agent-runs`
+- `GET /api/approval-queue/status`
+- `GET /api/approval-queue/items`
+- `POST /api/approval-queue/items/{approval_id}/approve`
+- `POST /api/approval-queue/items/{approval_id}/reject`
+- `POST /api/approval-queue/items/{approval_id}/cancel`
+- `GET /api/audit-log/status`
+- `GET /api/audit-log/events`
+- `POST /api/audit-log/events`
+- `GET /api/workflow-scheduler/status`
+- `GET /api/workflow-scheduler/schedules`
+- `POST /api/workflow-scheduler/run-once`
+- `GET /api/workflow-governance/status`
+- `POST /api/workflow-governance/check`
+- `GET /api/platform-readiness/status`
+- `GET /api/final-readiness/status`
 
-### Read-only runbook
-- `GET /api/workflow-runbook/status`
-- `GET /api/workflow-runbook/stages`
-- `GET /api/workflow-runbook/latest`
-- UI: `/workflow-runbook`
+Evidence and Qlib:
 
-### Lab inventory (read-only)
-- `GET /api/lab/inventory`
-- UI: `/lab`
+- `GET /api/proof-registry/status`
+- `GET /api/proof-registry/records`
+- `GET /api/proof-registry/latest`
+- `POST /api/proof-registry/records`
+- `GET /api/model-evidence/status`
+- `GET /api/model-evidence/records`
+- `GET /api/model-evidence/latest`
+- `POST /api/model-evidence/records`
+- `GET /api/strategy-evidence/status`
+- `GET /api/strategy-evidence/records`
+- `GET /api/strategy-evidence/latest`
+- `POST /api/strategy-evidence/records`
+- `GET /api/qlib/status`
+- `GET /api/qlib/artifacts`
+- `GET /api/qlib/signals/latest`
+- `POST /api/qlib/signals/score`
+- `POST /api/qlib/backtests/record`
+- `POST /api/qlib/models/register-artifact`
+- `POST /api/qlib/automation/backtest`
+- `POST /api/qlib/automation/score`
+- `GET /api/qlib/automation/status`
 
-### Stage spine endpoints (visibility pages)
-- Session Router: `GET /api/session-router/status`, `POST /api/session-router/evaluate`, `GET /api/session-router/latest`
-- Workflow Router: `GET /api/workflow-router/status`, `POST /api/workflow-router/route`, `GET /api/workflow-router/latest`
-- Strategy Eligibility: `GET /api/strategy-eligibility/status`, `POST /api/strategy-eligibility/check`, `GET /api/strategy-eligibility/latest`
-- Trigger Monitoring: `GET /api/trigger-monitoring/status`, `POST /api/trigger-monitoring/evaluate`, `GET /api/trigger-monitoring/latest`
-- Execution Planner (preview): `GET /api/execution-planner/status`, `POST /api/execution-planner/plan`, `GET /api/execution-planner/latest`
-- Position Monitoring: `GET /api/position-monitoring/status`, `POST /api/position-monitoring/evaluate`, `GET /api/position-monitoring/latest`
-- Close Position (review only): `GET /api/close-position/status`, `POST /api/close-position/review`, `GET /api/close-position/latest`
-- Post-Trade Evaluation: `GET /api/post-trade-evaluation/status`, `POST /api/post-trade-evaluation/evaluate`, `GET /api/post-trade-evaluation/latest`
-- Learning Loop: `GET /api/learning-loop/status`, `POST /api/learning-loop/evaluate`, `GET /api/learning-loop/latest`
+## Frontend Routes
 
-### Existing “run” entrypoints (separate from stage spine)
-- Command Center:
-  - `POST /api/command-center/run`
-- Decision workflows:
-  - `POST /api/decision-workflows/run-*`
-- Market scanner:
-  - `POST /api/market-scanner/scan`
-- Strategy workflows:
-  - `POST /api/strategy-workflows/run`
-- Execution workflow (gated; do not enable by default):
-  - `/api/execution/*`
+Production platform routes:
 
-## Storage & state (current truth)
+- `/daytrading-workflow`
+- `/daytrading-workflow/command-center`
+- `/daytrading-workflow/workflow`
+- `/daytrading-workflow/live-watchlist`
+- `/daytrading-workflow/data-pipeline`
+- `/daytrading-workflow/strategy-models`
+- `/daytrading-workflow/qlib-evidence`
+- `/daytrading-workflow/execution-approval`
+- `/daytrading-workflow/issues-debug`
 
-- Several stage services store **“latest”** state in-process for visibility (latest snapshot).
-- Some workflow systems use **best-effort Postgres persistence** with memory fallback (varies by service).
-- **Recommendation lifecycle** and **candidate universe** flows exist independently from the stage spine.
+Standalone deep-dive/admin routes:
 
-## Safety guarantees (what the platform does not do by default)
-
-- **No broker submission by default**
-- **No automatic live trading**
-- **No automatic promotion to live trading**
-- **No LLM authority required** for the stage spine visibility pages
-- Stage 12/9 UIs emphasize preview/review only
-- Runbook/dashboard pages are read-only and do not execute stages
-
-## Local run (developer)
-
-Typical dev split:
-
-- Backend: `http://localhost:8900`
-- Frontend: `http://localhost:3900`
-
-Primary visibility pages:
 - `/workflow-runbook`
+- `/agent-runtime`
+- `/approval-queue`
+- `/audit-log`
+- `/workflow-scheduler`
+- `/workflow-governance`
+- `/platform-readiness`
+- `/research-evidence`
 - `/lab`
-- `/workflow-router`, `/session-router`
-- `/strategy-eligibility`, `/trigger-monitoring`, `/execution-planner`
-- `/position-monitoring`, `/close-position`
-- `/post-trade-evaluation`, `/learning-loop`
+- `/settings`
 
-## Smoke test
+## Storage Architecture
 
-Use the safe smoke script:
+- Postgres stores workflow runs, agent runs, approvals, audit events, schedules, evidence records, Qlib artifacts, and persistence-backed state where configured.
+- Memory fallback keeps local development and tests deterministic when Postgres is unavailable.
+- Redis stores hot runtime lock/state only and is never treated as execution authority.
+- Vector memory is for retrieval/context only and is not allowed to authorize execution.
+
+## Safety Guarantees
+
+- No broker orders are submitted by the orchestrator, scheduler, approval queue, Qlib, or platform UI.
+- `allow_submit` defaults to false and is blocked for this autonomous day-trading workflow.
+- Live trading remains disabled and gated.
+- Human approval is required at the execution boundary.
+- Approval unlocks handoff state only; it does not submit broker orders.
+- Qlib is used only for research, model, backtest, and signal evidence.
+- LLMs are not used for trade decisions; agent outputs carry `llm_used=false`.
+- Models and strategies are not auto-promoted to live trading.
+- The autonomous horizon is `day_trading`; non-day-trading horizons are blocked.
+
+## Local Run
+
+Backend:
 
 ```bash
-API_BASE_URL="http://localhost:8900" ./scripts/smoke_test_platform.sh
+cd backend
+uvicorn app.main:app --host 0.0.0.0 --port 8900 --reload
 ```
 
-The script:
-- Runs read-only `GET` checks against runbook + stage status endpoints
-- Attempts a best-effort “run” call (prefers orchestrator if present; otherwise command-center) without printing secrets
-- Checks common safety flags if present in the response
+Frontend:
 
-## Gated items / future hardening
+```bash
+cd frontend
+npm install
+npm run dev
+```
 
-- Persisted Stage 1–14 workflow-run state machine + idempotency keys
-- Durable approvals queue for stage handoffs
-- Durable scheduler/queue for autonomous progression and retries
-- Persistent audit log for governance events
-- Explicit scanner → stage spine adapter for seamless handoff
+Open the platform at `http://localhost:3900/daytrading-workflow`.
 
+## Smoke Test
+
+Run after the backend is available:
+
+```bash
+API_BASE_URL="http://localhost:8900" bash scripts/smoke_test_platform.sh
+```
+
+The smoke script checks final readiness, platform readiness, agent runtime, Qlib status, governance, a dry-run AMD workflow, approval queue, audit log, and scheduler status. It verifies `submitted_order=false`, `broker_called=false`, and `llm_used=false`.
+
+## Intentionally Gated Items
+
+- Live trading remains disabled until separate broker certification and operator signoff.
+- Broker order submission remains disabled for the autonomous workflow.
+- Automatic model or strategy promotion to live remains disabled.
+- LLM decisioning remains disabled for trade decisions.
+- Qlib does not download data, run large training jobs, make network calls, or submit orders from the platform completion path.
+
+## Lab Inventory Summary
+
+The lab inventory marks the core AI-agent workflow platform units as created for paper-first operation, including Agent Runtime, Glue Agent Runtime, Data Readiness, Market Condition, Watchlist Builder, Strategy Selection, Model Selection, Backtest Validation, Qlib Research, evidence registries, Workflow Orchestrator, Approval Queue, Audit Log, Scheduler, Governance, Readiness, Research Evidence, and the UI workflow dashboard.
+
+Next action:
+
+> Core AI-agent workflow platform is complete for paper-first operation. Review production deployment, live-broker certification, and optional scale hardening before enabling live trading.

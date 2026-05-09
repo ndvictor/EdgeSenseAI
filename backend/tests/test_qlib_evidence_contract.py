@@ -30,7 +30,7 @@ def test_qlib_score_endpoint_unavailable_returns_placeholder_not_trained(monkeyp
 
     assert response.status_code == 200
     artifact = response.json()["artifact"]
-    assert artifact["artifact_type"] == "signal"
+    assert artifact["artifact_type"] == "signal_scores"
     assert artifact["artifact_status"] == "simulated"
     assert artifact["qlib_available"] is False
     assert "qlib_unavailable_scores_are_placeholder" in artifact["warnings"]
@@ -47,6 +47,6 @@ def test_qlib_available_without_model_artifact_marks_scores_unavailable(monkeypa
         qlib_service.QlibSignalScoreCreate(symbols=["AMD"], symbol="AMD", scores={"AMD": {"score": 0.4}})
     )
 
-    assert artifact.artifact_type == "signal"
+    assert artifact.artifact_type == "signal_scores"
     assert artifact.artifact_status == "unavailable"
     assert "no_qlib_model_artifact_registered" in artifact.blockers

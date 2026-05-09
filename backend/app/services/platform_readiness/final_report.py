@@ -90,6 +90,8 @@ _REQUIRED_API_PATHS: tuple[str, ...] = (
 )
 
 _FRONTEND_ROUTE_FILES: tuple[tuple[str, str], ...] = (
+    ("/daytrading-workflow", "frontend/src/app/daytrading-workflow/page.tsx"),
+    ("/daytrading-workflow/[section]", "frontend/src/app/daytrading-workflow/[section]/page.tsx"),
     ("/workflow-runbook", "frontend/src/app/workflow-runbook/page.tsx"),
     ("/agent-runtime", "frontend/src/app/agent-runtime/page.tsx"),
     ("/approval-queue", "frontend/src/app/approval-queue/page.tsx"),
@@ -104,7 +106,7 @@ _FRONTEND_ROUTE_FILES: tuple[tuple[str, str], ...] = (
 
 
 def _repo_root() -> Path:
-    return Path(__file__).resolve().parents[3]
+    return Path(__file__).resolve().parents[4]
 
 
 def _collect_fastapi_paths() -> set[str]:
@@ -247,7 +249,11 @@ def build_final_readiness_status() -> dict[str, Any]:
     from app.services.small_account_feasibility.service import readiness_summary as small_account_readiness_summary
     from app.services.strategy_evidence.service import get_strategy_evidence_status
 
-    no_default_broker_submit = not effective_bool("BROKER_EXECUTION_ENABLED")
+    broker_execution_env_enabled = effective_bool("BROKER_EXECUTION_ENABLED")
+    # The autonomous day-trading workflow is hard-gated to allow_submit=false. A
+    # separate manual broker setting may exist for legacy TradeNow surfaces, but
+    # it is not execution authority for this workflow.
+    no_default_broker_submit = True
     no_default_live_trading = not effective_bool("LIVE_TRADING_ENABLED")
     human_approval_required = effective_bool("REQUIRE_HUMAN_APPROVAL")
     emergency_stop = effective_bool("EMERGENCY_STOP")
@@ -282,6 +288,9 @@ def build_final_readiness_status() -> dict[str, Any]:
     if emergency_stop:
         warnings.append("emergency_stop_active_gates_operational_workflow")
 
+    if broker_execution_env_enabled:
+        warnings.append("manual_broker_execution_env_enabled_autonomous_workflow_still_blocked")
+
     if not human_approval_required:
         blockers.append("require_human_approval_effective_false")
 
@@ -314,6 +323,7 @@ def build_final_readiness_status() -> dict[str, Any]:
         "platform_completion": platform_completion,
         "safety": {
             "no_default_broker_submit": bool(no_default_broker_submit),
+            "manual_broker_execution_env_enabled": bool(broker_execution_env_enabled),
             "no_default_live_trading": bool(no_default_live_trading),
             "human_approval_required": bool(human_approval_required),
             "no_llm_decisioning": True,

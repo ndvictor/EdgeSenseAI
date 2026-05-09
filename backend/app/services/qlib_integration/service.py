@@ -54,15 +54,15 @@ def _probe_qlib() -> tuple[bool, str | None, list[str]]:
 def _normalize_artifact_type(value: str | None) -> str:
     raw = (value or "report").lower().strip()
     mapping = {
-        "signal_scores": "signal",
-        "signals": "signal",
-        "score": "signal",
+        "signal_scores": "signal_scores",
+        "signals": "signal_scores",
+        "score": "signal_scores",
         "model_artifact": "model",
         "model_artifacts": "model",
         "backtests": "backtest",
     }
     normalized = mapping.get(raw, raw)
-    return normalized if normalized in {"signal", "backtest", "model", "dataset", "report"} else "report"
+    return normalized if normalized in {"signal", "signal_scores", "backtest", "model", "dataset", "report"} else "report"
 
 
 def _normalize_artifact_status(value: str | None, *, qlib_available: bool, blockers: list[str]) -> str:
@@ -111,7 +111,7 @@ def get_qlib_status() -> QlibStatusResponse:
     runner = _qlib_runner_status()
     artifacts = list(_MEMORY.values())
     artifact_count = len(artifacts)
-    latest_signal_count = len([a for a in artifacts if _normalize_artifact_type(a.artifact_type) == "signal"])
+    latest_signal_count = len([a for a in artifacts if _normalize_artifact_type(a.artifact_type) in {"signal", "signal_scores"}])
     latest_backtest_count = len([a for a in artifacts if _normalize_artifact_type(a.artifact_type) == "backtest"])
     latest_model_count = len([a for a in artifacts if _normalize_artifact_type(a.artifact_type) == "model"])
     blockers = list(dict.fromkeys(runner["blockers"]))
@@ -262,7 +262,7 @@ def list_artifacts(limit: int = 50) -> list[QlibArtifactOut]:
 
 
 def get_latest_signal_scores() -> QlibArtifactOut | None:
-    items = [a for a in list_artifacts(limit=50) if _normalize_artifact_type(a.artifact_type) == "signal"]
+    items = [a for a in list_artifacts(limit=50) if _normalize_artifact_type(a.artifact_type) in {"signal", "signal_scores"}]
     return items[0] if items else None
 
 
@@ -283,7 +283,7 @@ def save_signal_scores(body: QlibSignalScoreCreate) -> QlibArtifactOut:
     return record_artifact(
         QlibArtifactCreate(
             artifact_id=body.artifact_id or new_artifact_id("qs"),
-            artifact_type="signal",
+            artifact_type="signal_scores",
             model_key=body.model_key,
             strategy_key=body.strategy_key,
             symbol=symbols[0] if symbols else body.symbol,
