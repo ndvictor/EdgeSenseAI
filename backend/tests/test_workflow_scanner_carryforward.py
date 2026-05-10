@@ -8,7 +8,9 @@ import app.services.workflow_orchestrator.service as orchestrator_service
 from app.services.agent_runtime.wrappers.alpha_engine_adapter import run_alpha_engine_selection
 from app.services.agent_runtime.wrappers.glue_agents import run_glue_agent
 from app.services.agent_runtime.wrappers.safety import SafetyResult
+from app.services.agent_runtime.models import AgentRunResult, iso_utc_now
 from app.services.workflow_orchestrator.models import OrchestratorRunRequest
+from app.services.workflow_orchestrator.pipeline_carryforward import apply_stage_carryforward
 from app.services.workflow_orchestrator.scanner_carryforward import seed_workflow_state_from_scanner_diagnostics
 from app.services.workflow_orchestrator.state_contract import WorkflowCarryForwardState
 
@@ -168,6 +170,131 @@ def test_alpha_partial_scanner_row_not_data_unavailable():
     assert "last_price_missing" not in out.get("alpha_blockers", [])
     assert "volume_missing" not in out.get("alpha_blockers", [])
     assert "spread_bps_missing" not in out.get("alpha_blockers", [])
+
+
+def test_data_readiness_carryforward_reconciles_scanner_when_stage_clears_metrics():
+    """Glue must not drop scanner-seeded price rows when readiness artifacts are empty."""
+    row = {
+        "symbol": "ROWX",
+        "last_price": 50.0,
+        "volume": 200_000.0,
+        "spread_bps": 10.0,
+        "dollar_volume": 10_000_000.0,
+        "data_quality": "real",
+        "candidate_source": "manual_request",
+        "hard_blockers": [],
+    }
+    state = WorkflowCarryForwardState(symbols=["ROWX"], source="manual", candidate_source="manual_request")
+    state.scanner_candidates = [dict(row)]
+    state.feature_rows = [dict(row)]
+    state.watchlist = [dict(row)]
+    state.usable_symbols = ["ROWX"]
+    state.latest_price = 50.0
+    state.spread_bps = 10.0
+    state.avg_dollar_volume = 10_000_000.0
+    state.feature_row_count = 1
+    state.latest_snapshot_count = 1
+    state.provider_name = "alpaca"
+    state.feature_store_status = "scanner_enriched"
+    state.persistence_status = "scanner_runtime"
+    state.freshness_status = "fresh"
+
+    now = iso_utc_now()
+    tr = {
+        "provider_status": {"readiness_only": True},
+        "provider_name": "unknown",
+        "source_mode": "auto",
+        "using_non_real_data": False,
+        "usable_symbols": [],
+        "rejected_symbols": ["ROWX"],
+        "latest_snapshot_count": 0,
+        "feature_row_count": 0,
+        "feature_store_status": "unavailable",
+        "persistence_status": "unavailable",
+        "freshness_status": "unknown",
+        "kafka_status": "configured_optional_not_active",
+        "blockers": ["no_usable_symbols"],
+        "warnings": [],
+        "artifacts": {"feature_rows": [], "latest_snapshots": [], "provider_status": {}},
+    }
+    ar = AgentRunResult(
+        run_id="ar_dr",
+        workflow_run_id="wr_glue",
+        agent_key="data_readiness_agent",
+        status="blocked",
+        decision={"phase": "test", "agent_key": "data_readiness_agent", "result": tr},
+        blockers=[],
+        warnings=[],
+        next_action="ok",
+        next_agent=None,
+        artifacts={"llm_used": False, "broker_called": False, "submitted_order": False},
+        trace_id="tr",
+        trace=[],
+        idempotency_key="id:dr",
+        inputs_hash="h",
+        created_at=now,
+        persistence_mode="memory",
+    )
+    apply_stage_carryforward(agent_key="data_readiness_agent", agent_result=ar, state=state)
+
+    assert state.latest_price == 50.0
+    assert state.spread_bps == 10.0
+    assert state.avg_dollar_volume == 10_000_000.0
+    assert state.feature_row_count == 1
+    assert state.usable_symbols == ["ROWX"]
+    assert state.candidate_source == "manual_request"
+    assert state.scanner_candidates and state.scanner_candidates[0]["symbol"] == "ROWX"
+
+
+def test_watchlist_carryforward_rejects_universe_selection_over_manual_scanner():
+    row = {
+        "symbol": "ROWX",
+        "last_price": 50.0,
+        "volume": 200_000.0,
+        "spread_bps": 10.0,
+        "dollar_volume": 10_000_000.0,
+        "data_quality": "real",
+        "candidate_source": "manual_request",
+        "hard_blockers": [],
+    }
+    state = WorkflowCarryForwardState(symbols=["ROWX"], source="manual", candidate_source="manual_request")
+    state.scanner_candidates = [dict(row)]
+    state.feature_rows = [dict(row)]
+    state.latest_price = 50.0
+    now = iso_utc_now()
+    tr = {
+        "symbols": ["ROWX"],
+        "usable_symbols": ["ROWX"],
+        "candidate_source": "universe_selection",
+        "feature_rows": [],
+        "scanner_candidates": [],
+        "ranked_candidates": [],
+        "selected_candidate": "ROWX",
+        "raw_candidate_count": 1,
+        "filtered_candidate_count": 1,
+        "blockers": [],
+        "warnings": [],
+    }
+    ar = AgentRunResult(
+        run_id="ar_wl",
+        workflow_run_id="wr_glue",
+        agent_key="watchlist_builder_agent",
+        status="completed",
+        decision={"phase": "test", "agent_key": "watchlist_builder_agent", "result": tr},
+        blockers=[],
+        warnings=[],
+        next_action="ok",
+        next_agent=None,
+        artifacts={"llm_used": False, "broker_called": False, "submitted_order": False},
+        trace_id="tr2",
+        trace=[],
+        idempotency_key="id:wl",
+        inputs_hash="h2",
+        created_at=now,
+        persistence_mode="memory",
+    )
+    apply_stage_carryforward(agent_key="watchlist_builder_agent", agent_result=ar, state=state)
+    assert state.candidate_source == "manual_request"
 
 
 def test_small_account_uses_latest_price_from_inputs():

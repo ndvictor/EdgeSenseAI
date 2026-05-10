@@ -56,6 +56,76 @@ def _dict_list(values: Any) -> list[dict[str, Any]]:
     return [dict(value) for value in values if isinstance(value, dict)]
 
 
+def _scanner_context_snapshot(state: WorkflowCarryForwardState) -> dict[str, Any]:
+    """Capture scanner-seeded fields before a stage may overwrite them."""
+    return {
+        "scanner_candidates": list(state.scanner_candidates or []),
+        "feature_rows": list(state.feature_rows or []),
+        "watchlist": list(state.watchlist or []),
+        "usable_symbols": list(state.usable_symbols or []),
+        "symbols": list(state.symbols or []),
+        "symbol": state.symbol,
+        "selected_symbol": state.selected_symbol,
+        "candidate_source": state.candidate_source,
+        "latest_price": state.latest_price,
+        "spread_bps": state.spread_bps,
+        "avg_dollar_volume": state.avg_dollar_volume,
+        "feature_row_count": state.feature_row_count,
+        "latest_snapshot_count": state.latest_snapshot_count,
+        "provider_name": state.provider_name,
+        "provider_status": dict(state.provider_status or {}),
+        "feature_store_status": state.feature_store_status,
+        "persistence_status": state.persistence_status,
+        "freshness_status": state.freshness_status,
+    }
+
+
+def _reconcile_scanner_seeded_fields_after_data_readiness(state: WorkflowCarryForwardState, prior: dict[str, Any]) -> None:
+    """Restore scanner context if data readiness cleared or nullified seeded values (glue-only, no new symbols)."""
+    if not prior.get("scanner_candidates"):
+        return
+    if state.candidate_source == "universe_selection" and prior.get("candidate_source") not in (None, "universe_selection"):
+        state.candidate_source = prior["candidate_source"]
+    if not state.usable_symbols and prior.get("usable_symbols"):
+        state.usable_symbols = list(prior["usable_symbols"])
+    if (not state.symbols) and prior.get("symbols"):
+        state.symbols = list(prior["symbols"])
+    if not state.selected_symbol and prior.get("selected_symbol"):
+        state.selected_symbol = prior["selected_symbol"]
+        state.symbol = prior.get("symbol") or prior["selected_symbol"]
+    if state.latest_price is None and prior.get("latest_price") is not None:
+        state.latest_price = prior["latest_price"]
+    if state.spread_bps is None and prior.get("spread_bps") is not None:
+        state.spread_bps = prior["spread_bps"]
+    if state.avg_dollar_volume is None and prior.get("avg_dollar_volume") is not None:
+        state.avg_dollar_volume = prior["avg_dollar_volume"]
+    if (state.feature_row_count or 0) == 0 and (prior.get("feature_row_count") or 0) > 0:
+        state.feature_row_count = int(prior["feature_row_count"])
+    if (state.latest_snapshot_count or 0) == 0 and (prior.get("latest_snapshot_count") or 0) > 0:
+        state.latest_snapshot_count = int(prior["latest_snapshot_count"])
+    if not state.feature_rows and prior.get("feature_rows"):
+        state.feature_rows = list(prior["feature_rows"])
+    if not state.scanner_candidates and prior.get("scanner_candidates"):
+        state.scanner_candidates = list(prior["scanner_candidates"])
+    if not state.watchlist and prior.get("watchlist"):
+        state.watchlist = list(prior["watchlist"])
+    if prior.get("provider_status"):
+        merged_ps = dict(prior["provider_status"])
+        merged_ps.update(state.provider_status or {})
+        state.provider_status = merged_ps
+    if prior.get("provider_name") and not state.provider_name:
+        state.provider_name = prior["provider_name"]
+    if prior.get("feature_store_status") == "scanner_enriched" and str(state.feature_store_status or "").lower() in {
+        "",
+        "unavailable",
+    }:
+        state.feature_store_status = prior["feature_store_status"]
+    if prior.get("persistence_status") == "scanner_runtime" and not state.persistence_status:
+        state.persistence_status = prior["persistence_status"]
+    if prior.get("freshness_status") == "fresh" and not state.freshness_status:
+        state.freshness_status = prior["freshness_status"]
+
+
 def apply_stage_carryforward(*, agent_key: str, agent_result: AgentRunResult, state: WorkflowCarryForwardState) -> list[str]:
     """Carry typed workflow state forward for downstream agents. Returns advisory warnings."""
     warnings: list[str] = []
@@ -70,11 +140,12 @@ def apply_stage_carryforward(*, agent_key: str, agent_result: AgentRunResult, st
         return warnings
 
     if agent_key == "data_readiness_agent":
+        prior_scanner = _scanner_context_snapshot(state)
         _append_strings(warnings, tr.get("warnings"))
         _append_strings(state.warnings, tr.get("warnings"))
         _append_strings(state.blockers, tr.get("blockers"))
         if isinstance(tr.get("provider_status"), dict):
-            state.provider_status = dict(tr["provider_status"])
+            state.provider_status = {**dict(state.provider_status), **dict(tr["provider_status"])}
         for attr in (
             "provider_name",
             "source_mode",
@@ -111,6 +182,7 @@ def apply_stage_carryforward(*, agent_key: str, agent_result: AgentRunResult, st
         volume = _float_or_none(feature_row.get("volume") or snapshot.get("volume"))
         if state.latest_price is not None and volume is not None:
             state.avg_dollar_volume = round(state.latest_price * volume, 2)
+        _reconcile_scanner_seeded_fields_after_data_readiness(state, prior_scanner)
     elif agent_key == "market_condition_agent":
         mc = tr.get("market_context")
         if isinstance(mc, dict):
@@ -119,6 +191,7 @@ def apply_stage_carryforward(*, agent_key: str, agent_result: AgentRunResult, st
                 state.regime = str(mc["regime"])
             # volatility_state and liquidity_state remain inside market_context.
     elif agent_key == "watchlist_builder_agent":
+        prior_watchlist = _scanner_context_snapshot(state)
         syms = _clean_symbols(tr.get("symbols"))
         if syms:
             state.symbols = syms
@@ -129,7 +202,14 @@ def apply_stage_carryforward(*, agent_key: str, agent_result: AgentRunResult, st
             state.symbols = usable
         for attr in ("candidate_source",):
             if tr.get(attr) is not None:
-                setattr(state, attr, str(tr[attr]))
+                val = str(tr[attr])
+                if (
+                    val == "universe_selection"
+                    and prior_watchlist.get("candidate_source") not in (None, "universe_selection")
+                    and prior_watchlist.get("scanner_candidates")
+                ):
+                    continue
+                setattr(state, attr, val)
         if tr.get("raw_candidate_count") is not None:
             state.raw_candidate_count = int(tr.get("raw_candidate_count") or 0)
         if tr.get("filtered_candidate_count") is not None:
@@ -155,6 +235,19 @@ def apply_stage_carryforward(*, agent_key: str, agent_result: AgentRunResult, st
         elif state.symbols:
             state.symbol = str(state.symbols[0]).strip().upper()
             state.selected_symbol = state.symbol
+        if prior_watchlist.get("scanner_candidates"):
+            if state.latest_price is None and prior_watchlist.get("latest_price") is not None:
+                state.latest_price = prior_watchlist["latest_price"]
+            if state.spread_bps is None and prior_watchlist.get("spread_bps") is not None:
+                state.spread_bps = prior_watchlist["spread_bps"]
+            if state.avg_dollar_volume is None and prior_watchlist.get("avg_dollar_volume") is not None:
+                state.avg_dollar_volume = prior_watchlist["avg_dollar_volume"]
+            if not state.scanner_candidates and prior_watchlist.get("scanner_candidates"):
+                state.scanner_candidates = list(prior_watchlist["scanner_candidates"])
+            if not state.feature_rows and prior_watchlist.get("feature_rows"):
+                state.feature_rows = list(prior_watchlist["feature_rows"])
+            if (state.feature_row_count or 0) == 0 and (prior_watchlist.get("feature_row_count") or 0) > 0:
+                state.feature_row_count = int(prior_watchlist["feature_row_count"])
     elif agent_key == "alpha_engine_agent":
         if isinstance(tr.get("alpha_recommendation"), dict):
             state.alpha_recommendation = dict(tr["alpha_recommendation"])
