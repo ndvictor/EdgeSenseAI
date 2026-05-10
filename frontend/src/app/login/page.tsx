@@ -7,20 +7,27 @@ import { useSearchParams } from "next/navigation";
 import { Activity, ArrowLeft, Crown, Gauge, LogIn, Monitor, ShieldCheck } from "lucide-react";
 
 function getSafeNext(next: string | null) {
-  if (next === "/command-center" || next === "/owner" || next === "/ops") return next;
-  return "/owner";
+  if (!next) return "/owner";
+  // Allow same-origin paths only; ignore absolute URLs to prevent open redirects.
+  if (!next.startsWith("/") || next.startsWith("//")) return "/owner";
+  return next;
 }
 
 function getDestinationLabel(next: string | null) {
   if (next === "/command-center") return "Command Center";
   if (next === "/ops") return "Ops Command Center";
+  if (next && next.startsWith("/daytrading-workflow")) return "Day Trading Workflow";
+  if (next && next.startsWith("/daytrading-control-center")) return "Day Trading Control Center";
+  if (next && next.startsWith("/lab")) return "Lab";
   return "Owner Command Center";
 }
 
 function LoginContent() {
   const searchParams = useSearchParams();
-  const next = getSafeNext(searchParams.get("next"));
-  const destinationLabel = getDestinationLabel(searchParams.get("next"));
+  // NextAuth middleware redirects with `?callbackUrl=...`; legacy links use `?next=...`.
+  const rawNext = searchParams.get("callbackUrl") ?? searchParams.get("next");
+  const next = getSafeNext(rawNext);
+  const destinationLabel = getDestinationLabel(rawNext);
 
   return (
     <div className="relative min-h-screen overflow-hidden bg-[#03070b] text-white">
