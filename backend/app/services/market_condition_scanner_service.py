@@ -1,3 +1,4 @@
+import os
 from datetime import datetime, timedelta
 from typing import Any, Literal
 
@@ -57,6 +58,7 @@ class MarketScannerResponse(BaseModel):
 _MARKET_DATA = MarketDataService()
 _WORKFLOW_TRIGGER_COOLDOWNS: dict[tuple[str, str, str], datetime] = {}
 _DEFAULT_WORKFLOW_TRIGGER_COOLDOWN_SECONDS = 15 * 60
+_ALLOWED_DISCOVERY_SESSIONS = {"regular", "market_open", "open", "premarket"}
 
 
 def _workflow_cooldown_key(strategy_key: str, symbol: str, matched_signal_key: str) -> tuple[str, str, str]:
@@ -97,8 +99,133 @@ def _relative_volume(snapshot: dict[str, Any]) -> float | None:
     return snapshot.get("relative_volume")
 
 
+def _float_or_none(value: Any) -> float | None:
+    if value is None:
+        return None
+    try:
+        return float(value)
+    except (TypeError, ValueError):
+        return None
+
+
+def _spread_bps(snapshot: dict[str, Any], price: float | None) -> float | None:
+    if snapshot.get("spread_bps") is not None:
+        return _float_or_none(snapshot.get("spread_bps"))
+    if snapshot.get("bid_ask_spread") is not None:
+        # Existing snapshots use percent points for bid_ask_spread.
+        spread_pct = _float_or_none(snapshot.get("bid_ask_spread"))
+        return None if spread_pct is None else spread_pct * 100.0
+    if snapshot.get("spread_percent") is not None:
+        spread_pct = _float_or_none(snapshot.get("spread_percent"))
+        return None if spread_pct is None else spread_pct * 100.0
+    bid = _float_or_none(snapshot.get("bid"))
+    ask = _float_or_none(snapshot.get("ask"))
+    if bid is None or ask is None or price is None or price <= 0:
+        return None
+    return ((ask - bid) / price) * 10_000.0
+
+
 def _spread_present(snapshot: dict[str, Any]) -> bool:
     return snapshot.get("bid_ask_spread") is not None or (snapshot.get("bid") is not None and snapshot.get("ask") is not None)
+
+
+def _env_float(name: str, default: float) -> float:
+    raw = os.environ.get(name)
+    if raw is None:
+        return default
+    try:
+        return float(raw)
+    except ValueError:
+        return default
+
+
+def _session_state(snapshot: dict[str, Any]) -> str:
+    return str(snapshot.get("session_state") or snapshot.get("market_session") or snapshot.get("session") or "unknown").strip().lower()
+
+
+def _evaluate_real_discovery_criteria(symbol: str, snapshot: dict[str, Any]) -> MarketScannerSignal | None:
+    blockers: list[str] = []
+    price = _float_or_none(snapshot.get("price") or snapshot.get("current_price") or snapshot.get("last_price"))
+    volume = _float_or_none(snapshot.get("volume"))
+    avg_volume = _float_or_none(snapshot.get("average_volume") or snapshot.get("avg_volume"))
+    relative_volume = _float_or_none(_relative_volume(snapshot))
+    day_change_pct = _float_or_none(snapshot.get("change_percent") or snapshot.get("day_change_pct"))
+    vwap = _float_or_none(snapshot.get("vwap"))
+    spread_bps = _spread_bps(snapshot, price)
+    session_state = _session_state(snapshot)
+
+    min_price = _env_float("SCANNER_MIN_PRICE", 2.0)
+    max_price = _env_float("SCANNER_MAX_PRICE", 100.0)
+    min_relative_volume = _env_float("SCANNER_MIN_RELATIVE_VOLUME", 1.5)
+    min_dollar_volume = _env_float("SCANNER_MIN_DOLLAR_VOLUME", 1_000_000.0)
+    max_spread_bps = _env_float("SCANNER_MAX_SPREAD_BPS", 35.0)
+    min_day_change_pct = _env_float("SCANNER_MIN_DAY_CHANGE_PCT", 1.0)
+
+    if snapshot.get("is_mock") or snapshot.get("mock") or snapshot.get("using_mock_data"):
+        blockers.append("mock_market_data_rejected")
+    if snapshot.get("synthetic") or snapshot.get("synthetic_data_used") or snapshot.get("spread_synthetic"):
+        blockers.append("synthetic_market_data_rejected")
+    if snapshot.get("data_quality") in {"unavailable", "not_configured"} or _source_label(snapshot) != "source_backed":
+        blockers.append("provider_market_data_unavailable")
+    if price is None or not (min_price <= price <= max_price):
+        blockers.append("price_out_of_range")
+    if relative_volume is None or relative_volume < min_relative_volume:
+        blockers.append("relative_volume_below_threshold")
+    dollar_volume = price * volume if price is not None and volume is not None else None
+    if dollar_volume is None or dollar_volume < min_dollar_volume:
+        blockers.append("dollar_volume_below_threshold")
+    if spread_bps is None:
+        blockers.append("spread_unavailable")
+    elif spread_bps > max_spread_bps:
+        blockers.append("spread_too_wide")
+    if day_change_pct is None or day_change_pct < min_day_change_pct:
+        blockers.append("day_change_below_threshold")
+    if vwap is not None and price is not None and price < vwap:
+        blockers.append("price_below_vwap")
+    if session_state != "unknown" and session_state not in _ALLOWED_DISCOVERY_SESSIONS:
+        blockers.append("session_not_tradeable")
+
+    metadata = {
+        "last_price": price,
+        "volume": volume,
+        "avg_volume": avg_volume,
+        "relative_volume": relative_volume,
+        "day_change_pct": day_change_pct,
+        "spread_bps": spread_bps,
+        "vwap": vwap,
+        "price_above_vwap": None if vwap is None or price is None else price >= vwap,
+        "session_state": session_state,
+        "dollar_volume": dollar_volume,
+        "criteria": {
+            "min_price": min_price,
+            "max_price": max_price,
+            "min_relative_volume": min_relative_volume,
+            "min_dollar_volume": min_dollar_volume,
+            "max_spread_bps": max_spread_bps,
+            "min_day_change_pct": min_day_change_pct,
+        },
+    }
+    if blockers:
+        return MarketScannerSignal(
+            symbol=symbol.upper(),
+            signal_key="real_market_discovery_criteria",
+            display_name="Real Market Discovery Criteria",
+            status="skipped",
+            reason=";".join(blockers),
+            confidence=0.0,
+            data_source=_source_label(snapshot),
+            metadata={**metadata, "blockers": blockers},
+        )
+    return MarketScannerSignal(
+        symbol=symbol.upper(),
+        signal_key="real_market_discovery_criteria",
+        display_name="Real Market Discovery Criteria",
+        status="matched",
+        reason="Real market scanner criteria passed.",
+        confidence=0.8,
+        data_source=_source_label(snapshot),
+        metadata=metadata,
+    )
 
 
 def _evaluate_rule(symbol: str, rule: EdgeSignalRule, snapshot: dict[str, Any]) -> MarketScannerSignal:
@@ -222,12 +349,17 @@ def run_market_condition_scan(request: MarketScannerRequest) -> MarketScannerRes
     for symbol in symbols_to_scan:
         snapshot = _MARKET_DATA.get_market_snapshot(symbol, source=request.data_source)
         sources.add(_source_label(snapshot))
+        criteria = _evaluate_real_discovery_criteria(symbol.upper(), snapshot)
+        if criteria is not None and criteria.status != "matched":
+            skipped.append(criteria)
+            continue
         for rule in rules:
             if strategy.asset_class not in rule.supported_asset_classes and "option" not in rule.supported_asset_classes:
                 skipped.append(MarketScannerSignal(symbol=symbol.upper(), signal_key=rule.signal_key, display_name=rule.display_name, status="skipped", reason=f"Rule does not support {strategy.asset_class}.", confidence=0.0, data_source="placeholder"))
                 continue
             result = _evaluate_rule(symbol.upper(), rule, snapshot)
             if result.status == "matched":
+                result.metadata = {**(criteria.metadata if criteria else {}), **result.metadata}
                 matched.append(result)
             else:
                 skipped.append(result)
