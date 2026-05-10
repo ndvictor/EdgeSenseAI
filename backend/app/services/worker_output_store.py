@@ -278,10 +278,10 @@ def get_latest_worker_status(worker: str) -> dict[str, Any] | None:
 def get_latest_scanner_candidates(limit: int = 25) -> list[dict[str, Any]]:
     latest = get_latest_worker_status("market-scanner-worker")
     rows = latest.get("scanner_candidates") if isinstance(latest, dict) else None
-    if isinstance(rows, list) and rows:
+    if isinstance(latest, dict):
         return [
             dict(row)
-            for row in rows
+            for row in (rows if isinstance(rows, list) else [])
             if isinstance(row, dict)
             and not _is_non_real(row)
             and str(row.get("candidate_source") or CANDIDATE_SOURCE_SCANNER) == CANDIDATE_SOURCE_SCANNER
@@ -309,23 +309,65 @@ def _latest_feature_rows_from_db(*, kind: str, limit: int) -> list[dict[str, Any
 
 
 def get_latest_market_snapshots(limit: int = 25, *, production_scanner_chain_only: bool = False) -> list[dict[str, Any]]:
-    fetch_n = max(limit * 4, limit) if production_scanner_chain_only else limit
-    rows = _latest_feature_rows_from_db(kind="worker_market_snapshot", limit=fetch_n)
-    mem = [dict(row) for row in _MEMORY["market_snapshots"] if not _is_non_real(row)]
-    out = rows if rows else mem
+    latest = get_latest_worker_status("data-ingestion-worker")
+    rows = latest.get("snapshots") if isinstance(latest, dict) else None
+    if isinstance(latest, dict):
+        out = [dict(row) for row in (rows if isinstance(rows, list) else []) if isinstance(row, dict) and not _is_non_real(row)]
+    else:
+        out = [dict(row) for row in _MEMORY["market_snapshots"] if not _is_non_real(row)]
     if production_scanner_chain_only:
-        out = [r for r in out if str(r.get("run_source") or "") == RUN_SOURCE_PRODUCTION_INGESTION]
+        out = [
+            r
+            for r in out
+            if str(r.get("run_source") or "") == RUN_SOURCE_PRODUCTION_INGESTION
+            and str(r.get("candidate_source") or "") == CANDIDATE_SOURCE_SCANNER
+        ]
     return out[:limit]
 
 
 def get_latest_feature_rows(limit: int = 25) -> list[dict[str, Any]]:
-    rows = _latest_feature_rows_from_db(kind="worker_feature_row", limit=limit)
-    return rows or [dict(row) for row in _MEMORY["feature_rows"] if not _is_non_real(row)][:limit]
+    latest = get_latest_worker_status("feature-pipeline-worker")
+    rows = latest.get("feature_rows") if isinstance(latest, dict) else None
+    if isinstance(latest, dict):
+        return [dict(row) for row in (rows if isinstance(rows, list) else []) if isinstance(row, dict) and not _is_non_real(row)][:limit]
+    return [dict(row) for row in _MEMORY["feature_rows"] if not _is_non_real(row)][:limit]
 
 
 def get_latest_feature_rows_for_production_discovery(limit: int = 25) -> list[dict[str, Any]]:
     wide = get_latest_feature_rows(max(limit * 4, 50))
     return filter_feature_rows_for_production_discovery(wide)[:limit]
+
+
+def _latest_scanner_summary_fields(scanner_status: dict[str, Any]) -> dict[str, Any]:
+    diagnostics = scanner_status.get("scanner_diagnostics") if isinstance(scanner_status, dict) else None
+    if not isinstance(diagnostics, dict):
+        diagnostics = {}
+    provider_name = diagnostics.get("provider_name") or scanner_status.get("provider_name") or scanner_status.get("provider")
+    provider_configured = diagnostics.get("provider_configured")
+    if provider_configured is None:
+        provider_configured = scanner_status.get("provider_configured")
+    alpaca_configured = diagnostics.get("alpaca_configured")
+    if alpaca_configured is None:
+        alpaca_configured = bool(provider_name == "alpaca" and provider_configured)
+    no_qualified_setup_reason = diagnostics.get("reason")
+    if not no_qualified_setup_reason and scanner_status.get("blockers"):
+        no_qualified_setup_reason = str((scanner_status.get("blockers") or [""])[0] or "")
+    return {
+        "provider_name": provider_name or "unknown",
+        "provider_priority": diagnostics.get("provider_priority") or scanner_status.get("provider_priority") or [],
+        "provider_configured": bool(provider_configured),
+        "alpaca_configured": bool(alpaca_configured),
+        "alpaca_feed": diagnostics.get("alpaca_feed") or diagnostics.get("feed") or scanner_status.get("alpaca_feed") or scanner_status.get("feed"),
+        "latest_scanner_run_id": diagnostics.get("scanner_run_id") or scanner_status.get("scanner_run_id") or scanner_status.get("worker_run_id"),
+        "scanner_status": diagnostics.get("status") or scanner_status.get("status"),
+        "candidate_source": diagnostics.get("candidate_source") or scanner_status.get("candidate_source"),
+        "total_symbols_seen": int(diagnostics.get("total_symbols_seen") or 0),
+        "total_symbols_with_provider_data": int(diagnostics.get("total_symbols_with_provider_data") or 0),
+        "total_symbols_rejected": int(diagnostics.get("total_symbols_rejected") or 0),
+        "total_symbols_passed": int(diagnostics.get("total_symbols_passed") or 0),
+        "rejection_counts": diagnostics.get("rejection_counts") or {},
+        "no_qualified_setup_reason": no_qualified_setup_reason,
+    }
 
 
 def get_latest_worker_output_summary() -> dict[str, Any]:
@@ -345,6 +387,7 @@ def get_latest_worker_output_summary() -> dict[str, Any]:
     else:
         health = get_persistence_status()
         persistence_mode = "postgres" if health.get("postgres_persistence_status") == "connected" else "memory"
+    scanner_summary = _latest_scanner_summary_fields(scanner_status if isinstance(scanner_status, dict) else {})
     return {
         "scanner_worker": scanner_status,
         "latest_scanner_diagnostics": scanner_status.get("scanner_diagnostics") if isinstance(scanner_status, dict) else None,
@@ -354,6 +397,7 @@ def get_latest_worker_output_summary() -> dict[str, Any]:
         "snapshot_count": len(snapshots),
         "feature_row_count": len(feature_rows),
         "persistence_mode": persistence_mode,
+        **scanner_summary,
     }
 
 

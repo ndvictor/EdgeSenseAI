@@ -1,7 +1,12 @@
 @import "tailwindcss";
 
+/* Base canvas: true black so overscroll / gaps never show tinted grays or blues */
+html {
+  background-color: #000000;
+}
+
 body {
-  background: #0a0a0a;
+  background-color: #000000;
   color: #f1f5f9;
 }
 

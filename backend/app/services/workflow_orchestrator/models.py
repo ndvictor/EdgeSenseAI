@@ -63,6 +63,8 @@ class OrchestratorRunResponse(BaseModel):
     using_non_real_data: bool = False
     provider_status: dict[str, Any] = Field(default_factory=dict)
     provider_name: str | None = None
+    scanner_diagnostics: dict[str, Any] = Field(default_factory=dict)
+    latest_scanner_status: dict[str, Any] = Field(default_factory=dict)
     usable_symbols: list[str] = Field(default_factory=list)
     rejected_symbols: list[str] = Field(default_factory=list)
     latest_snapshot_status: str | None = None

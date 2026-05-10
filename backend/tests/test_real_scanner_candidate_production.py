@@ -99,6 +99,20 @@ def test_scanner_diagnostics_exist_and_report_alpaca_feed(monkeypatch):
 
     latest = client.get("/api/worker-status/latest").json()
     assert latest["latest_scanner_diagnostics"]["scanner_run_id"] == diagnostics["scanner_run_id"]
+    assert latest["provider_name"] == "alpaca"
+    assert latest["provider_priority"] == ["alpaca"]
+    assert latest["provider_configured"] is True
+    assert latest["alpaca_configured"] is True
+    assert latest["alpaca_feed"] == "iex"
+    assert latest["latest_scanner_run_id"] == diagnostics["scanner_run_id"]
+    assert latest["scanner_status"] == "candidate_selected"
+    assert latest["candidate_source"] == "manual_request"
+    assert latest["total_symbols_seen"] == 1
+    assert latest["total_symbols_with_provider_data"] == 1
+    assert latest["total_symbols_rejected"] == 0
+    assert latest["total_symbols_passed"] == 1
+    assert latest["rejection_counts"]["provider_unavailable"] == 0
+    assert latest["no_qualified_setup_reason"] is None
 
 
 def test_worker_without_dynamic_universe_reports_no_real_discovery_universe(monkeypatch):

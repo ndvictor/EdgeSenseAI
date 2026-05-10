@@ -170,10 +170,10 @@ export function OwnerPlatformShell({ children }: { children: React.ReactNode }) 
   const pathname = usePathname();
 
   return (
-    <div className="flex min-h-screen bg-emerald-950 text-white">
-      <aside className="flex min-h-screen w-80 shrink-0 flex-col border-r border-emerald-400/10 bg-[#05080d] px-4 py-5 shadow-[18px_0_60px_rgba(0,0,0,0.45)]">
+    <div className="flex min-h-screen bg-emerald-800 text-white">
+      <aside className="flex min-h-screen w-80 shrink-0 flex-col border-r border-emerald-400/10 bg-emerald-950/80 px-4 py-5 shadow-[18px_0_60px_rgba(0,0,0,0.45)]">
         <Link href="/owner" className="mb-8 flex items-center gap-3 px-1">
-          <div className="flex h-12 w-12 items-center justify-center rounded-2xl border border-emerald-400/50 bg-emerald-400/10 text-xl font-black text-emerald-300 shadow-[0_0_28px_rgba(16,185,129,0.25)]">E</div>
+          <div className="flex h-12 w-12 items-center justify-center rounded-2xl border border-emerald-400/50 bg-black/10 text-xl font-black text-emerald-300 shadow-[0_0_28px_rgba(16,185,129,0.25)]">E</div>
           <div>
             <div className="text-2xl font-semibold tracking-tight text-emerald-300">Owner Command</div>
             <div className="text-xs text-slate-500">Executive platform</div>
@@ -196,8 +196,8 @@ export function OwnerPlatformShell({ children }: { children: React.ReactNode }) 
                       className={`group flex items-center gap-3 rounded-xl px-2 py-2 text-sm font-medium transition-all ${
                         active
                           ? isAgentOps
-                            ? "border border-emerald-400/45 bg-emerald-400/12 text-emerald-100 shadow-[0_0_28px_rgba(16,185,129,0.16)]"
-                            : "border border-emerald-400/40 bg-emerald-400/10 text-white shadow-[0_0_28px_rgba(16,185,129,0.12)]"
+                            ? "border border-emerald-400/15 bg-emerald-800 text-emerald-100 shadow-[0_0_28px_rgba(16,185,129,0.16)]"
+                            : "border border-emerald-400/40 bg-emerald-900 text-white shadow-[0_0_28px_rgba(16,185,129,0.12)]"
                           : "text-slate-300 hover:bg-white/[0.04] hover:text-emerald-200"
                       }`}
                     >

@@ -1,0 +1,28 @@
+---
+description: "After backend or Alpaca-related changes, verify buying power via user-alpaca MCP get_account_info"
+alwaysApply: true
+---
+
+# Alpaca buying power — MCP verification
+
+This rule **always applies** in this project so it is not missed when only frontend or config files are open.
+
+When you **change or review** backend code (or deployment env) that can affect **paper/live account reads**, **buying power**, **Alpaca snapshots**, or **execution routing**, finish by **verifying account data through MCP** (do not skip this step when MCP is enabled). If the task did **not** touch those areas, you do not need to call MCP for buying power.
+
+## Triggers (non-exhaustive)
+
+- `**/alpaca_paper_account_service.py`, `**/paper_trading*.py`, `**/alpaca_execution_service.py`
+- Routes or services that call `get_alpaca_paper_snapshot`, `/v2/account`, or map `buying_power`
+- Execution / precheck / order paths that use account or buying power
+
+## What to do
+
+1. **Inspect** the `user-alpaca` MCP tool descriptor for `get_account_info` (required parameters; usually none).
+2. **Call** `call_mcp_tool` on server **`user-alpaca`**, tool **`get_account_info`**, with the correct arguments from the schema.
+3. **Confirm** the response includes sensible **buying power** (and related fields like equity/cash if relevant to your change). Note paper vs live if the tool exposes it.
+4. If MCP is **unavailable**, **not authenticated**, or **errors**, say so explicitly and suggest verifying via the app (`/api/paper-trading/alpaca`) or Alpaca dashboard instead—do not pretend the check ran.
+
+## Scope
+
+- This is **agent workflow verification** during development; the product UI must keep using the **backend API** for users (keys stay server-side).
+- Do not replace server-side snapshot logic with MCP-only data in application code.

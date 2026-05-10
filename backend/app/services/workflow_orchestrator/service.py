@@ -12,6 +12,8 @@ from app.services.approval_queue.models import ApprovalItemCreate
 from app.services.approval_queue.service import create_item as create_approval_item
 from app.services.audit_log.models import AuditEventCreate
 from app.services.audit_log.service import write_event
+from app.services.real_scanner_diagnostics_service import build_scanner_diagnostics
+from app.services.worker_output_store import get_latest_worker_output_summary
 from app.services.workflow_governance.models import WorkflowGovernanceCheckRequest
 from app.services.workflow_governance.service import check_governance
 from app.services.workflow_orchestrator.models import OrchestratorRunRequest, OrchestratorRunResponse, OrchestratorStatusResponse, iso_utc_now, new_orchestrator_id
@@ -39,6 +41,69 @@ def _recommendation_payload(
         "synthetic_data_used": bool(synthetic_data_used),
         "reason": reason,
     }
+
+
+def _provider_source_for_workflow(source: str) -> str:
+    source_mode = (source or "auto").lower().strip()
+    if source_mode in {"runtime", "manual", "candidate", "auto"}:
+        return "auto"
+    return source_mode
+
+
+def _workflow_scanner_context(body: OrchestratorRunRequest) -> tuple[dict[str, Any], dict[str, Any]]:
+    requested_source = _provider_source_for_workflow(body.source)
+    if body.symbols:
+        try:
+            diagnostics = build_scanner_diagnostics(
+                symbols=list(body.symbols),
+                max_candidates=body.max_candidates,
+                requested_source=requested_source,
+                source="manual_request",
+                candidate_source="manual_request",
+            )
+        except Exception as exc:
+            diagnostics = {
+                "scanner_run_id": None,
+                "provider_name": "unknown",
+                "provider_priority": [],
+                "provider_configured": False,
+                "alpaca_configured": False,
+                "alpaca_feed": None,
+                "source": "manual_request",
+                "candidate_source": "manual_request",
+                "status": "data_unavailable",
+                "reason": "provider_unavailable",
+                "rejection_counts": {"provider_unavailable": len(body.symbols or [])},
+                "selected_candidates": [],
+                "rejected_candidates": [],
+                "total_symbols_seen": len(body.symbols or []),
+                "total_symbols_with_provider_data": 0,
+                "total_symbols_rejected": len(body.symbols or []),
+                "total_symbols_passed": 0,
+                "warning": str(exc),
+                "submitted_order": False,
+                "broker_called": False,
+                "llm_used": False,
+            }
+        return diagnostics, {"source": "workflow_manual_request", "scanner_run_id": diagnostics.get("scanner_run_id")}
+
+    worker_summary = get_latest_worker_output_summary()
+    latest = worker_summary.get("latest_scanner_diagnostics")
+    if isinstance(latest, dict) and latest:
+        return latest, {
+            "source": "latest_worker_status",
+            "latest_scanner_run_id": worker_summary.get("latest_scanner_run_id"),
+            "scanner_status": worker_summary.get("scanner_status"),
+            "candidate_source": worker_summary.get("candidate_source"),
+        }
+    diagnostics = build_scanner_diagnostics(
+        symbols=[],
+        max_candidates=body.max_candidates,
+        requested_source=requested_source,
+        source="real_provider",
+        candidate_source="scanner",
+    )
+    return diagnostics, {"source": "workflow_empty_symbols", "scanner_run_id": diagnostics.get("scanner_run_id")}
 
 
 def _blocked_run_response(*, body: OrchestratorRunRequest, blockers: list[str], warnings: list[str] | None = None, next_action: str) -> OrchestratorRunResponse:
@@ -271,6 +336,7 @@ def run_workflow(body: OrchestratorRunRequest) -> OrchestratorRunResponse:
     if body.strategy_key:
         state.strategy_key = body.strategy_key
         state.selected_strategy_key = body.strategy_key
+    scanner_diagnostics, latest_scanner_status = _workflow_scanner_context(body)
 
     approval_required = bool(body.require_human_approval)
     approval_id: str | None = None
@@ -506,7 +572,9 @@ def run_workflow(body: OrchestratorRunRequest) -> OrchestratorRunResponse:
         source_mode=state.source_mode or body.source,
         using_non_real_data=bool(state.using_non_real_data),
         provider_status=dict(state.provider_status),
-        provider_name=state.provider_name,
+        provider_name=state.provider_name if state.provider_name and state.provider_name != "unknown" else scanner_diagnostics.get("provider_name"),
+        scanner_diagnostics=dict(scanner_diagnostics),
+        latest_scanner_status=dict(latest_scanner_status),
         usable_symbols=list(state.usable_symbols),
         rejected_symbols=list(state.rejected_symbols),
         latest_snapshot_status=state.latest_snapshot_status,

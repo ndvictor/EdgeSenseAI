@@ -20,7 +20,9 @@ export function AppShell({ children }: { children: React.ReactNode }) {
   const isDayTradingPlatformRoute = pathname === "/daytrading-workflow" || pathname.startsWith("/daytrading-workflow/");
 
   if (isPublicRoute || isOwnerPlatformRoute || isOpsPlatformRoute || isDayTradingPlatformRoute) {
-    return <main className="min-h-screen bg-[#03070b]">{children}</main>;
+    const publicBg =
+      pathname === "/" || pathname === "/login" ? "bg-[#000000]" : "bg-[#03070b]";
+    return <main className={`min-h-screen ${publicBg}`}>{children}</main>;
   }
 
   return (

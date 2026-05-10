@@ -152,8 +152,8 @@ def test_workflow_flow(base_url: str, verbose: bool = False) -> tuple[bool, list
         method="POST",
         payload={
             "symbols": ["SPY"],
-            "source": "mock",
-            "allow_mock": True,
+            "source": "non_real",
+            "allow_non_real": True,
             "checks": ["ranking_model", "risk_check", "alerts", "post_trade_analytics", "strategy_decay"],
         },
     )

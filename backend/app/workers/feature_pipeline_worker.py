@@ -3,31 +3,13 @@ from __future__ import annotations
 import os
 from typing import Any
 
-from app.services.candidate_universe_service import list_candidates
 from app.services.feature_store_service import FeatureStoreRunRequest, get_feature_row_persistence_status, run_feature_store_pipeline
-from app.services.market_data_service import MarketDataService
-from app.services.universe_selection_service import get_latest_universe_selection
-from app.services.worker_output_store import get_latest_market_snapshots, get_latest_scanner_candidates, record_worker_status, save_feature_rows
+from app.services.worker_output_store import get_latest_market_snapshots, record_worker_status, save_feature_rows
 from app.workers.common import clean_symbols, get_worker_run_id, print_summary, require_production_data_policy, setup_worker_logging
 
 
 def _symbols(limit: int) -> list[str]:
-    env_symbols = clean_symbols((os.environ.get("WORKER_SYMBOLS") or "").split(","))
-    if env_symbols:
-        return env_symbols[:limit]
-    snapshot_symbols = clean_symbols([row.get("symbol") for row in get_latest_market_snapshots(limit)])
-    if snapshot_symbols:
-        return snapshot_symbols
-    scanner_symbols = clean_symbols([row.get("symbol") for row in get_latest_scanner_candidates(limit)])
-    if scanner_symbols:
-        return scanner_symbols
-    candidate_symbols = clean_symbols([c.symbol for c in list_candidates(status="active")[:limit]])
-    if candidate_symbols:
-        return candidate_symbols
-    latest = get_latest_universe_selection()
-    if latest is None:
-        return []
-    return clean_symbols([c.symbol for c in (latest.selected_watchlist or latest.ranked_candidates or [])[:limit]])
+    return clean_symbols([row.get("symbol") for row in get_latest_market_snapshots(limit, production_scanner_chain_only=True)])
 
 
 def _spread_bps(snapshot: dict[str, Any]) -> float | None:
@@ -105,11 +87,14 @@ def run() -> dict[str, Any]:
         summary = {
             "worker": "feature-pipeline-worker",
             "worker_run_id": worker_run_id,
+            "status": "missing_features",
             "recommendation_status": "missing_features",
+            "symbols": [],
+            "feature_rows": [],
             "feature_row_count": 0,
-            "missing_features": ["no_symbols_available"],
+            "missing_features": ["no_ingested_scanner_snapshots"],
             "persistence_status": "unavailable",
-            "blockers": [],
+            "blockers": ["no_ingested_scanner_snapshots"],
             "warnings": [],
         }
         record_worker_status(
@@ -117,16 +102,17 @@ def run() -> dict[str, Any]:
             status="missing_features",
             worker_run_id=worker_run_id,
             provider=provider,
+            symbols=[],
+            feature_rows=[],
             feature_row_count=0,
-            missing_features=["no_symbols_available"],
+            missing_features=["no_ingested_scanner_snapshots"],
             warnings=[],
-            blockers=[],
+            blockers=["no_ingested_scanner_snapshots"],
         )
         print_summary(summary)
         return summary
 
-    market_data = MarketDataService()
-    latest_snapshots = {str(row.get("symbol", "")).upper(): row for row in get_latest_market_snapshots(limit)}
+    latest_snapshots = {str(row.get("symbol", "")).upper(): row for row in get_latest_market_snapshots(limit, production_scanner_chain_only=True)}
     feature_row_count = 0
     missing_features: list[str] = []
     persistence_statuses: list[str] = []
@@ -134,7 +120,7 @@ def run() -> dict[str, Any]:
     warnings: list[str] = []
     alpha_feature_rows: list[dict[str, Any]] = []
     for symbol in symbols:
-        snapshot = latest_snapshots.get(symbol) or market_data.get_market_snapshot(symbol, source=provider)
+        snapshot = latest_snapshots.get(symbol) or {}
         if snapshot.get("price") is None or snapshot.get("is_non_real") or snapshot.get("data_quality") in {"unavailable", "not_configured"}:
             missing_features.append(symbol)
             continue

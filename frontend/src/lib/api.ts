@@ -270,6 +270,8 @@ export type AlpacaPaperAccount = {
   currency?: string | null;
   cash?: number | null;
   buying_power?: number | null;
+  regt_buying_power?: number | null;
+  daytrading_buying_power?: number | null;
   portfolio_value?: number | null;
   equity?: number | null;
   last_equity?: number | null;

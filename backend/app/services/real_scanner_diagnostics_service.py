@@ -213,6 +213,8 @@ def build_scanner_diagnostics(
         "provider_name": provider_name,
         "provider_priority": provider_priority,
         "provider_configured": _provider_configured(provider_name),
+        "alpaca_configured": _provider_configured("alpaca"),
+        "alpaca_feed": _alpaca_feed(),
         "feed": _alpaca_feed() if provider_name == "alpaca" else None,
         "fallback_provider": fallback_provider,
         "fallback_reason": fallback_reason,

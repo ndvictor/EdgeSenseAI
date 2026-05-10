@@ -136,7 +136,7 @@ export function EdgeSignalsPanel() {
         {signalSourceStatus === "no_real_signal_source" && (
           <div className="rounded-xl border border-slate-700 bg-slate-900 px-4 py-3 text-sm text-slate-300">
             No live edge-signal feed is configured. Demo prototype rows are disabled unless non-production{" "}
-            <code className="rounded bg-slate-800 px-1">ALLOW_MOCK_MARKET_DATA</code> is enabled on the API.
+            <code className="rounded bg-slate-800 px-1">ALLOW_NON_REAL_MARKET_DATA</code> is enabled on the API.
           </div>
         )}
         <div className="text-sm text-slate-800">Last updated: {lastUpdated ? new Date(lastUpdated).toLocaleString() : "loading"}</div>

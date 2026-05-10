@@ -3,7 +3,7 @@
 import Link from "next/link";
 import { usePathname } from "next/navigation";
 import { useCallback, useEffect, useMemo, useState } from "react";
-import { PromotionCenterPanel } from "@/components/PromotionCenterPanel";
+import { PromotionCenterPanel, type PromotionCenterActiveSection } from "@/components/PromotionCenterPanel";
 import {
   api,
   approveApprovalQueueItem,
@@ -120,6 +120,110 @@ function platformGroups() {
   return Array.from(grouped.entries());
 }
 
+const HOME_SUBTABS = [
+  { id: "portfolio", label: "Portfolio" },
+  { id: "risk", label: "Risk" },
+  { id: "positions", label: "Open positions" },
+] as const;
+
+const COMMAND_SUBTABS = [
+  { id: "overview", label: "Overview" },
+  { id: "actions", label: "Run workflow" },
+  { id: "workflow-health", label: "Workflow health" },
+  { id: "data-status", label: "Data status" },
+  { id: "gates", label: "Gates & approval" },
+] as const;
+
+const WORKFLOW_SUBTABS = [
+  { id: "overview", label: "Overview" },
+  { id: "pipeline", label: "Pipeline" },
+] as const;
+
+const WATCHLIST_SUBTABS = [
+  { id: "market", label: "Market & watchlist" },
+  { id: "candidate", label: "Candidate" },
+  { id: "positions", label: "Open positions" },
+] as const;
+
+const DATA_SUBTABS = [
+  { id: "provider", label: "Provider" },
+  { id: "metrics", label: "Pipeline metrics" },
+  { id: "gaps", label: "Missing features" },
+] as const;
+
+const STRATEGY_SUBTABS = [
+  { id: "strategy", label: "Strategy" },
+  { id: "models", label: "Models" },
+] as const;
+
+const PROMOTION_SUBTABS = [
+  { id: "overview", label: "Overview" },
+  { id: "requirements", label: "Promotion requirements" },
+  { id: "strategy", label: "Strategy promotion" },
+  { id: "models", label: "Model promotion" },
+] as const;
+
+const EVIDENCE_SUBTABS = [
+  { id: "qlib", label: "Qlib" },
+  { id: "proof", label: "Proof registry" },
+] as const;
+
+const EXECUTION_SUBTABS = [
+  { id: "plan", label: "Planner & approvals" },
+  { id: "monitoring", label: "Paper monitoring" },
+  { id: "safety", label: "Safety" },
+] as const;
+
+const DEBUG_SUBTABS = [
+  { id: "issues", label: "Issues" },
+  { id: "raw", label: "Raw JSON" },
+] as const;
+
+const DEFAULT_SUB_TAB: Partial<Record<TabId, string>> = {
+  home: "portfolio",
+  command: "overview",
+  workflow: "overview",
+  watchlist: "market",
+  data: "provider",
+  strategy: "strategy",
+  promotion: "overview",
+  evidence: "qlib",
+  execution: "plan",
+  debug: "issues",
+};
+
+function SubTabBar({
+  tabs,
+  active,
+  onSelect,
+}: {
+  tabs: readonly { id: string; label: string }[];
+  active: string;
+  onSelect: (id: string) => void;
+}) {
+  return (
+    <div className="flex flex-wrap gap-2 border-b border-cyan-400/15 pb-3">
+      {tabs.map((sub) => {
+        const on = active === sub.id;
+        return (
+          <button
+            key={sub.id}
+            type="button"
+            onClick={() => onSelect(sub.id)}
+            className={`rounded-xl border px-4 py-2 text-sm font-semibold transition-all ${
+              on
+                ? "border-cyan-400/40 bg-cyan-400/10 text-white shadow-[0_0_20px_rgba(34,211,238,0.12)]"
+                : "border-transparent text-white/70 hover:border-cyan-400/20 hover:bg-cyan-400/[0.06] hover:text-white"
+            }`}
+          >
+            {sub.label}
+          </button>
+        );
+      })}
+    </div>
+  );
+}
+
 function sectionFromPath(pathname: string): TabId {
   if (pathname.endsWith("/command-center")) return "command";
   if (pathname.endsWith("/workflow")) return "workflow";
@@ -212,6 +316,15 @@ function num(value: unknown): number | null {
 function money(value: unknown): string {
   const n = num(value);
   return n === null ? "-" : `$${n.toFixed(2)}`;
+}
+
+function paperBuyingPower(account: Record<string, unknown>): unknown {
+  return (
+    account.buying_power ??
+    account.regt_buying_power ??
+    account.daytrading_buying_power ??
+    account.non_marginable_buying_power
+  );
 }
 
 function nested(source: unknown, path: string[]): unknown {
@@ -322,12 +435,31 @@ function stageResult(row: StageTimelineItem | undefined): Record<string, unknown
   return asRecord(row?.pipeline_inputs_snapshot);
 }
 
+/** Blockers/warnings from this stage's pipeline snapshot only (no run-level bleed onto every card). */
+function snapshotBlockers(snapshot: Record<string, unknown>): string[] {
+  const merged = [
+    ...asList(snapshot.small_account_blockers),
+    ...asList(snapshot.evidence_blockers),
+    ...asList(snapshot.alpha_blockers),
+  ];
+  return [...new Set(merged.map((b) => text(b)).filter(Boolean))].slice(0, 3);
+}
+
+function snapshotWarnings(snapshot: Record<string, unknown>): string[] {
+  const merged = [
+    ...asList(snapshot.small_account_warnings),
+    ...asList(snapshot.evidence_warnings),
+    ...asList(snapshot.alpha_warnings),
+  ];
+  return [...new Set(merged.map((w) => text(w)).filter(Boolean))].slice(0, 3);
+}
+
 function statusTone(value: unknown): string {
   const s = text(value, "").toLowerCase();
   if (["blocked", "failed", "fail", "not_ready"].includes(s)) return "border-red-400/40 bg-red-500/15 text-red-100";
   if (["warn", "warning", "degraded", "partial", "waiting approval", "paused_for_approval"].includes(s)) return "border-amber-400/40 bg-amber-500/15 text-amber-100";
   if (["running"].includes(s)) return "border-sky-400/40 bg-sky-500/15 text-sky-100";
-  if (["completed", "completed_preview", "pass", "ready", "ok", "safe"].includes(s)) return "border-emerald-400/40 bg-emerald-500/15 text-emerald-100";
+  if (["completed", "completed_preview", "pass", "ready", "ok", "safe"].includes(s)) return "border-cyan-400/40 bg-cyan-500/15 text-cyan-100";
   return "border-slate-500/40 bg-slate-500/10 text-slate-300";
 }
 
@@ -360,9 +492,9 @@ function stageVisualState({
   if (isCurrent) {
     return {
       label: "running",
-      card: "border-emerald-300/55 bg-emerald-400/12 shadow-[0_0_46px_rgba(16,185,129,0.26)] ring-1 ring-emerald-300/20",
-      rail: "animate-pulse bg-emerald-200 shadow-[0_0_22px_rgba(110,231,183,1)]",
-      badge: "border-emerald-300/45 bg-emerald-400/20 text-emerald-50",
+      card: "border-cyan-300/55 bg-cyan-400/12 shadow-[0_0_46px_rgba(34,211,238,0.26)] ring-1 ring-cyan-300/20",
+      rail: "animate-pulse bg-cyan-200 shadow-[0_0_22px_rgba(165,243,252,1)]",
+      badge: "border-cyan-300/45 bg-cyan-400/20 text-cyan-50",
     };
   }
   if (isApprovalBoundary) {
@@ -384,9 +516,9 @@ function stageVisualState({
   if (hasRun) {
     return {
       label: "completed",
-      card: "border-emerald-300/35 bg-emerald-500/8 shadow-[0_0_30px_rgba(16,185,129,0.12)]",
-      rail: "bg-emerald-300 shadow-[0_0_16px_rgba(110,231,183,0.75)]",
-      badge: "border-emerald-300/40 bg-emerald-500/16 text-emerald-100",
+      card: "border-cyan-300/35 bg-cyan-500/8 shadow-[0_0_30px_rgba(34,211,238,0.12)]",
+      rail: "bg-cyan-300 shadow-[0_0_16px_rgba(165,243,252,0.75)]",
+      badge: "border-cyan-300/40 bg-cyan-500/16 text-cyan-100",
     };
   }
   return {
@@ -404,16 +536,16 @@ function Badge({ children, tone = "safe" }: { children: React.ReactNode; tone?: 
       : tone === "warn"
         ? "border-amber-400/40 bg-amber-500/15 text-amber-100"
         : tone === "running"
-          ? "border-emerald-300/45 bg-emerald-400/15 text-emerald-100"
+          ? "border-cyan-300/45 bg-cyan-400/15 text-cyan-100"
           : tone === "paper"
-            ? "border-emerald-300/35 bg-emerald-400/10 text-emerald-100"
-            : "border-emerald-400/40 bg-emerald-500/15 text-emerald-100";
+            ? "border-cyan-300/35 bg-cyan-400/10 text-cyan-100"
+            : "border-cyan-400/40 bg-cyan-500/15 text-cyan-100";
   return <span className={`inline-flex rounded-full border px-2.5 py-1 text-[10px] font-bold uppercase tracking-wide ${cls}`}>{children}</span>;
 }
 
 function Card({ title, subtitle, children, error }: { title: string; subtitle?: string; children: React.ReactNode; error?: string | null }) {
   return (
-    <section className="rounded-3xl border border-emerald-400/15 bg-[#070c12]/70 p-4 shadow-[0_24px_80px_rgba(0,0,0,0.32)] backdrop-blur-xl">
+    <section className="rounded-3xl border border-white/10 bg-black/35 p-4 shadow-[0_24px_80px_rgba(0,0,0,0.32)] backdrop-blur-xl">
       <div className="mb-3 flex items-start justify-between gap-3">
         <div>
           <h3 className="text-sm font-semibold uppercase tracking-[0.18em] text-slate-400">{title}</h3>
@@ -435,7 +567,7 @@ function MiniTable({ rows, empty = "No records reported." }: { rows: unknown[]; 
         const title = text(record.agent_key ?? record.approval_id ?? record.audit_id ?? record.schedule_id ?? record.name ?? record.event_type ?? record.status ?? `Record ${index + 1}`);
         const subtitle = text(record.status ?? record.message ?? record.updated_at ?? record.created_at ?? record.next_action);
         return (
-          <div key={`${title}-${index}`} className="rounded-2xl border border-emerald-400/10 bg-black/25 p-3">
+          <div key={`${title}-${index}`} className="rounded-2xl border border-cyan-400/10 bg-black/25 p-3">
             <div className="text-sm font-semibold text-slate-100">{title}</div>
             <div className="mt-1 text-xs text-slate-500">{subtitle}</div>
           </div>
@@ -461,7 +593,7 @@ function ApprovalActionSelect({
   onDecline: () => void;
 }) {
   return (
-    <div className={`rounded-2xl border p-3 ${disabled ? "border-slate-600/35 bg-slate-900/40 opacity-55" : "border-emerald-400/20 bg-emerald-400/[0.04]"}`}>
+    <div className={`rounded-2xl border p-3 ${disabled ? "border-slate-600/35 bg-slate-900/40 opacity-55" : "border-cyan-400/20 bg-cyan-400/[0.04]"}`}>
       <div className="mb-2 text-xs font-bold uppercase tracking-[0.16em] text-slate-400">{label}</div>
       <select
         disabled={disabled || busy}
@@ -472,7 +604,7 @@ function ApprovalActionSelect({
           if (value === "approve") onApprove();
           if (value === "decline") onDecline();
         }}
-        className="w-full rounded-xl border border-emerald-400/10 bg-black/35 px-3 py-2 text-sm font-semibold text-slate-100 outline-none disabled:cursor-not-allowed disabled:text-slate-500"
+        className="w-full rounded-xl border border-cyan-400/10 bg-black/35 px-3 py-2 text-sm font-semibold text-slate-100 outline-none disabled:cursor-not-allowed disabled:text-slate-500"
       >
         <option value="">{disabled ? "No approval needed" : "Select action"}</option>
         <option value="approve">Approve</option>
@@ -497,8 +629,8 @@ function SafetyStatusCard({ title, status, children }: { title: string; status?:
 
 function SectionHeader({ eyebrow, title, description }: { eyebrow: string; title: string; description: string }) {
   return (
-    <header className="rounded-[2rem] border border-emerald-400/15 bg-[#05080d]/70 p-5 shadow-[0_28px_110px_rgba(0,0,0,0.42)] backdrop-blur-2xl">
-      <div className="mb-2 text-[10px] font-bold uppercase tracking-[0.28em] text-emerald-300/70">{eyebrow}</div>
+    <header className="rounded-[2rem] border border-white/10 bg-black/35 p-5 shadow-[0_28px_110px_rgba(0,0,0,0.42)] backdrop-blur-2xl">
+      <div className="mb-2 text-[10px] font-bold uppercase tracking-[0.28em] text-cyan-300/70">{eyebrow}</div>
       <h1 className="text-3xl font-black tracking-tight text-white">{title}</h1>
       <p className="mt-2 max-w-4xl text-sm leading-6 text-slate-400">{description}</p>
     </header>
@@ -507,7 +639,7 @@ function SectionHeader({ eyebrow, title, description }: { eyebrow: string; title
 
 function Metric({ label, value, tone }: { label: string; value: React.ReactNode; tone?: string }) {
   return (
-    <div className="rounded-2xl border border-emerald-400/10 bg-black/25 px-3 py-2 shadow-[inset_0_1px_0_rgba(16,185,129,0.05)] backdrop-blur">
+    <div className="rounded-2xl border border-cyan-400/10 bg-black/25 px-3 py-2 shadow-[inset_0_1px_0_rgba(34,211,238,0.05)] backdrop-blur">
       <div className="text-[10px] font-semibold uppercase tracking-[0.16em] text-slate-500">{label}</div>
       <div className={`mt-1 break-words text-sm font-semibold ${tone || "text-slate-100"}`}>{value}</div>
     </div>
@@ -518,20 +650,20 @@ function ProviderStatusCard({ summary }: { summary: ProviderSummary }) {
   return (
     <Card title="Data Source & Status" subtitle="Human-readable provider selected by DataReadinessAgent. No raw JSON.">
       <div className="grid gap-3 md:grid-cols-2">
-        <div className="rounded-2xl border border-emerald-300/25 bg-emerald-400/10 p-4 shadow-[0_0_28px_rgba(16,185,129,0.10)]">
-          <div className="text-[10px] font-bold uppercase tracking-[0.2em] text-emerald-200/70">Data source used</div>
-          <div className="mt-2 text-3xl font-black text-emerald-100">{summary.provider}</div>
+        <div className="rounded-2xl border border-cyan-300/25 bg-cyan-400/10 p-4 shadow-[0_0_28px_rgba(34,211,238,0.10)]">
+          <div className="text-[10px] font-bold uppercase tracking-[0.2em] text-cyan-200/70">Data source used</div>
+          <div className="mt-2 text-3xl font-black text-cyan-100">{summary.provider}</div>
           <p className="mt-2 text-sm leading-5 text-slate-400">{summary.detail}</p>
         </div>
-        <div className="rounded-2xl border border-emerald-300/20 bg-black/25 p-4">
+        <div className="rounded-2xl border border-cyan-300/20 bg-black/25 p-4">
           <div className="mb-3 flex flex-wrap items-center gap-2">
             <Badge tone={summary.status === "Configured and live" ? "safe" : summary.isNonReal ? "warn" : "blocked"}>{summary.status}</Badge>
             <Badge tone="paper">{summary.symbol}</Badge>
           </div>
           <div className="grid gap-2">
-            <Metric label="Freshness" value={summary.freshness} tone={summary.freshness === "fresh" ? "text-emerald-100" : "text-amber-100"} />
+            <Metric label="Freshness" value={summary.freshness} tone={summary.freshness === "fresh" ? "text-cyan-100" : "text-amber-100"} />
             <Metric label="Quality" value={summary.quality} />
-            <Metric label="NonReal data" value={summary.isNonReal ? "yes" : "no"} tone={summary.isNonReal ? "text-amber-100" : "text-emerald-100"} />
+            <Metric label="NonReal data" value={summary.isNonReal ? "yes" : "no"} tone={summary.isNonReal ? "text-amber-100" : "text-cyan-100"} />
           </div>
         </div>
       </div>
@@ -541,7 +673,7 @@ function ProviderStatusCard({ summary }: { summary: ProviderSummary }) {
           <div className="mt-3 space-y-2">
             {summary.attempts.length ? (
               summary.attempts.map((attempt) => (
-                <div key={`${attempt.provider}-${attempt.status}`} className="rounded-xl border border-emerald-400/10 bg-black/25 p-3">
+                <div key={`${attempt.provider}-${attempt.status}`} className="rounded-xl border border-cyan-400/10 bg-black/25 p-3">
                   <div className="flex flex-wrap items-center justify-between gap-2">
                     <div className="font-semibold text-slate-100">{attempt.provider}</div>
                     <span className={`rounded-full border px-2 py-0.5 text-[10px] font-bold uppercase ${statusTone(attempt.status)}`}>{attempt.status}</span>
@@ -574,7 +706,15 @@ function ProviderStatusCard({ summary }: { summary: ProviderSummary }) {
 function IssueList({ items, empty = "None" }: { items: unknown; empty?: string }) {
   const rows = asList(items).map((item) => text(item)).filter(Boolean);
   if (!rows.length) return <p className="text-sm text-slate-500">{empty}</p>;
-  return <ul className="space-y-1 text-sm text-slate-300">{rows.map((item) => <li key={item}>- {item}</li>)}</ul>;
+  return (
+    <ul className="space-y-1 break-words text-sm text-slate-300">
+      {rows.map((item) => (
+        <li key={item} className="break-words">
+          - {item}
+        </li>
+      ))}
+    </ul>
+  );
 }
 
 function DebugPanel({ title, value }: { title: string; value: unknown }) {
@@ -597,7 +737,7 @@ function RunWorkflowPanel({ onRun, busy }: { onRun: (symbols: string, stopStage:
           <input
             value={symbols}
             onChange={(event) => setSymbols(event.target.value.toUpperCase())}
-            className="mt-2 w-full rounded-xl border border-white/10 bg-black/30 px-3 py-2 text-sm normal-case tracking-normal text-slate-100 outline-none focus:border-emerald-400/50"
+            className="mt-2 w-full rounded-xl border border-white/10 bg-black/30 px-3 py-2 text-sm normal-case tracking-normal text-slate-100 outline-none focus:border-cyan-400/50"
             placeholder="Leave blank to scan the real market"
           />
           <span className="mt-1 block text-xs normal-case tracking-normal text-slate-500">Blank means scanner/provider discovery. No non_real data or default ticker is used.</span>
@@ -607,7 +747,7 @@ function RunWorkflowPanel({ onRun, busy }: { onRun: (symbols: string, stopStage:
           <select
             value={stopStage}
             onChange={(event) => setStopStage(Number(event.target.value))}
-            className="mt-2 w-full rounded-xl border border-white/10 bg-black/30 px-3 py-2 text-sm normal-case tracking-normal text-slate-100 outline-none focus:border-emerald-400/50"
+            className="mt-2 w-full rounded-xl border border-white/10 bg-black/30 px-3 py-2 text-sm normal-case tracking-normal text-slate-100 outline-none focus:border-cyan-400/50"
           >
             {[5, 10, 14, 18, 100].map((value) => (
               <option key={value} value={value}>
@@ -620,7 +760,7 @@ function RunWorkflowPanel({ onRun, busy }: { onRun: (symbols: string, stopStage:
           type="button"
           disabled={busy}
           onClick={() => onRun(symbols, stopStage)}
-          className="self-end rounded-xl border border-emerald-400/50 bg-emerald-500/20 px-4 py-2 text-sm font-bold text-emerald-100 transition hover:bg-emerald-500/30 disabled:opacity-50"
+          className="self-end rounded-xl border border-cyan-400/50 bg-cyan-500/20 px-4 py-2 text-sm font-bold text-cyan-100 transition hover:bg-cyan-500/30 disabled:opacity-50"
         >
           {busy ? "Running..." : "Run Safe Paper Workflow"}
         </button>
@@ -645,6 +785,14 @@ export default function DayTradingWorkflowPage() {
   const [approvalBusyId, setApprovalBusyId] = useState<string | null>(null);
   const [agentRunBusy, setAgentRunBusy] = useState(false);
   const [agentRunResult, setAgentRunResult] = useState<AgentRunResultRecord | null>(null);
+  const [subTabBySection, setSubTabBySection] = useState<Partial<Record<TabId, string>>>({});
+  const sectionSub = (tab: TabId) => {
+    const raw = subTabBySection[tab] ?? DEFAULT_SUB_TAB[tab] ?? "overview";
+    if (tab === "command" && raw === "status") return "workflow-health";
+    if (tab === "promotion" && raw === "center") return "requirements";
+    return raw;
+  };
+  const setSectionSub = (tab: TabId, id: string) => setSubTabBySection((prev) => ({ ...prev, [tab]: id }));
 
   const refresh = useCallback(async () => {
     setLoading(true);
@@ -844,22 +992,22 @@ export default function DayTradingWorkflowPage() {
 
   return (
     <div className="flex min-h-screen bg-[#03070b] text-slate-100">
-      <aside className="flex min-h-screen w-80 shrink-0 flex-col border-r border-emerald-400/10 bg-[#05080d]/90 px-4 py-5 shadow-[22px_0_80px_rgba(0,0,0,0.45)] backdrop-blur-2xl">
+      <aside className="flex min-h-screen w-80 shrink-0 flex-col border-r border-cyan-400/10 bg-[#000000] px-4 py-5">
         <Link href="/daytrading-workflow" className="mb-7 flex items-center gap-3 px-1">
-          <div className="relative flex h-12 w-12 items-center justify-center rounded-2xl border border-emerald-300/50 bg-emerald-300/10 text-xl font-black text-emerald-200 shadow-[0_0_34px_rgba(16,185,129,0.28)]">
+          <div className="relative flex h-12 w-12 items-center justify-center rounded-2xl border border-cyan-400/50 bg-cyan-400/10 text-xl font-black text-white">
             E
-            <span className="absolute -right-1 -top-1 h-3 w-3 rounded-full border border-[#02060a] bg-emerald-300" />
+            <span className="absolute -right-1 -top-1 h-3 w-3 rounded-full border border-black bg-cyan-400" />
           </div>
           <div>
-            <div className="text-xl font-semibold tracking-tight text-emerald-200">Day-Trading OS</div>
-            <div className="text-[11px] uppercase tracking-[0.24em] text-slate-500">Hedge fund command</div>
+            <div className="text-xl font-semibold tracking-tight text-white">Day-Trading OS</div>
+            <div className="text-[11px] uppercase tracking-[0.24em] text-white/55">Hedge fund command</div>
           </div>
         </Link>
 
         <nav className="space-y-5 overflow-y-auto pr-1">
           {platformGroups().map(([group, pages]) => (
             <div key={group}>
-              <div className="mb-2 px-2 text-[10px] font-semibold uppercase tracking-[0.28em] text-slate-500">{group}</div>
+              <div className="mb-2 px-2 text-[10px] font-semibold uppercase tracking-[0.28em] text-white/50">{group}</div>
               <div className="space-y-1.5">
                 {pages.map((page) => {
                   const active = activeTab === page.id;
@@ -867,15 +1015,15 @@ export default function DayTradingWorkflowPage() {
                     <Link
                       key={page.href}
                       href={page.href}
-                      className={`group flex items-center gap-3 rounded-2xl px-3 py-2.5 text-sm font-medium transition-all ${
+                      className={`group flex items-center gap-3 rounded-2xl px-3 py-2.5 text-sm font-medium text-white transition-all ${
                         active
-                          ? "border border-emerald-400/40 bg-emerald-400/10 text-white shadow-[0_0_30px_rgba(16,185,129,0.16)]"
-                          : "border border-transparent text-slate-300 hover:border-emerald-400/15 hover:bg-emerald-400/[0.04] hover:text-emerald-100"
+                          ? "border border-cyan-400/40 bg-cyan-400/10 shadow-[0_0_30px_rgba(34,211,238,0.16)]"
+                          : "border border-transparent text-white/90 hover:border-cyan-400/15 hover:bg-cyan-400/[0.04] hover:text-white"
                       }`}
                     >
-                      <span className={`h-2.5 w-2.5 rounded-full ${active ? "bg-emerald-300 shadow-[0_0_16px_rgba(110,231,183,0.8)]" : "bg-slate-700 group-hover:bg-emerald-400/60"}`} />
+                      <span className={`h-2.5 w-2.5 rounded-full ${active ? "bg-cyan-400 shadow-[0_0_16px_rgba(165,243,252,0.8)]" : "bg-cyan-400/25 group-hover:bg-cyan-400/60"}`} />
                       <span className="flex-1">{page.label}</span>
-                      <span className="text-[9px] font-bold uppercase tracking-wider text-slate-600">{page.eyebrow}</span>
+                      <span className="text-[9px] font-bold uppercase tracking-wider text-white/45">{page.eyebrow}</span>
                     </Link>
                   );
                 })}
@@ -884,24 +1032,24 @@ export default function DayTradingWorkflowPage() {
           ))}
         </nav>
 
-        <div className="mt-auto rounded-3xl border border-emerald-300/15 bg-black/25 p-4">
+        <div className="mt-auto rounded-3xl border border-cyan-300/15 bg-black/25 p-4">
           <div className="mb-2 flex flex-wrap gap-2">
             <Badge tone={blocked ? "blocked" : warning ? "warn" : "safe"}>{blocked ? "Blocked" : warning ? "Warning" : "Safe"}</Badge>
             <Badge tone="paper">Paper Only</Badge>
           </div>
-          <div className="text-xs leading-5 text-slate-400">US stocks, day trading, paper-first, human approval. Broker submission remains blocked.</div>
+          <div className="text-xs leading-5 text-white/70">US stocks, day trading, paper-first, human approval. Broker submission remains blocked.</div>
         </div>
       </aside>
 
-      <main className="relative min-h-screen flex-1 overflow-hidden bg-emerald-950">
-        <div className="pointer-events-none absolute inset-0 bg-[radial-gradient(circle_at_28%_0%,rgba(16,185,129,0.18),transparent_30%),radial-gradient(circle_at_100%_20%,rgba(20,184,166,0.10),transparent_28%),radial-gradient(circle_at_0%_100%,rgba(16,185,129,0.08),transparent_30%)]" />
-        <div className="pointer-events-none absolute inset-0 opacity-25 [background-image:linear-gradient(rgba(16,185,129,0.07)_1px,transparent_1px),linear-gradient(90deg,rgba(16,185,129,0.06)_1px,transparent_1px)] [background-size:56px_56px]" />
+      <main className="relative min-h-screen flex-1 overflow-hidden bg-cyan-950">
+        <div className="pointer-events-none absolute inset-0 bg-[radial-gradient(circle_at_28%_0%,rgba(34,211,238,0.18),transparent_30%),radial-gradient(circle_at_100%_20%,rgba(34,211,238,0.10),transparent_28%),radial-gradient(circle_at_0%_100%,rgba(34,211,238,0.08),transparent_30%)]" />
+        <div className="pointer-events-none absolute inset-0 opacity-25 [background-image:linear-gradient(rgba(34,211,238,0.07)_1px,transparent_1px),linear-gradient(90deg,rgba(34,211,238,0.06)_1px,transparent_1px)] [background-size:56px_56px]" />
         <div className="relative z-10 space-y-5 p-6">
-      {runMessage ? <div className="rounded-2xl border border-emerald-400/20 bg-emerald-500/10 p-3 text-sm text-emerald-100">{runMessage}</div> : null}
+      {runMessage ? <div className="rounded-2xl border border-cyan-400/20 bg-cyan-500/10 p-3 text-sm text-cyan-100">{runMessage}</div> : null}
 
       {activeTab === "home" ? (
         <div className="space-y-4">
-          <div className="flex flex-col gap-3 rounded-[2rem] border border-emerald-400/15 bg-[#05080d]/70 p-5 shadow-[0_28px_110px_rgba(0,0,0,0.42)] backdrop-blur-2xl lg:flex-row lg:items-end lg:justify-between">
+          <div className="flex flex-col gap-3 rounded-[2rem] border border-cyan-400/15 bg-[#05080d]/70 p-5 shadow-[0_28px_110px_rgba(0,0,0,0.42)] backdrop-blur-2xl lg:flex-row lg:items-end lg:justify-between">
             <div>
               <div className="mb-2 flex flex-wrap gap-2">
                 <Badge tone="safe">Paper Portfolio Home</Badge>
@@ -909,24 +1057,31 @@ export default function DayTradingWorkflowPage() {
               </div>
               <h1 className="text-3xl font-black tracking-tight text-white">Paper Account Home</h1>
               <p className="mt-2 max-w-3xl text-sm leading-6 text-slate-400">
-                Paper portfolio, paper buying power, paper account risk, and paper open positions for the autonomous day-trading workspace.
+                Use the tabs below for portfolio snapshot, risk limits, and open paper positions.
               </p>
             </div>
             <button
               type="button"
               onClick={() => refresh()}
               disabled={loading}
-              className="rounded-xl border border-emerald-400/20 bg-emerald-400/[0.06] px-4 py-2 text-sm font-semibold text-emerald-100 hover:border-emerald-400/35 disabled:opacity-50"
+              className="rounded-xl border border-cyan-400/20 bg-cyan-400/[0.06] px-4 py-2 text-sm font-semibold text-cyan-100 hover:border-cyan-400/35 disabled:opacity-50"
             >
               {loading ? "Refreshing..." : "Refresh"}
             </button>
           </div>
-          <div className="grid gap-4 xl:grid-cols-[1fr_0.95fr]">
-            <Card title="Paper Portfolio & Paper Buying Power" subtitle="Paper account snapshot only. This does not represent live brokerage buying power." error={data.paper.error}>
+
+          <SubTabBar tabs={HOME_SUBTABS} active={sectionSub("home")} onSelect={(id) => setSectionSub("home", id)} />
+
+          {sectionSub("home") === "portfolio" ? (
+            <Card
+              title="Paper Portfolio & Paper Buying Power"
+              subtitle="Paper account snapshot only. This does not represent live brokerage buying power."
+              error={data.paper.error}
+            >
               {hasPaperAccount ? (
                 <div className="grid gap-2 md:grid-cols-2 xl:grid-cols-3">
                   <Metric label="Paper portfolio value" value={money(paperAccount.portfolio_value ?? paperAccount.equity)} />
-                  <Metric label="Paper buying power" value={money(paperAccount.buying_power)} />
+                  <Metric label="Paper buying power" value={money(paperBuyingPower(paperAccount))} />
                   <Metric label="Paper cash" value={money(paperAccount.cash)} />
                   <Metric label="Paper account equity" value={money(paperAccount.equity)} />
                   <Metric label="Paper account status" value={text(paperAccount.status ?? data.paper.data?.status)} />
@@ -936,6 +1091,9 @@ export default function DayTradingWorkflowPage() {
                 <p className="text-sm text-slate-500">Paper account data unavailable</p>
               )}
             </Card>
+          ) : null}
+
+          {sectionSub("home") === "risk" ? (
             <Card title="Paper Account Risk" subtitle="Paper-first risk guardrails used by the autonomous workflow." error={data.accountRisk.error}>
               <div className="grid gap-2 md:grid-cols-2">
                 <Metric label="Max risk / trade" value={`${text(accountRisk.max_risk_per_trade_percent)}%`} />
@@ -946,42 +1104,45 @@ export default function DayTradingWorkflowPage() {
                 <Metric label="Paper only" value={text(accountRisk.paper_only ?? true)} />
               </div>
             </Card>
-          </div>
-          <Card title="Paper Open Positions" subtitle="Paper open positions if the paper account endpoint reports any." error={data.paper.error}>
-            {!hasPaperAccount ? (
-              <p className="text-sm text-slate-500">Paper account data unavailable</p>
-            ) : openPositions.length ? (
-              <div className="grid gap-3 xl:grid-cols-2">
-                {openPositions.map((position, index) => {
-                  const row = asRecord(position);
-                  return (
-                    <div key={`${text(row.symbol, "position")}-${index}`} className="rounded-2xl border border-emerald-400/10 bg-black/25 p-4">
-                      <div className="mb-3 flex items-center justify-between gap-3">
-                        <div className="text-lg font-bold text-slate-50">{text(row.symbol)}</div>
-                        <Badge tone="paper">{text(row.side ?? "paper")}</Badge>
+          ) : null}
+
+          {sectionSub("home") === "positions" ? (
+            <Card title="Paper Open Positions" subtitle="Paper open positions if the paper account endpoint reports any." error={data.paper.error}>
+              {!hasPaperAccount ? (
+                <p className="text-sm text-slate-500">Paper account data unavailable</p>
+              ) : openPositions.length ? (
+                <div className="grid gap-3 xl:grid-cols-2">
+                  {openPositions.map((position, index) => {
+                    const row = asRecord(position);
+                    return (
+                      <div key={`${text(row.symbol, "position")}-${index}`} className="rounded-2xl border border-cyan-400/10 bg-black/25 p-4">
+                        <div className="mb-3 flex items-center justify-between gap-3">
+                          <div className="text-lg font-bold text-slate-50">{text(row.symbol)}</div>
+                          <Badge tone="paper">{text(row.side ?? "paper")}</Badge>
+                        </div>
+                        <div className="grid gap-2 md:grid-cols-3">
+                          <Metric label="Qty" value={text(row.qty)} />
+                          <Metric label="Market value" value={money(row.market_value)} />
+                          <Metric label="Current price" value={money(row.current_price)} />
+                          <Metric label="Avg entry" value={money(row.avg_entry_price)} />
+                          <Metric label="Unrealized P/L" value={money(row.unrealized_pl)} />
+                          <Metric label="P/L %" value={row.unrealized_plpc != null ? `${(Number(row.unrealized_plpc) * 100).toFixed(2)}%` : "-"} />
+                        </div>
                       </div>
-                      <div className="grid gap-2 md:grid-cols-3">
-                        <Metric label="Qty" value={text(row.qty)} />
-                        <Metric label="Market value" value={money(row.market_value)} />
-                        <Metric label="Current price" value={money(row.current_price)} />
-                        <Metric label="Avg entry" value={money(row.avg_entry_price)} />
-                        <Metric label="Unrealized P/L" value={money(row.unrealized_pl)} />
-                        <Metric label="P/L %" value={row.unrealized_plpc != null ? `${(Number(row.unrealized_plpc) * 100).toFixed(2)}%` : "-"} />
-                      </div>
-                    </div>
-                  );
-                })}
-              </div>
-            ) : (
-              <p className="text-sm text-slate-500">No open paper positions reported.</p>
-            )}
-          </Card>
+                    );
+                  })}
+                </div>
+              ) : (
+                <p className="text-sm text-slate-500">No open paper positions reported.</p>
+              )}
+            </Card>
+          ) : null}
         </div>
       ) : null}
 
       {activeTab === "command" ? (
         <div className="space-y-4">
-          <header className="rounded-[2rem] border border-emerald-400/15 bg-[#05080d]/70 p-5 shadow-[0_28px_110px_rgba(0,0,0,0.42)] backdrop-blur-2xl">
+          <header className="rounded-[2rem] border border-cyan-400/15 bg-[#05080d]/70 p-5 shadow-[0_28px_110px_rgba(0,0,0,0.42)] backdrop-blur-2xl">
             <div className="flex flex-col gap-4 xl:flex-row xl:items-start xl:justify-between">
               <div>
                 <div className="mb-2 flex flex-wrap gap-2">
@@ -1000,13 +1161,18 @@ export default function DayTradingWorkflowPage() {
                 type="button"
                 onClick={() => refresh()}
                 disabled={loading}
-                className="rounded-xl border border-white/10 bg-white/[0.04] px-4 py-2 text-sm font-semibold text-slate-200 hover:border-emerald-400/30 disabled:opacity-50"
+                className="rounded-xl border border-white/10 bg-white/[0.04] px-4 py-2 text-sm font-semibold text-slate-200 hover:border-cyan-400/30 disabled:opacity-50"
               >
                 {loading ? "Refreshing..." : "Refresh"}
               </button>
             </div>
-            <div className="mt-5 grid gap-2 md:grid-cols-3 xl:grid-cols-6">
-              <Metric label="Workflow status" value={status} tone={blocked ? "text-red-100" : "text-emerald-100"} />
+          </header>
+
+          <SubTabBar tabs={COMMAND_SUBTABS} active={sectionSub("command")} onSelect={(id) => setSectionSub("command", id)} />
+
+          {sectionSub("command") === "overview" ? (
+            <div className="grid gap-2 md:grid-cols-3 xl:grid-cols-6">
+              <Metric label="Workflow status" value={status} tone={blocked ? "text-red-100" : "text-cyan-100"} />
               <Metric label="Last run time" value={text(run?.updated_at ?? run?.created_at)} />
               <Metric label="Current agent" value={text(run?.current_agent_key)} />
               <Metric label="Current stage" value={text(run?.current_stage)} />
@@ -1019,78 +1185,92 @@ export default function DayTradingWorkflowPage() {
               <Metric label="Execution boundary" value={text(run?.execution_boundary_reached ?? false)} />
               <Metric label="submitted / broker / llm" value={`${text(run?.submitted_order ?? false)} / ${text(run?.broker_called ?? false)} / ${text(run?.llm_used ?? false)}`} />
             </div>
-          </header>
-          <RunWorkflowPanel onRun={runWorkflow} busy={runBusy} />
-          <div className="grid gap-4 xl:grid-cols-2">
-            <Card title="Workflow Health" error={data.latest.error}>
-              <div className="grid gap-2 md:grid-cols-2">
-                <Metric label="status" value={status} />
-                <Metric label="current stage" value={text(run?.current_stage)} />
-                <Metric label="current agent" value={text(run?.current_agent_key)} />
-                <Metric label="last run" value={text(run?.updated_at ?? run?.created_at)} />
-                <Metric label="next action" value={text(run?.next_action)} />
-                <Metric label="blockers / warnings" value={`${run?.blockers?.length ?? 0} / ${run?.warnings?.length ?? 0}`} />
-              </div>
-            </Card>
-            <Card title="Safety Boundary">
-              <div className="grid gap-2 md:grid-cols-2">
-                <Metric label="paper_first" value="true" tone="text-emerald-100" />
-                <Metric label="day_trading_only" value="true" tone="text-emerald-100" />
-                <Metric label="human_approval_required" value={text(run?.approval_required ?? executionGates.require_human_approval ?? true)} />
-                <Metric label="submitted_order" value={text(run?.submitted_order ?? false)} tone={run?.submitted_order ? "text-red-100" : "text-emerald-100"} />
-                <Metric label="broker_called" value={text(run?.broker_called ?? false)} tone={run?.broker_called ? "text-red-100" : "text-emerald-100"} />
-                <Metric label="llm_used" value={text(run?.llm_used ?? false)} tone={run?.llm_used ? "text-red-100" : "text-emerald-100"} />
-                <Metric label="live_trading_blocked" value={String(!executionGates.live_trading_enabled)} />
-                <Metric label="broker_execution_blocked" value={String(!executionGates.broker_execution_enabled)} />
-              </div>
-            </Card>
-            <Card title="Data Status" error={data.readiness.error}>
-              <div className="grid gap-2 md:grid-cols-2">
-                <Metric label="source_mode" value={text(run?.source_mode)} />
-                <Metric label="using_non_real_data" value={text(run?.using_non_real_data ?? false)} />
-                <Metric label="provider_status" value={text(run?.provider_status ?? dataPipeline.provider_status)} />
-                <Metric label="provider_name" value={text(run?.provider_name ?? dataPipeline.provider_name)} />
-                <Metric label="usable_symbols" value={text(run?.usable_symbols)} />
-                <Metric label="rejected_symbols" value={text(run?.rejected_symbols)} />
-                <Metric label="snapshots / features" value={`${text(run?.latest_snapshot_count ?? 0)} / ${text(run?.feature_row_count ?? 0)}`} />
-                <Metric label="persistence / freshness / kafka" value={`${text(run?.persistence_status)} / ${text(run?.freshness_status)} / ${text(run?.kafka_status ?? "configured_optional_not_active")}`} />
-              </div>
-            </Card>
-            <Card title="Evidence Status">
-              <div className="grid gap-2 md:grid-cols-2">
-                <Metric label="qlib_available" value={text(run?.qlib_available ?? data.qlib.data?.qlib_available)} />
-                <Metric label="qlib_artifact_count" value={text(data.qlib.data?.artifact_count ?? nested(run, ["qlib_artifact_counts", "total"]))} />
-                <Metric label="proof_status" value={text(run?.proof_status ?? proofRecord.proof_status)} />
-                <Metric label="selected_model_key" value={text(run?.selected_model_key)} />
-                <Metric label="selected_strategy_key" value={text(run?.selected_strategy_key ?? run?.strategy_key)} />
-                <Metric label="evidence warnings/blockers" value={`${asList(run?.evidence_warnings).length} / ${asList(run?.evidence_blockers).length}`} />
-              </div>
-            </Card>
-            <Card title="Small Account Gate" error={smallAccountReadiness.enabled === undefined && !run ? "No small-account run data yet." : null}>
-              <div className="grid gap-2 md:grid-cols-2">
-                <Metric label="account_equity" value={money(run?.account_equity ?? smallAccountReadiness.account_equity_default ?? 1000)} />
-                <Metric label="max_risk_dollars" value={money(run?.max_risk_dollars)} />
-                <Metric label="max_daily_loss_dollars" value={money(run?.max_daily_loss_dollars)} />
-                <Metric label="decision" value={text(run?.small_account_decision ?? smallAccountReadiness.status)} />
-                <Metric label="feasible_symbols" value={text(run?.feasible_symbols)} />
-                <Metric label="rejected_symbols" value={text(run?.small_account_rejected_symbols)} />
-              </div>
-              <div className="mt-3 grid gap-3 md:grid-cols-2">
-                <div><div className="mb-1 text-xs font-semibold text-red-100">Blockers</div><IssueList items={run?.small_account_blockers} /></div>
-                <div><div className="mb-1 text-xs font-semibold text-amber-100">Warnings</div><IssueList items={run?.small_account_warnings} /></div>
-              </div>
-            </Card>
-            <Card title="Approval / Execution" subtitle="Approval unlocks a gated workflow step. It does not submit a broker order." error={data.approvals.error}>
-              <div className="grid gap-2 md:grid-cols-2">
-                <Metric label="approval_required" value={text(run?.approval_required ?? false)} />
-                <Metric label="approval_id" value={text(run?.approval_id)} />
-                <Metric label="execution_boundary_reached" value={text(run?.execution_boundary_reached ?? false)} />
-                <Metric label="approval_items" value={approvalItems.length} />
-                <Metric label="open paper positions" value={openPositions.length} />
-                <Metric label="monitoring status" value={text(data.paper.data?.status ?? "not_available")} />
-              </div>
-            </Card>
-          </div>
+          ) : null}
+
+          {sectionSub("command") === "actions" ? <RunWorkflowPanel onRun={runWorkflow} busy={runBusy} /> : null}
+
+          {sectionSub("command") === "workflow-health" ? (
+            <div className="grid gap-4 xl:grid-cols-2">
+              <Card title="Workflow Health" error={data.latest.error}>
+                <div className="grid gap-2 md:grid-cols-2">
+                  <Metric label="status" value={status} />
+                  <Metric label="current stage" value={text(run?.current_stage)} />
+                  <Metric label="current agent" value={text(run?.current_agent_key)} />
+                  <Metric label="last run" value={text(run?.updated_at ?? run?.created_at)} />
+                  <Metric label="next action" value={text(run?.next_action)} />
+                  <Metric label="blockers / warnings" value={`${run?.blockers?.length ?? 0} / ${run?.warnings?.length ?? 0}`} />
+                </div>
+              </Card>
+              <Card title="Safety Boundary">
+                <div className="grid gap-2 md:grid-cols-2">
+                  <Metric label="paper_first" value="true" tone="text-cyan-100" />
+                  <Metric label="day_trading_only" value="true" tone="text-cyan-100" />
+                  <Metric label="human_approval_required" value={text(run?.approval_required ?? executionGates.require_human_approval ?? true)} />
+                  <Metric label="submitted_order" value={text(run?.submitted_order ?? false)} tone={run?.submitted_order ? "text-red-100" : "text-cyan-100"} />
+                  <Metric label="broker_called" value={text(run?.broker_called ?? false)} tone={run?.broker_called ? "text-red-100" : "text-cyan-100"} />
+                  <Metric label="llm_used" value={text(run?.llm_used ?? false)} tone={run?.llm_used ? "text-red-100" : "text-cyan-100"} />
+                  <Metric label="live_trading_blocked" value={String(!executionGates.live_trading_enabled)} />
+                  <Metric label="broker_execution_blocked" value={String(!executionGates.broker_execution_enabled)} />
+                </div>
+              </Card>
+            </div>
+          ) : null}
+
+          {sectionSub("command") === "data-status" ? (
+            <div className="grid gap-4 xl:grid-cols-2">
+              <Card title="Data Status" error={data.readiness.error}>
+                <div className="grid gap-2 md:grid-cols-2">
+                  <Metric label="source_mode" value={text(run?.source_mode)} />
+                  <Metric label="using_non_real_data" value={text(run?.using_non_real_data ?? false)} />
+                  <Metric label="provider_status" value={text(run?.provider_status ?? dataPipeline.provider_status)} />
+                  <Metric label="provider_name" value={text(run?.provider_name ?? dataPipeline.provider_name)} />
+                  <Metric label="usable_symbols" value={text(run?.usable_symbols)} />
+                  <Metric label="rejected_symbols" value={text(run?.rejected_symbols)} />
+                  <Metric label="snapshots / features" value={`${text(run?.latest_snapshot_count ?? 0)} / ${text(run?.feature_row_count ?? 0)}`} />
+                  <Metric label="persistence / freshness / kafka" value={`${text(run?.persistence_status)} / ${text(run?.freshness_status)} / ${text(run?.kafka_status ?? "configured_optional_not_active")}`} />
+                </div>
+              </Card>
+              <Card title="Evidence Status">
+                <div className="grid gap-2 md:grid-cols-2">
+                  <Metric label="qlib_available" value={text(run?.qlib_available ?? data.qlib.data?.qlib_available)} />
+                  <Metric label="qlib_artifact_count" value={text(data.qlib.data?.artifact_count ?? nested(run, ["qlib_artifact_counts", "total"]))} />
+                  <Metric label="proof_status" value={text(run?.proof_status ?? proofRecord.proof_status)} />
+                  <Metric label="selected_model_key" value={text(run?.selected_model_key)} />
+                  <Metric label="selected_strategy_key" value={text(run?.selected_strategy_key ?? run?.strategy_key)} />
+                  <Metric label="evidence warnings/blockers" value={`${asList(run?.evidence_warnings).length} / ${asList(run?.evidence_blockers).length}`} />
+                </div>
+              </Card>
+            </div>
+          ) : null}
+
+          {sectionSub("command") === "gates" ? (
+            <div className="grid gap-4 xl:grid-cols-2">
+              <Card title="Small Account Gate" error={smallAccountReadiness.enabled === undefined && !run ? "No small-account run data yet." : null}>
+                <div className="grid gap-2 md:grid-cols-2">
+                  <Metric label="account_equity" value={money(run?.account_equity ?? smallAccountReadiness.account_equity_default ?? 1000)} />
+                  <Metric label="max_risk_dollars" value={money(run?.max_risk_dollars)} />
+                  <Metric label="max_daily_loss_dollars" value={money(run?.max_daily_loss_dollars)} />
+                  <Metric label="decision" value={text(run?.small_account_decision ?? smallAccountReadiness.status)} />
+                  <Metric label="feasible_symbols" value={text(run?.feasible_symbols)} />
+                  <Metric label="rejected_symbols" value={text(run?.small_account_rejected_symbols)} />
+                </div>
+                <div className="mt-3 grid gap-3 md:grid-cols-2">
+                  <div><div className="mb-1 text-xs font-semibold text-red-100">Blockers</div><IssueList items={run?.small_account_blockers} /></div>
+                  <div><div className="mb-1 text-xs font-semibold text-amber-100">Warnings</div><IssueList items={run?.small_account_warnings} /></div>
+                </div>
+              </Card>
+              <Card title="Approval / Execution" subtitle="Approval unlocks a gated workflow step. It does not submit a broker order." error={data.approvals.error}>
+                <div className="grid gap-2 md:grid-cols-2">
+                  <Metric label="approval_required" value={text(run?.approval_required ?? false)} />
+                  <Metric label="approval_id" value={text(run?.approval_id)} />
+                  <Metric label="execution_boundary_reached" value={text(run?.execution_boundary_reached ?? false)} />
+                  <Metric label="approval_items" value={approvalItems.length} />
+                  <Metric label="open paper positions" value={openPositions.length} />
+                  <Metric label="monitoring status" value={text(data.paper.data?.status ?? "not_available")} />
+                </div>
+              </Card>
+            </div>
+          ) : null}
         </div>
       ) : null}
 
@@ -1101,43 +1281,79 @@ export default function DayTradingWorkflowPage() {
             title="Autonomous Agent Pipeline"
             description="Stage cards show pending, completed, running, warning, approval-gate, and blocked states from the latest orchestrator timeline."
           />
-          <Card title="Pipeline Stages" subtitle="Process flow from data readiness through learning loop. Cards are driven by the latest orchestrator stage timeline.">
-            <div className="grid gap-3 xl:grid-cols-3">
-            {STAGES.map((stage, index) => {
-              const row = stageMap[stage.key];
-              const snapshot = stageResult(row);
-              const isCurrent = run?.current_agent_key === stage.key;
-              const blockers = asList(snapshot.small_account_blockers ?? snapshot.evidence_blockers ?? run?.blockers).slice(0, 3);
-              const warnings = asList(snapshot.small_account_warnings ?? snapshot.evidence_warnings ?? run?.warnings).slice(0, 3);
-              const visual = stageVisualState({
-                row,
-                isCurrent,
-                isApprovalBoundary: stage.key === "execution_approval_agent",
-                blockers,
-                warnings,
-              });
-              return (
-                <div key={stage.key} className={`relative overflow-hidden rounded-2xl border p-4 transition-all duration-500 ${visual.card}`}>
-                  <div className={`absolute inset-x-0 top-0 h-1 ${visual.rail}`} />
-                  <div className="pointer-events-none absolute -right-10 -top-10 h-24 w-24 rounded-full bg-white/5 blur-2xl" />
-                  <div className="mb-2 flex items-center justify-between gap-2">
-                    <div className="text-[10px] font-bold uppercase tracking-[0.16em] text-slate-500">Stage {index + 1}</div>
-                    <span className={`rounded-full border px-2 py-0.5 text-[10px] font-bold uppercase ${visual.badge}`}>{visual.label}</span>
-                  </div>
-                  <div className="text-base font-semibold text-slate-50">{stage.name}</div>
-                  <p className="mt-2 min-h-12 text-xs leading-5 text-slate-400">{stage.summary}</p>
-                  <div className="mt-3 text-xs text-slate-300">
-                    <div><span className="text-slate-500">Decision:</span> {text(snapshot.small_account_decision ?? snapshot.proof_status ?? snapshot.selected_strategy_key ?? snapshot.selected_model_key ?? row?.status)}</div>
-                    <div><span className="text-slate-500">Key output:</span> {text(snapshot.selected_symbol ?? snapshot.feasible_symbols ?? snapshot.strategy_key ?? snapshot.qlib_artifact_id ?? snapshot.latest_snapshot_count)}</div>
-                  </div>
-                  {blockers.length ? <div className="mt-3 text-xs text-red-100"><IssueList items={blockers} /></div> : null}
-                  {warnings.length ? <div className="mt-3 text-xs text-amber-100"><IssueList items={warnings} /></div> : null}
-                  {stage.key === "execution_approval_agent" ? <div className="mt-3 rounded-lg border border-amber-400/20 bg-amber-500/10 p-2 text-xs text-amber-100">Approval boundary. No broker submission.</div> : null}
-                </div>
-              );
-            })}
-            </div>
-          </Card>
+          <SubTabBar tabs={WORKFLOW_SUBTABS} active={sectionSub("workflow")} onSelect={(id) => setSectionSub("workflow", id)} />
+          {sectionSub("workflow") === "overview" ? (
+            <Card title="Run snapshot" subtitle="High-level state from the latest orchestrator run. Open Pipeline for per-stage detail." error={data.latest.error}>
+              <div className="grid gap-2 md:grid-cols-2">
+                <Metric label="status" value={status} />
+                <Metric label="current stage" value={text(run?.current_stage)} />
+                <Metric label="current agent" value={text(run?.current_agent_key)} />
+                <Metric label="next action" value={text(run?.next_action)} />
+                <Metric label="blockers / warnings" value={`${run?.blockers?.length ?? 0} / ${run?.warnings?.length ?? 0}`} />
+                <Metric label="last run" value={text(run?.updated_at ?? run?.created_at)} />
+              </div>
+            </Card>
+          ) : null}
+          {sectionSub("workflow") === "pipeline" ? (
+            <Card title="Pipeline Stages" subtitle="Process flow from data readiness through learning loop. Cards are driven by the latest orchestrator stage timeline.">
+              <div className="grid gap-2 sm:grid-cols-2 xl:grid-cols-3 2xl:grid-cols-5">
+                {STAGES.map((stage, index) => {
+                  const row = stageMap[stage.key];
+                  const snapshot = stageResult(row);
+                  const isCurrent = run?.current_agent_key === stage.key;
+                  const blockers = snapshotBlockers(snapshot);
+                  const warnings = snapshotWarnings(snapshot);
+                  const visual = stageVisualState({
+                    row,
+                    isCurrent,
+                    isApprovalBoundary: stage.key === "execution_approval_agent",
+                    blockers,
+                    warnings,
+                  });
+                  return (
+                    <div
+                      key={stage.key}
+                      className={`relative min-w-0 overflow-hidden rounded-xl border p-3 break-words transition-all duration-500 ${visual.card}`}
+                    >
+                      <div className={`absolute inset-x-0 top-0 h-0.5 ${visual.rail}`} />
+                      <div className="pointer-events-none absolute -right-8 -top-8 h-16 w-16 rounded-full bg-white/5 blur-xl" />
+                      <div className="mb-1.5 flex flex-wrap items-start justify-between gap-x-2 gap-y-1 text-[11px]">
+                        <div className="min-w-0 font-bold uppercase tracking-[0.14em] text-slate-500">Stage {index + 1}</div>
+                        <span className={`shrink-0 rounded-full border px-1.5 py-px font-bold uppercase ${visual.badge}`}>{visual.label}</span>
+                      </div>
+                      <div className="break-words text-[11px] font-semibold leading-snug text-slate-50">{stage.name}</div>
+                      <p className="mt-1.5 min-h-8 text-[11px] leading-snug break-words text-slate-400">{stage.summary}</p>
+                      <div className="mt-2 space-y-0.5 text-[11px] leading-snug break-words text-slate-300">
+                        <div>
+                          <span className="text-slate-500">Decision:</span>{" "}
+                          {text(snapshot.small_account_decision ?? snapshot.proof_status ?? snapshot.selected_strategy_key ?? snapshot.selected_model_key ?? row?.status)}
+                        </div>
+                        <div>
+                          <span className="text-slate-500">Key output:</span>{" "}
+                          {text(snapshot.selected_symbol ?? snapshot.feasible_symbols ?? snapshot.strategy_key ?? snapshot.qlib_artifact_id ?? snapshot.latest_snapshot_count)}
+                        </div>
+                      </div>
+                      {blockers.length ? (
+                        <div className="mt-2 text-[11px] leading-snug break-words text-red-100 [&_li]:text-[11px] [&_p]:text-[11px] [&_ul]:text-[11px]">
+                          <IssueList items={blockers} />
+                        </div>
+                      ) : null}
+                      {warnings.length ? (
+                        <div className="mt-2 text-[11px] leading-snug break-words text-amber-100 [&_li]:text-[11px] [&_p]:text-[11px] [&_ul]:text-[11px]">
+                          <IssueList items={warnings} />
+                        </div>
+                      ) : null}
+                      {stage.key === "execution_approval_agent" ? (
+                        <div className="mt-2 rounded-md border border-amber-400/20 bg-amber-500/10 p-1.5 text-[11px] leading-snug break-words text-amber-100">
+                          Approval boundary. No broker submission.
+                        </div>
+                      ) : null}
+                    </div>
+                  );
+                })}
+              </div>
+            </Card>
+          ) : null}
         </div>
       ) : null}
 
@@ -1148,37 +1364,48 @@ export default function DayTradingWorkflowPage() {
             title="Candidates, Market Status, And Paper Monitoring"
             description="Focused view of selected symbol, scanner/watchlist outputs, market context, data readiness, and paper positions."
           />
-          <div className="grid gap-4 xl:grid-cols-2">
-          <Card title="Market Status" error={data.watchlist.error}>
-            <div className="grid gap-2 md:grid-cols-2">
-              <Metric label="regime" value={text(latestSnapshot.regime ?? nested(latestSnapshot, ["market_context", "regime"]))} />
-              <Metric label="market condition" value={text(nested(latestSnapshot, ["market_context", "liquidity_state"]))} />
-              <Metric label="volatility" value={text(nested(latestSnapshot, ["market_context", "volatility_state"]))} />
-              <Metric label="watchlist endpoint" value={data.watchlist.error ? "unavailable" : "available"} />
+          <SubTabBar tabs={WATCHLIST_SUBTABS} active={sectionSub("watchlist")} onSelect={(id) => setSectionSub("watchlist", id)} />
+          {sectionSub("watchlist") === "market" ? (
+            <div className="grid gap-4 xl:grid-cols-2">
+              <Card title="Market Status" error={data.watchlist.error}>
+                <div className="grid gap-2 md:grid-cols-2">
+                  <Metric label="regime" value={text(latestSnapshot.regime ?? nested(latestSnapshot, ["market_context", "regime"]))} />
+                  <Metric label="market condition" value={text(nested(latestSnapshot, ["market_context", "liquidity_state"]))} />
+                  <Metric label="volatility" value={text(nested(latestSnapshot, ["market_context", "volatility_state"]))} />
+                  <Metric label="watchlist endpoint" value={data.watchlist.error ? "unavailable" : "available"} />
+                </div>
+              </Card>
+              <Card title="Watchlist">
+                <Metric label="current watchlist symbols" value={text(watchlistSymbols.length ? watchlistSymbols : run?.symbols ?? run?.usable_symbols)} />
+                <div className="mt-3 grid gap-3 md:grid-cols-2">
+                  <div><div className="mb-1 text-xs font-semibold text-cyan-100">Usable symbols</div><IssueList items={run?.usable_symbols} empty="None yet" /></div>
+                  <div><div className="mb-1 text-xs font-semibold text-red-100">Rejected symbols</div><IssueList items={run?.rejected_symbols} empty="None" /></div>
+                </div>
+              </Card>
             </div>
-          </Card>
-          <Card title="Watchlist">
-            <Metric label="current watchlist symbols" value={text(watchlistSymbols.length ? watchlistSymbols : run?.symbols ?? run?.usable_symbols)} />
-            <div className="mt-3 grid gap-3 md:grid-cols-2">
-              <div><div className="mb-1 text-xs font-semibold text-emerald-100">Usable symbols</div><IssueList items={run?.usable_symbols} empty="None yet" /></div>
-              <div><div className="mb-1 text-xs font-semibold text-red-100">Rejected symbols</div><IssueList items={run?.rejected_symbols} empty="None" /></div>
+          ) : null}
+          {sectionSub("watchlist") === "candidate" ? (
+            <div className="grid gap-4 xl:grid-cols-2">
+              <Card title="Selected Candidate">
+                <div className="grid gap-2 md:grid-cols-2">
+                  <Metric label="selected symbol" value={text(run?.selected_symbol ?? run?.symbol)} />
+                  <Metric label="latest price" value={money(latestSnapshot.latest_price)} />
+                  <Metric label="spread bps" value={text(latestSnapshot.spread_bps)} />
+                  <Metric label="avg dollar volume" value={money(latestSnapshot.avg_dollar_volume)} />
+                </div>
+              </Card>
             </div>
-          </Card>
-          <Card title="Selected Candidate">
-            <div className="grid gap-2 md:grid-cols-2">
-              <Metric label="selected symbol" value={text(run?.selected_symbol ?? run?.symbol)} />
-              <Metric label="latest price" value={money(latestSnapshot.latest_price)} />
-              <Metric label="spread bps" value={text(latestSnapshot.spread_bps)} />
-              <Metric label="avg dollar volume" value={money(latestSnapshot.avg_dollar_volume)} />
+          ) : null}
+          {sectionSub("watchlist") === "positions" ? (
+            <div className="grid gap-4 xl:grid-cols-2">
+              <Card title="Paper Open Positions / Monitoring" error={data.paper.error}>
+                <Metric label="paper open positions" value={hasPaperAccount ? openPositions.length : "Paper account data unavailable"} />
+                <div className="mt-3 space-y-2">
+                  {openPositions.length ? openPositions.map((position, index) => <div key={index} className="rounded-xl border border-white/10 bg-black/20 p-3 text-sm text-slate-300">{text(position)}</div>) : <p className="text-sm text-slate-500">No open paper positions reported.</p>}
+                </div>
+              </Card>
             </div>
-          </Card>
-          <Card title="Paper Open Positions / Monitoring" error={data.paper.error}>
-            <Metric label="paper open positions" value={hasPaperAccount ? openPositions.length : "Paper account data unavailable"} />
-            <div className="mt-3 space-y-2">
-              {openPositions.length ? openPositions.map((position, index) => <div key={index} className="rounded-xl border border-white/10 bg-black/20 p-3 text-sm text-slate-300">{text(position)}</div>) : <p className="text-sm text-slate-500">No open paper positions reported.</p>}
-            </div>
-          </Card>
-          </div>
+          ) : null}
         </div>
       ) : null}
 
@@ -1189,32 +1416,43 @@ export default function DayTradingWorkflowPage() {
             title="Provider, Feature Store, Persistence, And Freshness"
             description="Shows the data path feeding the dry-run workflow, including provider status, feature rows, persistence mode, freshness, and optional Kafka state."
           />
-          <div className="grid gap-4 xl:grid-cols-2">
-          <div className="xl:col-span-2">
-            <ProviderStatusCard summary={providerSummary} />
-          </div>
-          {[
-            ["Workflow Source Mode", run?.source_mode ?? "runtime"],
-            ["Snapshot Status", `${text(run?.latest_snapshot_status)} (${text(run?.latest_snapshot_count ?? 0)})`],
-            ["Feature Store Status", `${text(run?.feature_store_status ?? dataPipeline.feature_store_status)} (${text(run?.feature_row_count ?? 0)} rows)`],
-            ["Persistence Status", run?.persistence_status ?? dataPipeline.persistence_status],
-            ["Freshness Status", run?.freshness_status ?? dataPipeline.freshness_status],
-            ["Kafka Status", run?.kafka_status ?? "Configured optional, not active in workflow"],
-          ].map(([title, value]) => (
-            <Card key={String(title)} title={String(title)}><Metric label="status" value={text(value)} /></Card>
-          ))}
-          <Card title="Missing Features">
-            <div className="grid gap-2 md:grid-cols-2">
-              <Metric label="missing snapshot" value={String(!run?.latest_snapshot_count)} />
-              <Metric label="missing price" value={String(latestSnapshot.latest_price == null)} />
-              <Metric label="missing volume" value={String(latestSnapshot.volume == null)} />
-              <Metric label="missing spread" value={String(latestSnapshot.spread_bps == null)} />
-              <Metric label="missing relative volume" value={String(latestSnapshot.relative_volume == null)} />
-              <Metric label="feature rows unavailable" value={String(!run?.feature_row_count)} />
-              <Metric label="persistence fallback used" value={String(run?.persistence_status === "memory_fallback" || dataPipeline.persistence_status === "memory_fallback")} />
+          <SubTabBar tabs={DATA_SUBTABS} active={sectionSub("data")} onSelect={(id) => setSectionSub("data", id)} />
+          {sectionSub("data") === "provider" ? (
+            <div className="grid gap-4 xl:grid-cols-2">
+              <div className="xl:col-span-2">
+                <ProviderStatusCard summary={providerSummary} />
+              </div>
             </div>
-          </Card>
-          </div>
+          ) : null}
+          {sectionSub("data") === "metrics" ? (
+            <div className="grid gap-4 xl:grid-cols-2">
+              {[
+                ["Workflow Source Mode", run?.source_mode ?? "runtime"],
+                ["Snapshot Status", `${text(run?.latest_snapshot_status)} (${text(run?.latest_snapshot_count ?? 0)})`],
+                ["Feature Store Status", `${text(run?.feature_store_status ?? dataPipeline.feature_store_status)} (${text(run?.feature_row_count ?? 0)} rows)`],
+                ["Persistence Status", run?.persistence_status ?? dataPipeline.persistence_status],
+                ["Freshness Status", run?.freshness_status ?? dataPipeline.freshness_status],
+                ["Kafka Status", run?.kafka_status ?? "Configured optional, not active in workflow"],
+              ].map(([title, value]) => (
+                <Card key={String(title)} title={String(title)}><Metric label="status" value={text(value)} /></Card>
+              ))}
+            </div>
+          ) : null}
+          {sectionSub("data") === "gaps" ? (
+            <div className="grid gap-4 xl:grid-cols-2">
+              <Card title="Missing Features">
+                <div className="grid gap-2 md:grid-cols-2">
+                  <Metric label="missing snapshot" value={String(!run?.latest_snapshot_count)} />
+                  <Metric label="missing price" value={String(latestSnapshot.latest_price == null)} />
+                  <Metric label="missing volume" value={String(latestSnapshot.volume == null)} />
+                  <Metric label="missing spread" value={String(latestSnapshot.spread_bps == null)} />
+                  <Metric label="missing relative volume" value={String(latestSnapshot.relative_volume == null)} />
+                  <Metric label="feature rows unavailable" value={String(!run?.feature_row_count)} />
+                  <Metric label="persistence fallback used" value={String(run?.persistence_status === "memory_fallback" || dataPipeline.persistence_status === "memory_fallback")} />
+                </div>
+              </Card>
+            </div>
+          ) : null}
         </div>
       ) : null}
 
@@ -1225,30 +1463,37 @@ export default function DayTradingWorkflowPage() {
             title="Evidence-Gated Strategy And Model Selection"
             description="Shows selected strategy/model context, not-trained models, blocked models, and the normalized evidence used by the workflow."
           />
-          <div className="grid gap-4 xl:grid-cols-2">
-          <Card title="Strategy">
-            <div className="grid gap-2 md:grid-cols-2">
-              <Metric label="selected strategy" value={text(run?.selected_strategy_key ?? strategyRecord.strategy_key)} />
-              <Metric label="strategy status" value={text(strategyRecord.status ?? evidencePipeline.strategy_evidence_status)} />
-              <Metric label="strategy score" value={text(strategyRecord.strategy_score)} />
-              <Metric label="why selected" value={text(strategyRecord.regime_fit ? `regime_fit=${strategyRecord.regime_fit}` : "Selected by strategy evidence and workflow gates when available.")} />
+          <SubTabBar tabs={STRATEGY_SUBTABS} active={sectionSub("strategy")} onSelect={(id) => setSectionSub("strategy", id)} />
+          {sectionSub("strategy") === "strategy" ? (
+            <div className="grid gap-4 xl:grid-cols-2">
+              <Card title="Strategy">
+                <div className="grid gap-2 md:grid-cols-2">
+                  <Metric label="selected strategy" value={text(run?.selected_strategy_key ?? strategyRecord.strategy_key)} />
+                  <Metric label="strategy status" value={text(strategyRecord.status ?? evidencePipeline.strategy_evidence_status)} />
+                  <Metric label="strategy score" value={text(strategyRecord.strategy_score)} />
+                  <Metric label="why selected" value={text(strategyRecord.regime_fit ? `regime_fit=${strategyRecord.regime_fit}` : "Selected by strategy evidence and workflow gates when available.")} />
+                </div>
+                <div className="mt-3 grid gap-3 md:grid-cols-2">
+                  <div><div className="mb-1 text-xs font-semibold text-red-100">Blockers</div><IssueList items={strategyRecord.blockers} /></div>
+                  <div><div className="mb-1 text-xs font-semibold text-amber-100">Warnings</div><IssueList items={strategyRecord.warnings} /></div>
+                </div>
+              </Card>
             </div>
-            <div className="mt-3 grid gap-3 md:grid-cols-2">
-              <div><div className="mb-1 text-xs font-semibold text-red-100">Blockers</div><IssueList items={strategyRecord.blockers} /></div>
-              <div><div className="mb-1 text-xs font-semibold text-amber-100">Warnings</div><IssueList items={strategyRecord.warnings} /></div>
+          ) : null}
+          {sectionSub("strategy") === "models" ? (
+            <div className="grid gap-4 xl:grid-cols-2">
+              <Card title="Models">
+                <div className="grid gap-2 md:grid-cols-2">
+                  <Metric label="selected model" value={text(run?.selected_model_key ?? modelRecord.model_key)} />
+                  <Metric label="model family" value={text(modelRecord.model_family)} />
+                  <Metric label="model status" value={text(modelRecord.status ?? evidencePipeline.model_evidence_status)} />
+                  <Metric label="confidence / score / rank" value={`${text(modelRecord.confidence)} / ${text(modelRecord.score)} / ${text(modelRecord.rank)}`} />
+                  <Metric label="not trained models" value={text(nested(data.model.data, ["summary", "not_trained_models"]))} />
+                  <Metric label="blocked models" value={text(nested(data.model.data, ["summary", "blocked_models"]))} />
+                </div>
+              </Card>
             </div>
-          </Card>
-          <Card title="Models">
-            <div className="grid gap-2 md:grid-cols-2">
-              <Metric label="selected model" value={text(run?.selected_model_key ?? modelRecord.model_key)} />
-              <Metric label="model family" value={text(modelRecord.model_family)} />
-              <Metric label="model status" value={text(modelRecord.status ?? evidencePipeline.model_evidence_status)} />
-              <Metric label="confidence / score / rank" value={`${text(modelRecord.confidence)} / ${text(modelRecord.score)} / ${text(modelRecord.rank)}`} />
-              <Metric label="not trained models" value={text(nested(data.model.data, ["summary", "not_trained_models"]))} />
-              <Metric label="blocked models" value={text(nested(data.model.data, ["summary", "blocked_models"]))} />
-            </div>
-          </Card>
-          </div>
+          ) : null}
         </div>
       ) : null}
 
@@ -1259,7 +1504,17 @@ export default function DayTradingWorkflowPage() {
             title="Promotion Center"
             description="Evidence and readiness only. Does not submit orders, enable live trading, or activate strategies. Metrics come from stored evidence records only."
           />
-          <PromotionCenterPanel />
+          <SubTabBar tabs={PROMOTION_SUBTABS} active={sectionSub("promotion")} onSelect={(id) => setSectionSub("promotion", id)} />
+          {sectionSub("promotion") === "overview" ? (
+            <Card title="What promotion means here" subtitle="Evidence and readiness only — no order submission or live activation.">
+              <p className="text-sm leading-6 text-slate-400">
+                Use <span className="text-cyan-200/90">Promotion requirements</span> for the metric thresholds,{" "}
+                <span className="text-cyan-200/90">Strategy promotion</span> for the strategy table, and{" "}
+                <span className="text-cyan-200/90">Model promotion</span> for the model table. All data is read-only from stored evidence.
+              </p>
+            </Card>
+          ) : null}
+          <PromotionCenterPanel activeSection={sectionSub("promotion") as PromotionCenterActiveSection} />
         </div>
       ) : null}
 
@@ -1270,28 +1525,35 @@ export default function DayTradingWorkflowPage() {
             title="Research Evidence, Proof, Model, And Strategy Registries"
             description="Qlib is optional and safe when unavailable. Evidence supports workflow gates only and never submits orders."
           />
-          <div className="grid gap-4 xl:grid-cols-2">
-          <Card title="Qlib Research Evidence" subtitle="Qlib is optional. Qlib evidence can support research/model/backtest validation but does not execute trades." error={data.qlib.error}>
-            <div className="grid gap-2 md:grid-cols-2">
-              <Metric label="used for" value="research, model evidence, signal scoring, backtest references" />
-              <Metric label="installed/configured" value={`${text(data.qlib.data?.qlib_available)} / ${text(data.qlib.data?.configured)}`} />
-              <Metric label="artifact counts" value={text(data.qlib.data?.artifact_count ?? nested(run, ["qlib_artifact_counts", "total"]))} />
-              <Metric label="latest signal/backtest/model" value={`${text(data.qlib.data?.latest_signal_count)} / ${text(data.qlib.data?.latest_backtest_count)} / ${text(data.qlib.data?.latest_model_count)}`} />
-              <Metric label="used in workflow" value={text(run?.qlib_artifact_id ? "artifact referenced" : "not required")} />
-              <Metric label="warning" value={data.qlib.data?.qlib_available === false ? "Qlib unavailable; workflow may continue unless strategy requires Qlib evidence." : "None"} />
+          <SubTabBar tabs={EVIDENCE_SUBTABS} active={sectionSub("evidence")} onSelect={(id) => setSectionSub("evidence", id)} />
+          {sectionSub("evidence") === "qlib" ? (
+            <div className="grid gap-4 xl:grid-cols-2">
+              <Card title="Qlib Research Evidence" subtitle="Qlib is optional. Qlib evidence can support research/model/backtest validation but does not execute trades." error={data.qlib.error}>
+                <div className="grid gap-2 md:grid-cols-2">
+                  <Metric label="used for" value="research, model evidence, signal scoring, backtest references" />
+                  <Metric label="installed/configured" value={`${text(data.qlib.data?.qlib_available)} / ${text(data.qlib.data?.configured)}`} />
+                  <Metric label="artifact counts" value={text(data.qlib.data?.artifact_count ?? nested(run, ["qlib_artifact_counts", "total"]))} />
+                  <Metric label="latest signal/backtest/model" value={`${text(data.qlib.data?.latest_signal_count)} / ${text(data.qlib.data?.latest_backtest_count)} / ${text(data.qlib.data?.latest_model_count)}`} />
+                  <Metric label="used in workflow" value={text(run?.qlib_artifact_id ? "artifact referenced" : "not required")} />
+                  <Metric label="warning" value={data.qlib.data?.qlib_available === false ? "Qlib unavailable; workflow may continue unless strategy requires Qlib evidence." : "None"} />
+                </div>
+              </Card>
             </div>
-          </Card>
-          <Card title="Proof Registry">
-            <div className="grid gap-2 md:grid-cols-2">
-              <Metric label="proof registry status" value={text(evidencePipeline.proof_registry_status)} />
-              <Metric label="proof_status" value={text(run?.proof_status ?? proofRecord.proof_status)} />
-              <Metric label="backtest status" value={text(proofRecord.backtest_status ?? proofRecord.proof_type)} />
-              <Metric label="paper status" value={text(proofRecord.paper_status)} />
-              <Metric label="sample size" value={text(proofRecord.sample_size)} />
-              <Metric label="avg R / max DD / win rate" value={`${text(proofRecord.avg_r_multiple)} / ${text(proofRecord.max_drawdown_r)} / ${text(proofRecord.win_rate)}`} />
+          ) : null}
+          {sectionSub("evidence") === "proof" ? (
+            <div className="grid gap-4 xl:grid-cols-2">
+              <Card title="Proof Registry">
+                <div className="grid gap-2 md:grid-cols-2">
+                  <Metric label="proof registry status" value={text(evidencePipeline.proof_registry_status)} />
+                  <Metric label="proof_status" value={text(run?.proof_status ?? proofRecord.proof_status)} />
+                  <Metric label="backtest status" value={text(proofRecord.backtest_status ?? proofRecord.proof_type)} />
+                  <Metric label="paper status" value={text(proofRecord.paper_status)} />
+                  <Metric label="sample size" value={text(proofRecord.sample_size)} />
+                  <Metric label="avg R / max DD / win rate" value={`${text(proofRecord.avg_r_multiple)} / ${text(proofRecord.max_drawdown_r)} / ${text(proofRecord.win_rate)}`} />
+                </div>
+              </Card>
             </div>
-          </Card>
-          </div>
+          ) : null}
         </div>
       ) : null}
 
@@ -1302,60 +1564,71 @@ export default function DayTradingWorkflowPage() {
             title="Paper Execution Boundary And Human Handoff"
             description="Approval unlocks a gated workflow step only. Broker order submission and live execution are not active in this autonomous workflow."
           />
-          <div className="grid gap-4 xl:grid-cols-2">
-          <Card title="Execution Planner" subtitle="Approval unlocks a gated workflow step. It does not submit a broker order.">
-            <div className="grid gap-2 md:grid-cols-2">
-              <Metric label="planner status" value={text(stageMap.execution_planner_agent?.status ?? "not_run")} />
-              <Metric label="planned action" value={text(nested(stageMap.execution_planner_agent, ["pipeline_inputs_snapshot", "selected_symbol"]) ? "paper plan preview" : "none")} />
-              <Metric label="planned risk" value={money(latestSnapshot.planned_risk_dollars)} />
-              <Metric label="max risk dollars" value={money(run?.max_risk_dollars)} />
-              <Metric label="max daily loss" value={money(run?.max_daily_loss_dollars)} />
-              <Metric label="execution boundary reached" value={text(run?.execution_boundary_reached ?? false)} />
-            </div>
-          </Card>
-          <Card title="Approval Items" error={data.approvals.error}>
-            <Metric label="approval required" value={text(run?.approval_required ?? false)} />
-            <div className="mt-3 space-y-2">
-              {approvalItems.length ? approvalItems.slice(0, 6).map((item) => (
-                <div key={item.approval_id} className="rounded-xl border border-white/10 bg-black/20 p-3 text-sm text-slate-300">
-                  <div className="mb-3 flex flex-wrap items-center justify-between gap-2">
-                    <span className="font-mono text-emerald-200">{item.approval_id}</span>
-                    <Badge tone={item.status === "pending" ? "warn" : item.status === "approved" ? "safe" : "blocked"}>{item.status}</Badge>
-                  </div>
-                  {item.status === "pending" ? (
-                    <ApprovalActionSelect
-                      label="Approve gated workflow handoff"
-                      disabled={false}
-                      disabledReason="Approves only the gated workflow step. No broker order is submitted."
-                      busy={approvalBusyId === item.approval_id}
-                      onApprove={() => approvalAction(item.approval_id, "approve")}
-                      onDecline={() => approvalAction(item.approval_id, "reject")}
-                    />
-                  ) : null}
+          <SubTabBar tabs={EXECUTION_SUBTABS} active={sectionSub("execution")} onSelect={(id) => setSectionSub("execution", id)} />
+          {sectionSub("execution") === "plan" ? (
+            <div className="grid gap-4 xl:grid-cols-2">
+              <Card title="Execution Planner" subtitle="Approval unlocks a gated workflow step. It does not submit a broker order.">
+                <div className="grid gap-2 md:grid-cols-2">
+                  <Metric label="planner status" value={text(stageMap.execution_planner_agent?.status ?? "not_run")} />
+                  <Metric label="planned action" value={text(nested(stageMap.execution_planner_agent, ["pipeline_inputs_snapshot", "selected_symbol"]) ? "paper plan preview" : "none")} />
+                  <Metric label="planned risk" value={money(latestSnapshot.planned_risk_dollars)} />
+                  <Metric label="max risk dollars" value={money(run?.max_risk_dollars)} />
+                  <Metric label="max daily loss" value={money(run?.max_daily_loss_dollars)} />
+                  <Metric label="execution boundary reached" value={text(run?.execution_boundary_reached ?? false)} />
                 </div>
-              )) : <p className="text-sm text-slate-500">No approval items reported.</p>}
+              </Card>
+              <Card title="Approval Items" error={data.approvals.error}>
+                <Metric label="approval required" value={text(run?.approval_required ?? false)} />
+                <div className="mt-3 space-y-2">
+                  {approvalItems.length ? approvalItems.slice(0, 6).map((item) => (
+                    <div key={item.approval_id} className="rounded-xl border border-white/10 bg-black/20 p-3 text-sm text-slate-300">
+                      <div className="mb-3 flex flex-wrap items-center justify-between gap-2">
+                        <span className="font-mono text-cyan-200">{item.approval_id}</span>
+                        <Badge tone={item.status === "pending" ? "warn" : item.status === "approved" ? "safe" : "blocked"}>{item.status}</Badge>
+                      </div>
+                      {item.status === "pending" ? (
+                        <ApprovalActionSelect
+                          label="Approve gated workflow handoff"
+                          disabled={false}
+                          disabledReason="Approves only the gated workflow step. No broker order is submitted."
+                          busy={approvalBusyId === item.approval_id}
+                          onApprove={() => approvalAction(item.approval_id, "approve")}
+                          onDecline={() => approvalAction(item.approval_id, "reject")}
+                        />
+                      ) : null}
+                    </div>
+                  )) : <p className="text-sm text-slate-500">No approval items reported.</p>}
+                </div>
+              </Card>
             </div>
-          </Card>
-          <Card title="Paper Trades / Monitoring" error={data.paper.error}>
-            <div className="grid gap-2 md:grid-cols-2">
-              <Metric label="paper open positions" value={hasPaperAccount ? openPositions.length : "Paper account data unavailable"} />
-              <Metric label="paper monitoring status" value={hasPaperAccount ? text(data.paper.data?.status ?? "available") : "Paper account data unavailable"} />
+          ) : null}
+          {sectionSub("execution") === "monitoring" ? (
+            <div className="grid gap-4 xl:grid-cols-2">
+              <Card title="Paper Trades / Monitoring" error={data.paper.error}>
+                <div className="grid gap-2 md:grid-cols-2">
+                  <Metric label="paper open positions" value={hasPaperAccount ? openPositions.length : "Paper account data unavailable"} />
+                  <Metric label="paper monitoring status" value={hasPaperAccount ? text(data.paper.data?.status ?? "available") : "Paper account data unavailable"} />
+                </div>
+              </Card>
             </div>
-          </Card>
-          <Card title="Approval Safety Status" subtitle="Broker and live controls are safety status cards only, not buttons.">
-            <div className="grid gap-3 lg:grid-cols-3">
-              <SafetyStatusCard title="Broker Order Submission" status="Disabled">
-                Broker order submission is not active in the autonomous workflow.
-              </SafetyStatusCard>
-              <SafetyStatusCard title="Live Execution" status="Disabled">
-                Live execution is intentionally blocked. Paper-first workflow approval does not submit broker orders.
-              </SafetyStatusCard>
-              <SafetyStatusCard title="Approval Meaning">
-                Approval unlocks a gated workflow step only. It does not submit an order.
-              </SafetyStatusCard>
+          ) : null}
+          {sectionSub("execution") === "safety" ? (
+            <div className="grid gap-4 xl:grid-cols-2">
+              <Card title="Approval Safety Status" subtitle="Broker and live controls are safety status cards only, not buttons.">
+                <div className="grid gap-3 lg:grid-cols-3">
+                  <SafetyStatusCard title="Broker Order Submission" status="Disabled">
+                    Broker order submission is not active in the autonomous workflow.
+                  </SafetyStatusCard>
+                  <SafetyStatusCard title="Live Execution" status="Disabled">
+                    Live execution is intentionally blocked. Paper-first workflow approval does not submit broker orders.
+                  </SafetyStatusCard>
+                  <SafetyStatusCard title="Approval Meaning">
+                    Approval unlocks a gated workflow step only. It does not submit an order.
+                  </SafetyStatusCard>
+                </div>
+              </Card>
             </div>
-          </Card>
-          </div>
+          ) : null}
         </div>
       ) : null}
 
@@ -1403,7 +1676,7 @@ export default function DayTradingWorkflowPage() {
           <Card title="Runtime Safety Flags">
             <div className="grid gap-2 md:grid-cols-2">
               {["no_broker_calls", "no_execution_submit", "no_llm_calls", "dry_run_default"].map((key) => (
-                <Metric key={key} label={key} value={text(runtimeSafety[key])} tone={runtimeSafety[key] === false ? "text-red-100" : "text-emerald-100"} />
+                <Metric key={key} label={key} value={text(runtimeSafety[key])} tone={runtimeSafety[key] === false ? "text-red-100" : "text-cyan-100"} />
               ))}
             </div>
           </Card>
@@ -1412,7 +1685,7 @@ export default function DayTradingWorkflowPage() {
             <div className="overflow-x-auto">
               <table className="w-full min-w-[1100px] border-collapse text-left text-xs">
                 <thead>
-                  <tr className="border-b border-emerald-400/10 text-[10px] uppercase tracking-wider text-slate-500">
+                  <tr className="border-b border-cyan-400/10 text-[10px] uppercase tracking-wider text-slate-500">
                     <th className="pb-2 pr-2">agent_key</th>
                     <th className="pb-2 pr-2">display</th>
                     <th className="pb-2 pr-2">stage</th>
@@ -1428,7 +1701,7 @@ export default function DayTradingWorkflowPage() {
                 <tbody>
                   {runtimeAgents.map((agent) => (
                     <tr key={agent.agent_key} className="border-b border-white/[0.04] align-top text-slate-300">
-                      <td className="py-2 pr-2 font-mono text-emerald-200">{agent.agent_key}</td>
+                      <td className="py-2 pr-2 font-mono text-cyan-200">{agent.agent_key}</td>
                       <td className="py-2 pr-2">{agent.display_name}</td>
                       <td className="py-2 pr-2">{agent.stage_number ?? "-"}</td>
                       <td className="py-2 pr-2">{agent.role}</td>
@@ -1455,12 +1728,12 @@ export default function DayTradingWorkflowPage() {
                   type="button"
                   disabled={agentRunBusy}
                   onClick={() => runSampleAgent("session_router_agent")}
-                  className="rounded-xl border border-emerald-400/40 bg-emerald-400/10 px-4 py-2 text-sm font-bold text-emerald-100 disabled:opacity-50"
+                  className="rounded-xl border border-cyan-400/40 bg-cyan-400/10 px-4 py-2 text-sm font-bold text-cyan-100 disabled:opacity-50"
                 >
                   {agentRunBusy ? "Running..." : "Run Safe Runtime Smoke Check"}
                 </button>
                 {agentRunResult ? (
-                  <div className="rounded-2xl border border-emerald-400/10 bg-black/25 p-3">
+                  <div className="rounded-2xl border border-cyan-400/10 bg-black/25 p-3">
                     <div className="grid gap-2 md:grid-cols-2">
                       <Metric label="run_id" value={agentRunResult.run_id} />
                       <Metric label="status" value={agentRunResult.status} />
@@ -1481,7 +1754,7 @@ export default function DayTradingWorkflowPage() {
           <div className="rounded-2xl border border-amber-400/25 bg-amber-500/10 px-4 py-3 text-sm text-amber-100">
             Approval unlocks a gated workflow step. It does not submit a broker order, call Alpaca, or enable live execution.
           </div>
-          {runMessage ? <div className="rounded-2xl border border-emerald-400/20 bg-emerald-500/10 p-3 text-sm text-emerald-100">{runMessage}</div> : null}
+          {runMessage ? <div className="rounded-2xl border border-cyan-400/20 bg-cyan-500/10 p-3 text-sm text-cyan-100">{runMessage}</div> : null}
           <div className="grid gap-4 xl:grid-cols-2">
           <Card title="Approval Queue" subtitle="Approvals are gates only. They do not submit broker orders." error={data.approvals.error}>
             <div className="grid gap-2 md:grid-cols-2">
@@ -1499,7 +1772,7 @@ export default function DayTradingWorkflowPage() {
               <input
                 value={approvalReason}
                 onChange={(event) => setApprovalReason(event.target.value)}
-                className="mt-2 w-full rounded-xl border border-emerald-400/10 bg-black/30 px-3 py-2 text-sm normal-case tracking-normal text-slate-100 outline-none focus:border-emerald-400/50"
+                className="mt-2 w-full rounded-xl border border-cyan-400/10 bg-black/30 px-3 py-2 text-sm normal-case tracking-normal text-slate-100 outline-none focus:border-cyan-400/50"
                 placeholder="Why approve or reject this gate?"
               />
             </label>
@@ -1508,10 +1781,10 @@ export default function DayTradingWorkflowPage() {
           <Card title="Approval Items" error={data.approvals.error}>
             <div className="space-y-4">
               {approvalItems.length ? approvalItems.map((item) => (
-                <div key={item.approval_id} className="rounded-2xl border border-emerald-400/10 bg-black/25 p-4">
+                <div key={item.approval_id} className="rounded-2xl border border-cyan-400/10 bg-black/25 p-4">
                   <div className="flex flex-wrap items-start justify-between gap-3">
                     <div>
-                      <div className="font-mono text-sm text-emerald-200">{item.approval_id}</div>
+                      <div className="font-mono text-sm text-cyan-200">{item.approval_id}</div>
                       <div className="mt-1 text-xs text-slate-500">workflow <span className="font-mono text-slate-300">{item.workflow_run_id}</span></div>
                       {item.orchestrator_run_id ? <div className="text-xs text-slate-500">orchestrator <span className="font-mono text-slate-300">{item.orchestrator_run_id}</span></div> : null}
                     </div>
@@ -1524,11 +1797,11 @@ export default function DayTradingWorkflowPage() {
                     <Metric label="created" value={item.created_at} />
                   </div>
                   <div className="mt-3 grid gap-3 xl:grid-cols-2">
-                    <div className="rounded-xl border border-emerald-400/10 bg-black/20 p-3">
+                    <div className="rounded-xl border border-cyan-400/10 bg-black/20 p-3">
                       <div className="text-xs font-semibold uppercase tracking-wider text-slate-500">Requested action</div>
                       <pre className="mt-2 max-h-48 overflow-auto text-xs text-slate-300">{JSON.stringify(item.requested_action, null, 2)}</pre>
                     </div>
-                    <div className="rounded-xl border border-emerald-400/10 bg-black/20 p-3">
+                    <div className="rounded-xl border border-cyan-400/10 bg-black/20 p-3">
                       <div className="text-xs font-semibold uppercase tracking-wider text-slate-500">Risk summary</div>
                       <pre className="mt-2 max-h-48 overflow-auto text-xs text-slate-300">{JSON.stringify(item.risk_summary, null, 2)}</pre>
                     </div>
@@ -1556,7 +1829,7 @@ export default function DayTradingWorkflowPage() {
                   </div>
                 </div>
               )) : (
-                <div className="rounded-2xl border border-emerald-400/10 bg-black/25 p-4">
+                <div className="rounded-2xl border border-cyan-400/10 bg-black/25 p-4">
                   <div className="mb-4 flex flex-wrap items-start justify-between gap-3">
                     <div>
                       <div className="text-lg font-semibold text-slate-100">No pending approval request</div>
@@ -1694,27 +1967,34 @@ export default function DayTradingWorkflowPage() {
             title="Blockers, Warnings, Endpoint Failures, And Raw State"
             description="Debug view for failed data loads, readiness gaps, governance warnings, and collapsed raw JSON from the latest workflow run."
           />
-          <div className="grid gap-4 xl:grid-cols-2">
-            <Card title="Hard Blockers"><IssueList items={[...(run?.blockers ?? []), ...asList(data.finalReadiness.data?.blockers)]} /></Card>
-            <Card title="Soft Warnings"><IssueList items={[...(run?.warnings ?? []), ...asList(data.finalReadiness.data?.warnings)]} /></Card>
-            <Card title="Missing / Failing Components"><IssueList items={[...asList(data.finalReadiness.data?.missing_core_units), ...Object.entries(data).filter(([, value]) => value.error).map(([key, value]) => `${key}: ${value.error}`)]} /></Card>
-            <Card title="Common Workflow Issues">
-              <IssueList
-                items={[
-                  run?.freshness_status === "stale" ? "stale data" : null,
-                  data.qlib.data?.qlib_available === false ? "Qlib unavailable" : null,
-                  run?.persistence_status === "memory_fallback" ? "persistence fallback" : null,
-                  run?.proof_status === "backtest_required" || run?.proof_status === "proof_required" ? "proof missing" : null,
-                  run?.small_account_decision === "blocked" ? "small account blocked" : null,
-                ].filter(Boolean)}
-              />
-            </Card>
-          </div>
-          <DebugPanel title="Raw orchestrator response" value={data.latest.data} />
-          <DebugPanel title="Raw readiness response" value={data.readiness.data} />
-          <DebugPanel title="Raw Qlib response" value={data.qlib.data} />
-          <DebugPanel title="Raw evidence response" value={{ proof: data.proof.data, model: data.model.data, strategy: data.strategy.data }} />
-          <DebugPanel title="Raw agent runtime latest" value={data.agentRuntime.data} />
+          <SubTabBar tabs={DEBUG_SUBTABS} active={sectionSub("debug")} onSelect={(id) => setSectionSub("debug", id)} />
+          {sectionSub("debug") === "issues" ? (
+            <div className="grid gap-4 xl:grid-cols-2">
+              <Card title="Hard Blockers"><IssueList items={[...(run?.blockers ?? []), ...asList(data.finalReadiness.data?.blockers)]} /></Card>
+              <Card title="Soft Warnings"><IssueList items={[...(run?.warnings ?? []), ...asList(data.finalReadiness.data?.warnings)]} /></Card>
+              <Card title="Missing / Failing Components"><IssueList items={[...asList(data.finalReadiness.data?.missing_core_units), ...Object.entries(data).filter(([, value]) => value.error).map(([key, value]) => `${key}: ${value.error}`)]} /></Card>
+              <Card title="Common Workflow Issues">
+                <IssueList
+                  items={[
+                    run?.freshness_status === "stale" ? "stale data" : null,
+                    data.qlib.data?.qlib_available === false ? "Qlib unavailable" : null,
+                    run?.persistence_status === "memory_fallback" ? "persistence fallback" : null,
+                    run?.proof_status === "backtest_required" || run?.proof_status === "proof_required" ? "proof missing" : null,
+                    run?.small_account_decision === "blocked" ? "small account blocked" : null,
+                  ].filter(Boolean)}
+                />
+              </Card>
+            </div>
+          ) : null}
+          {sectionSub("debug") === "raw" ? (
+            <div className="space-y-4">
+              <DebugPanel title="Raw orchestrator response" value={data.latest.data} />
+              <DebugPanel title="Raw readiness response" value={data.readiness.data} />
+              <DebugPanel title="Raw Qlib response" value={data.qlib.data} />
+              <DebugPanel title="Raw evidence response" value={{ proof: data.proof.data, model: data.model.data, strategy: data.strategy.data }} />
+              <DebugPanel title="Raw agent runtime latest" value={data.agentRuntime.data} />
+            </div>
+          ) : null}
         </div>
       ) : null}
         </div>

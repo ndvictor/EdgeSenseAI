@@ -82,16 +82,8 @@ def _symbols_from_candidate_universe(*, asset_class: str, horizon: str, max_pick
 
 def _worker_output_candidates(*, max_pick: int) -> tuple[list[str], list[dict[str, Any]], list[dict[str, Any]]]:
     scanner_candidates = get_latest_scanner_candidates(max_pick)
-    if is_production_environment():
-        feature_rows = (
-            get_latest_feature_rows_for_production_discovery(max_pick)
-            if allow_worker_symbols_in_production()
-            else []
-        )
-        row_sources = [scanner_candidates, feature_rows]
-    else:
-        feature_rows = get_latest_worker_feature_rows(max_pick)
-        row_sources = [feature_rows, scanner_candidates]
+    feature_rows = get_latest_feature_rows_for_production_discovery(max_pick)
+    row_sources = [scanner_candidates, feature_rows]
 
     seen: set[str] = set()
     symbols: list[str] = []
@@ -191,15 +183,6 @@ def build_watchlist(
                         "warnings": [],
                         "next_action": "Proceed to Alpha Engine selection.",
                     }
-            if not seeds:
-                seeds = _symbols_from_candidate_universe(asset_class=ac_raw, horizon=horizon, max_pick=cap)
-                candidate_source = "candidate_universe" if seeds else candidate_source
-            if not seeds:
-                seeds = _symbols_from_feature_pipeline(max_pick=cap)
-                candidate_source = "feature_pipeline" if seeds else candidate_source
-            if not seeds:
-                seeds = _symbols_from_latest_universe(max_pick=cap)
-                candidate_source = "latest_universe_selection" if seeds else candidate_source
         except Exception as exc:
             return {
                 "decision": "blocked",
@@ -233,8 +216,9 @@ def build_watchlist(
                     "reason": "no_scanner_candidates_passed_filters",
                 },
                 "symbols": [],
+                "usable_symbols": [],
                 "ranked_candidates": [],
-                "source_breakdown": {"candidate_universe": 0, "feature_pipeline": 0, "latest_universe": 0},
+                "source_breakdown": {"scanner": 0, "feature_rows": 0},
                 "selected_candidate": None,
                 "candidate_source": "none",
                 "raw_candidate_count": 0,

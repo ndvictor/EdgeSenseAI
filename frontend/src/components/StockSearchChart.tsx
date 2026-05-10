@@ -341,7 +341,7 @@ export function StockSearchChart({
       <div className="mt-4 rounded-xl border border-emerald-400/15 bg-black/35 p-2">
         <div ref={containerRef} className={variant === "embedded" ? "h-[340px] w-full" : "h-[420px] w-full"} />
         {history && history.data.length === 0 && (
-          <div className="px-4 pb-4 text-sm text-slate-400">No chart data returned for the selected source. Choose Mock only for explicit offline testing, or configure Alpaca/Polygon for reliable live data.</div>
+          <div className="px-4 pb-4 text-sm text-slate-400">No chart data returned for the selected source. Choose NonReal only for explicit offline testing, or configure Alpaca/Polygon for reliable live data.</div>
         )}
       </div>
     </section>

@@ -6,7 +6,7 @@ from typing import Any, Literal
 import requests
 from pydantic import BaseModel, Field
 
-from app.core.effective_runtime import broker_or_agent_execution_enabled, effective_bool
+from app.core.effective_runtime import effective_bool
 from app.core.settings import settings
 
 
@@ -144,6 +144,14 @@ def _int(value: Any) -> int | None:
         return None
 
 
+def _first_float(payload: dict[str, Any], *keys: str) -> float | None:
+    for key in keys:
+        v = _float(payload.get(key))
+        if v is not None:
+            return v
+    return None
+
+
 def _account(payload: dict[str, Any]) -> AlpacaPaperAccount:
     return AlpacaPaperAccount(
         id=payload.get("id"),
@@ -151,7 +159,13 @@ def _account(payload: dict[str, Any]) -> AlpacaPaperAccount:
         status=payload.get("status"),
         currency=payload.get("currency"),
         cash=_float(payload.get("cash")),
-        buying_power=_float(payload.get("buying_power")),
+        buying_power=_first_float(
+            payload,
+            "buying_power",
+            "regt_buying_power",
+            "daytrading_buying_power",
+            "non_marginable_buying_power",
+        ),
         portfolio_value=_float(payload.get("portfolio_value")),
         equity=_float(payload.get("equity")),
         last_equity=_float(payload.get("last_equity")),
@@ -200,7 +214,7 @@ def get_alpaca_paper_snapshot() -> AlpacaPaperSnapshot:
     keys_configured = bool(_alpaca_key_id() and _alpaca_secret_key())
     paper_enabled = effective_bool("PAPER_TRADING_ENABLED")
     live_enabled = effective_bool("LIVE_TRADING_ENABLED")
-    broker_enabled = broker_or_agent_execution_enabled()
+    broker_enabled = effective_bool("BROKER_EXECUTION_ENABLED")
     warnings = [
         "This endpoint reads Alpaca paper account state only.",
         "Live trading remains disabled unless LIVE_TRADING_ENABLED is explicitly true.",

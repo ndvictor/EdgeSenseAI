@@ -1,9 +1,11 @@
 from datetime import datetime
 import logging
+import os
 import time
 
 from fastapi import FastAPI
 from fastapi.middleware.cors import CORSMiddleware
+from fastapi.responses import JSONResponse
 
 from app.api.routes.agent_scorecards import router as agent_scorecards_router
 from app.api.routes.agent_validation import router as agent_validation_router
@@ -126,6 +128,30 @@ logger = logging.getLogger(__name__)
 
 app = FastAPI(title="EdgeSenseAI Backend", version="0.8.1", docs_url="/docs", redoc_url="/redoc")
 
+_PRODUCTION_ALLOWED_RUNTIME_ROUTES: frozenset[tuple[str, str]] = frozenset(
+    {
+        ("GET", "/health"),
+        ("GET", "/api/platform-readiness/status"),
+        ("GET", "/api/final-readiness/status"),
+        ("POST", "/api/workflow-orchestrator/run"),
+        ("GET", "/api/worker-status/latest"),
+        ("POST", "/api/scanner/run"),
+        ("GET", "/api/promotion/strategies/status"),
+        ("GET", "/api/promotion/models/status"),
+    }
+)
+
+_LEGACY_RUNTIME_DISABLED_PAYLOAD = {
+    "status": "disabled",
+    "reason": "legacy_runtime_disabled_real_data_only",
+    "items": [],
+    "symbol": None,
+}
+
+
+def _production_api_allowlist_enabled() -> bool:
+    return (os.getenv("APP_ENV") or os.getenv("ENVIRONMENT") or "").strip().lower() == "production"
+
 app.add_middleware(
     CORSMiddleware,
     allow_origins=settings.cors_origins,
@@ -152,6 +178,17 @@ async def prometheus_middleware(request, call_next):
         endpoint = getattr(route, "path", None) or request.url.path
         REQUEST_LATENCY.labels(request.method, endpoint).observe(duration)
         REQUEST_COUNT.labels(request.method, endpoint, str(status_code)).inc()
+
+
+@app.middleware("http")
+async def legacy_runtime_disabled_middleware(request, call_next):
+    path = request.url.path.rstrip("/") or "/"
+    method = request.method.upper()
+    if not _production_api_allowlist_enabled() or method == "OPTIONS":
+        return await call_next(request)
+    if (method, path) in _PRODUCTION_ALLOWED_RUNTIME_ROUTES:
+        return await call_next(request)
+    return JSONResponse(status_code=410, content=_LEGACY_RUNTIME_DISABLED_PAYLOAD)
 
 
 app.include_router(backtesting_router, prefix="/api")
