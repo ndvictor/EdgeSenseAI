@@ -810,7 +810,7 @@ export default function ModelLabPage() {
               <h2 className="text-lg font-semibold text-emerald-500">{MODEL_LAB_SECTIONS[4].label}</h2>
               <Panel title="Paper execution & safety gates (backend)">
                 <p className="mb-4 text-sm leading-relaxed text-slate-400">
-                  Each action calls a real backend endpoint using the first symbol in <span className="font-semibold text-emerald-300">Symbols</span>. Failures surface as errors — there is no mocked success. Paper orders still pass EdgeSense prechecks and env gates.
+                  Each action calls a real backend endpoint using the first symbol in <span className="font-semibold text-emerald-300">Symbols</span>. Failures surface as errors — there is no non_realed success. Paper orders still pass EdgeSense prechecks and env gates.
                 </p>
                 {gateError ? <ErrorState message={gateError} /> : null}
                 <div className="mb-4 flex flex-wrap gap-2">

@@ -109,7 +109,7 @@ export default function DataQualityPage() {
           <PageHeader
             eyebrow="pipeline"
             title="Data Quality"
-            description="Validates freshness, completeness, spread quality, provider errors, and mock-data safety before features and signals are generated."
+            description="Validates freshness, completeness, spread quality, provider errors, and non_real-data safety before features and signals are generated."
           />
 
           {data?.data_mode === "summary" ? (

@@ -89,7 +89,7 @@ def _alpha_feature_row(symbol: str, snapshot: dict[str, Any], response_row: Any 
         "source": "feature_store",
         "provider_name": snapshot.get("provider"),
         "data_quality": snapshot.get("data_quality"),
-        "mock": bool(snapshot.get("is_mock")),
+        "non_real": bool(snapshot.get("is_non_real")),
         "synthetic": bool(snapshot.get("synthetic") or snapshot.get("spread_synthetic")),
     }
 
@@ -135,7 +135,7 @@ def run() -> dict[str, Any]:
     alpha_feature_rows: list[dict[str, Any]] = []
     for symbol in symbols:
         snapshot = latest_snapshots.get(symbol) or market_data.get_market_snapshot(symbol, source=provider)
-        if snapshot.get("price") is None or snapshot.get("is_mock") or snapshot.get("data_quality") in {"unavailable", "not_configured"}:
+        if snapshot.get("price") is None or snapshot.get("is_non_real") or snapshot.get("data_quality") in {"unavailable", "not_configured"}:
             missing_features.append(symbol)
             continue
         try:

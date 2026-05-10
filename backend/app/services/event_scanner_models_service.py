@@ -204,7 +204,7 @@ def _cheap_event_check(
     except Exception:
         return None
 
-    if snap.get("is_mock"):
+    if snap.get("is_non_real"):
         return None
     dq = snap.get("data_quality")
     if dq in ("unavailable", "not_configured"):
@@ -236,7 +236,7 @@ def _cheap_event_check(
             "change_percent": snap.get("change_percent"),
             "volume": snap.get("volume"),
             "data_quality": dq,
-            "is_mock": snap.get("is_mock"),
+            "is_non_real": snap.get("is_non_real"),
         },
         reasons=[
             "Snapshot gate passed without an active trigger rule",

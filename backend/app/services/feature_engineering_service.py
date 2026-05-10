@@ -31,7 +31,7 @@ def build_features(snapshot: MarketSnapshot) -> EngineeredFeatures:
         volatility_score=volatility_score,
         composite_feature_score=composite,
         notes=[
-            "Prototype features derived from normalized mock market snapshot.",
+            "Prototype features derived from normalized non_real market snapshot.",
             "Replace with candle, order book, options chain, and regime features when live providers are connected.",
         ],
     )

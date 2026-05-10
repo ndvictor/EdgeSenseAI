@@ -127,7 +127,7 @@ export default function MarketRadarHubPage() {
           {error ? <span className="ml-1 text-xs text-rose-200/90">{error}</span> : null}
         </div>
         <p className="mt-3 text-xs text-slate-500">
-          These summaries are live API reads (no mocked metrics). If a source is unavailable, it reports unknown/partial rather than inventing values.
+          These summaries are live API reads (no non_realed metrics). If a source is unavailable, it reports unknown/partial rather than inventing values.
         </p>
       </section>
 

@@ -24,7 +24,7 @@ class DataFreshnessSymbolResult(BaseModel):
     symbol: str
     provider: str = "unknown"
     data_quality: Literal["excellent", "good", "fair", "poor", "unavailable"] = "unavailable"
-    is_mock: bool = False
+    is_non_real: bool = False
     quote_age_seconds: float | None = None
     bar_age_seconds: float | None = None
     has_price: bool = False
@@ -60,7 +60,7 @@ class DataFreshnessSummary(BaseModel):
     usable_count: int = 0
     degraded_count: int = 0
     blocked_count: int = 0
-    mock_blocked_count: int = 0
+    non_real_blocked_count: int = 0
     unavailable_count: int = 0
 
 
@@ -111,13 +111,13 @@ def _check_symbol_freshness(
         result.tradability_status = "fail"
         return result
 
-    # Check if mock data
-    is_mock = snapshot.get("is_mock", False)
-    result.is_mock = is_mock
+    # Check if non_real data
+    is_non_real = snapshot.get("is_non_real", False)
+    result.is_non_real = is_non_real
     result.provider = snapshot.get("provider", "unknown")
     result.data_quality = snapshot.get("data_quality", "unavailable")
 
-    if is_mock:
+    if is_non_real:
         blockers.append("Non-real market data detected")
         result.blockers = blockers
         result.warnings = warnings
@@ -241,7 +241,7 @@ def run_data_freshness_check(request: DataFreshnessCheckRequest) -> DataFreshnes
     usable_count = sum(1 for r in results if r.decision == "usable")
     degraded_count = sum(1 for r in results if r.decision == "degraded")
     blocked_count = sum(1 for r in results if r.decision == "blocked")
-    mock_blocked_count = sum(1 for r in results if r.is_mock and r.decision == "blocked")
+    non_real_blocked_count = sum(1 for r in results if r.is_non_real and r.decision == "blocked")
     unavailable_count = sum(1 for r in results if r.data_quality == "unavailable")
 
     summary = DataFreshnessSummary(
@@ -249,7 +249,7 @@ def run_data_freshness_check(request: DataFreshnessCheckRequest) -> DataFreshnes
         usable_count=usable_count,
         degraded_count=degraded_count,
         blocked_count=blocked_count,
-        mock_blocked_count=mock_blocked_count,
+        non_real_blocked_count=non_real_blocked_count,
         unavailable_count=unavailable_count,
     )
 

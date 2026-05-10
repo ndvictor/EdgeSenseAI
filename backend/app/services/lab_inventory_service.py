@@ -208,7 +208,7 @@ _UNITS_SPEC: list[tuple[str, list[int] | Literal["all"], str, bool, str, bool, s
         "created_partial",
         False,
         "Pull normalized market snapshots and candles from configured providers.",
-        "Close gaps between mock and live provider paths in lab validation.",
+        "Close gaps between non_real and live provider paths in lab validation.",
     ),
     (
         "News/catalyst connector",

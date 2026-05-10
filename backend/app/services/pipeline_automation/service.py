@@ -68,7 +68,7 @@ def run_pipeline(body: PipelineAutomationRunRequest) -> PipelineAutomationRunRes
                 "symbol": sym,
                 "provider": snap.get("provider"),
                 "data_quality": snap.get("data_quality"),
-                "is_mock": bool(snap.get("is_mock")),
+                "is_non_real": bool(snap.get("is_non_real")),
                 "unavailable_fields": snap.get("unavailable_fields", []),
                 "error": snap.get("error"),
             }

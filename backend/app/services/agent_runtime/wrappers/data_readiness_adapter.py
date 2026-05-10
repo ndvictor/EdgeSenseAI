@@ -119,7 +119,7 @@ def _worker_feed_readiness_payload(
             provider_status[sym] = {
                 "provider": prov,
                 "status": "blocked",
-                "is_mock": False,
+                "is_non_real": False,
                 "quality_status": "fail",
                 "freshness_status": "unknown",
                 "blockers": ["missing_price_in_worker_row"],
@@ -156,13 +156,13 @@ def _worker_feed_readiness_payload(
                 "volume": row.get("volume"),
                 "provider_name": prov,
                 "source_mode": source_mode,
-                "using_mock_data": False,
+                "using_non_real_data": False,
             }
         )
         provider_status[sym] = {
             "provider": prov,
             "status": "usable",
-            "is_mock": False,
+            "is_non_real": False,
             "quality_status": "pass",
             "freshness_status": "unknown",
             "blockers": [],
@@ -173,8 +173,8 @@ def _worker_feed_readiness_payload(
     if not usable_symbols:
         blockers.append("no_usable_symbols")
 
-    if any(v.get("is_mock") for v in provider_status.values()):
-        blockers.append("unexpected_mock_data_for_non_mock_source")
+    if any(v.get("is_non_real") for v in provider_status.values()):
+        blockers.append("unexpected_non_real_data_for_non_non_real_source")
 
     if blockers:
         decision = "blocked"
@@ -196,7 +196,7 @@ def _worker_feed_readiness_payload(
         "provider_status": provider_status,
         "provider_name": provider_name,
         "source_mode": source_mode,
-        "using_mock_data": False,
+        "using_non_real_data": False,
         "symbols": clean_symbols,
         "usable_symbols": usable_symbols,
         "rejected_symbols": rejected_symbols,
@@ -267,7 +267,7 @@ def evaluate_data_readiness(*, symbols: list[str], asset_class: str, horizon: st
             "provider_status": {},
             "provider_name": "unknown",
             "source_mode": source_mode,
-            "using_mock_data": False,
+            "using_non_real_data": False,
             "symbols": [],
             "usable_symbols": [],
             "rejected_symbols": [],
@@ -308,7 +308,7 @@ def evaluate_data_readiness(*, symbols: list[str], asset_class: str, horizon: st
         provider_status[sym.upper()] = {
             "provider": snap.provider or "unknown",
             "status": symbol_status,
-            "is_mock": bool(snap.is_mock),
+            "is_non_real": bool(snap.is_non_real),
             "quality_status": q.quality_status,
             "freshness_status": q.freshness_status,
             "blockers": q.blockers or [],
@@ -329,7 +329,7 @@ def evaluate_data_readiness(*, symbols: list[str], asset_class: str, horizon: st
                     "volume": snap.volume,
                     "provider_name": snap.provider or "unknown",
                     "source_mode": source_mode,
-                    "using_mock_data": bool(snap.is_mock),
+                    "using_non_real_data": bool(snap.is_non_real),
                 }
             )
             persistence_statuses.append(_status_from_persistence(resp))
@@ -343,8 +343,8 @@ def evaluate_data_readiness(*, symbols: list[str], asset_class: str, horizon: st
 
     if not usable_symbols:
         blockers.append("no_usable_symbols")
-    if any(v.get("is_mock") for v in provider_status.values()):
-        blockers.append("unexpected_mock_data_for_non_mock_source")
+    if any(v.get("is_non_real") for v in provider_status.values()):
+        blockers.append("unexpected_non_real_data_for_non_non_real_source")
 
     if blockers:
         decision = "blocked"
@@ -368,7 +368,7 @@ def evaluate_data_readiness(*, symbols: list[str], asset_class: str, horizon: st
         "provider_status": provider_status,
         "provider_name": provider_name,
         "source_mode": source_mode,
-        "using_mock_data": any(bool(v.get("is_mock")) for v in provider_status.values()),
+        "using_non_real_data": any(bool(v.get("is_non_real")) for v in provider_status.values()),
         "symbols": clean_symbols,
         "usable_symbols": usable_symbols,
         "rejected_symbols": rejected_symbols,

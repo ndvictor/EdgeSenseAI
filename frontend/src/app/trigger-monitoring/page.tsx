@@ -33,7 +33,7 @@ const defaultSample: TriggerMonitoringEvaluateRequest = {
     strategy_group: "regime_aware_momentum",
   },
   trigger_candidate: {
-    symbol: "AMD",
+    symbol: "",
     asset_class: "stock",
     horizon: "day_trading",
     trigger_key: "rvol_vwap_breakout_confirm",
@@ -419,7 +419,7 @@ export default function TriggerMonitoringPage() {
                 onClick={() =>
                   setForm((f) => ({
                     ...f,
-                    trigger_candidate: { ...f.trigger_candidate, asset_class: "crypto", symbol: "BTC-USD" },
+                    trigger_candidate: { ...f.trigger_candidate, asset_class: "crypto", symbol: "" },
                   }))
                 }
               >
@@ -529,7 +529,7 @@ export default function TriggerMonitoringPage() {
                       className="w-full rounded-lg border border-white/10 bg-black/30 px-3 py-2 text-sm text-slate-100"
                       value={form.trigger_candidate.symbol}
                       onChange={(e) => setForm((f) => ({ ...f, trigger_candidate: { ...f.trigger_candidate, symbol: e.target.value } }))}
-                      placeholder="AMD"
+                      placeholder="Enter symbol"
                     />
                     <select
                       className="w-full rounded-lg border border-white/10 bg-black/30 px-3 py-2 text-sm text-slate-100"

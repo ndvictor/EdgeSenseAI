@@ -37,7 +37,7 @@ class WorkflowCarryForwardState(BaseModel):
     provider_status: dict[str, Any] = Field(default_factory=dict)
     provider_name: str | None = None
     source_mode: str | None = None
-    using_mock_data: bool = False
+    using_non_real_data: bool = False
     usable_symbols: list[str] = Field(default_factory=list)
     rejected_symbols: list[str] = Field(default_factory=list)
     latest_snapshot_status: str | None = None

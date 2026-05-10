@@ -17,7 +17,7 @@ const DEFAULT_WF_JSON = `{
   "asset_class": "stock",
   "horizon": "day_trading",
   "mode": "paper_first",
-  "symbols": ["AMD"],
+  "symbols": [],
   "dry_run": true,
   "allow_submit": false,
   "require_human_approval": true,

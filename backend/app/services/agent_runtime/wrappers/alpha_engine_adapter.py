@@ -52,7 +52,7 @@ def _feature_row_to_candidate(row: dict[str, Any]) -> CandidateFeatureRow | None
         session_state=row.get("session_state"),
         source=source if source in _ALLOWED_SOURCES else "feature_store",
         synthetic=bool(row.get("synthetic") or row.get("synthetic_data_used") or row.get("spread_synthetic")),
-        mock=bool(row.get("mock") or row.get("is_mock") or row.get("using_mock_data")),
+        non_real=bool(row.get("non_real") or row.get("is_non_real") or row.get("using_non_real_data")),
         provider_name=row.get("provider_name") or row.get("provider"),
         metadata={k: v for k, v in row.items() if k not in {"symbol", "ticker"}},
     )

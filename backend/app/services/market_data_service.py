@@ -22,7 +22,7 @@ class MarketDataService:
     """Read-only market data service using configured provider priority.
 
     Important product rule:
-    - source=mock is not supported and returns unavailable.
+    - disabled test providers are not supported and return unavailable.
     - source=auto must never silently fall back to fake data.
     - Explicit workflow/UI ``source`` (yfinance, polygon, alpaca) always wins over defaults.
     - For ``auto``, MARKET_DATA_PROVIDER (human primary in Settings/runtime) is attempted first, then
@@ -39,7 +39,7 @@ class MarketDataService:
 
     def _priority_for_source(self, source: str | None = None) -> list[str]:
         requested = source.lower().strip() if source and source.strip() else "auto"
-        if requested == "mock":
+        if requested == "disabled_test_provider":
             return []
 
         primary = (effective_str("MARKET_DATA_PROVIDER") or "").lower().strip()
@@ -50,12 +50,12 @@ class MarketDataService:
         if requested not in {"auto", "runtime", "manual", "candidate"}:
             ordered.append(requested)
             seen.add(requested)
-        elif primary and primary != "mock":
+        elif primary and primary != "disabled_test_provider":
             ordered.append(primary)
             seen.add(primary)
 
         for name in tail:
-            if name == "mock":
+            if name == "disabled_test_provider":
                 continue
             if name in seen:
                 continue
@@ -63,7 +63,7 @@ class MarketDataService:
             seen.add(name)
 
         if not ordered:
-            ordered = [p for p in tail if p != "mock"]
+            ordered = [p for p in tail if p != "disabled_test_provider"]
         return ordered
 
     def get_quote(self, symbol: str, source: str | None = None) -> Dict[str, Any]:
@@ -81,7 +81,7 @@ class MarketDataService:
             "volume": snapshot.get("volume"),
             "provider": snapshot.get("provider"),
             "source": snapshot.get("source"),
-            "is_mock": snapshot.get("is_mock", False),
+            "is_non_real": snapshot.get("is_non_real", False),
             "data_quality": snapshot.get("data_quality"),
             "unavailable_fields": snapshot.get("unavailable_fields", []),
             "not_configured_fields": snapshot.get("not_configured_fields", []),
@@ -100,15 +100,15 @@ class MarketDataService:
                 "description": info.get("longBusinessSummary"),
                 "website": info.get("website"),
                 "provider": "yfinance",
-                "is_mock": False,
+                "is_non_real": False,
             }
         except Exception as exc:
             return self._get_unavailable_profile(symbol, error=str(exc))
 
     def get_price_history(self, symbol: str, period: str = "6mo", interval: str = "1d", source: str | None = None) -> Dict[str, Any]:
         requested_source = (source or "auto").lower().strip()
-        if requested_source == "mock":
-            return self._get_unavailable_history(symbol, period, interval, error="mock_market_data_removed")
+        if requested_source == "disabled_test_provider":
+            return self._get_unavailable_history(symbol, period, interval, error="test_market_data_removed")
 
         yfinance_error = None
         try:
@@ -131,7 +131,7 @@ class MarketDataService:
                     "interval": interval,
                     "data": data,
                     "provider": "yfinance",
-                    "is_mock": False,
+                    "is_non_real": False,
                     "data_quality": "real",
                 }
             yfinance_error = f"No data returned from {requested_source} source"
@@ -189,7 +189,7 @@ class MarketDataService:
                 "interval": interval,
                 "data": data,
                 "provider": "yahoo_chart_api",
-                "is_mock": False,
+                "is_non_real": False,
                 "data_quality": "real",
             }
         except Exception as exc:
@@ -274,7 +274,7 @@ class MarketDataService:
             "volume": None,
             "provider": None,
             "source": None,
-            "is_mock": False,
+            "is_non_real": False,
             "data_quality": "unavailable",
             "error": error,
         }
@@ -289,7 +289,7 @@ class MarketDataService:
             "description": None,
             "website": None,
             "provider": None,
-            "is_mock": False,
+            "is_non_real": False,
             "data_quality": "unavailable",
             "error": error,
         }
@@ -301,7 +301,7 @@ class MarketDataService:
             "interval": interval,
             "data": [],
             "provider": None,
-            "is_mock": False,
+            "is_non_real": False,
             "data_quality": "unavailable",
             "error": error,
         }
@@ -323,7 +323,7 @@ class MarketDataService:
             "industry": None,
             "provider": None,
             "source": None,
-            "is_mock": False,
+            "is_non_real": False,
             "data_quality": "unavailable",
             "source_fields_used": {"price_source": None, "previous_close_source": None},
             "unavailable_fields": [

@@ -37,28 +37,28 @@ function calcReport(selection: StockChartSelection | null) {
   const spread = snapshot?.bid_ask_spread ?? null;
   const sourceQuality = snapshot?.data_quality ?? history?.data_quality ?? "not_loaded";
   const provider = snapshot?.provider ?? history?.provider ?? "—";
-  const isMock = Boolean(snapshot?.is_mock || history?.is_mock);
-  const hasUsableSourceData = Boolean(snapshot?.price && !isMock && sourceQuality === "real");
+  const isNonReal = Boolean(snapshot?.is_non_real || history?.is_non_real);
+  const hasUsableSourceData = Boolean(snapshot?.price && !isNonReal && sourceQuality === "real");
 
   let featureStatus = "waiting_for_source_data";
-  if (isMock) featureStatus = "mock_selected_for_testing";
+  if (isNonReal) featureStatus = "non_real_selected_for_testing";
   else if (hasUsableSourceData) featureStatus = "source_data_ready";
   else if (selection) featureStatus = "source_unavailable";
 
   let modelStatus = "not_run";
   if (hasUsableSourceData) modelStatus = "ready_for_feature_agents_and_model_run";
-  if (isMock) modelStatus = "disabled_for_mock_data";
+  if (isNonReal) modelStatus = "disabled_for_non_real_data";
 
   let riskStatus = "not_evaluated";
   if (hasUsableSourceData && spread !== null) riskStatus = spread <= 0.2 ? "spread_quality_pass" : "spread_review_needed";
-  if (isMock) riskStatus = "disabled_for_mock_data";
+  if (isNonReal) riskStatus = "disabled_for_non_real_data";
 
   return {
     symbol: selection?.symbol ?? "Select a ticker",
     source: selection?.source ?? "auto",
     provider,
     sourceQuality,
-    isMock,
+    isNonReal,
     hasUsableSourceData,
     currentPrice: snapshot?.price ?? lastClose,
     dayChange: oneDayChange,
@@ -210,9 +210,9 @@ export function StocksWorkspace({ variant = "stocks", hideChart = false }: { var
               Input source: <span className="font-bold text-white">{report.provider}</span>
             </p>
             <p>
-              Mock guard:{" "}
-              <span className={report.isMock ? "font-bold text-cyan-300" : "font-bold text-emerald-300"}>
-                {report.isMock ? "explicit mock selected" : "no mock in report"}
+              NonReal guard:{" "}
+              <span className={report.isNonReal ? "font-bold text-cyan-300" : "font-bold text-emerald-300"}>
+                {report.isNonReal ? "explicit non_real selected" : "no non_real in report"}
               </span>
             </p>
             <p className="text-slate-400">The trained model should consume feature-store rows produced from this selected source, not static defaults.</p>

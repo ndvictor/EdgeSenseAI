@@ -139,7 +139,7 @@ def build_watchlist(
                 "recommendation": {
                     "status": "candidate_selected",
                     "symbol": symbols[0],
-                    "mock_data_used": False,
+                    "non_real_data_used": False,
                     "synthetic_data_used": False,
                     "reason": None,
                 },
@@ -173,7 +173,7 @@ def build_watchlist(
                         "recommendation": {
                             "status": "candidate_selected",
                             "symbol": symbols[0],
-                            "mock_data_used": False,
+                            "non_real_data_used": False,
                             "synthetic_data_used": False,
                             "reason": None,
                         },
@@ -206,7 +206,7 @@ def build_watchlist(
                 "recommendation": {
                     "status": "data_unavailable",
                     "symbol": None,
-                    "mock_data_used": False,
+                    "non_real_data_used": False,
                     "synthetic_data_used": False,
                     "reason": "scanner_or_provider_unavailable",
                 },
@@ -228,7 +228,7 @@ def build_watchlist(
                 "recommendation": {
                     "status": "no_qualified_setup",
                     "symbol": None,
-                    "mock_data_used": False,
+                    "non_real_data_used": False,
                     "synthetic_data_used": False,
                     "reason": "no_scanner_candidates_passed_filters",
                 },
@@ -250,7 +250,7 @@ def build_watchlist(
                 "recommendation": {
                     "status": "candidate_selected" if symbols else "no_qualified_setup",
                     "symbol": symbols[0] if symbols else None,
-                    "mock_data_used": False,
+                    "non_real_data_used": False,
                     "synthetic_data_used": False,
                     "reason": None if symbols else "no_scanner_candidates_passed_filters",
                 },
@@ -283,7 +283,7 @@ def build_watchlist(
                 "recommendation": {
                     "status": "data_unavailable",
                     "symbol": None,
-                    "mock_data_used": False,
+                    "non_real_data_used": False,
                     "synthetic_data_used": False,
                     "reason": "scanner_or_provider_unavailable",
                 },
@@ -340,7 +340,7 @@ def build_watchlist(
             "recommendation": {
                 "status": "candidate_selected" if symbols else discovery_status,
                 "symbol": symbols[0] if symbols else None,
-                "mock_data_used": False,
+                "non_real_data_used": False,
                 "synthetic_data_used": False,
                 "reason": None if symbols else discovery_blocker,
             },

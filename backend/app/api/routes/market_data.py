@@ -29,7 +29,7 @@ class MarketSnapshot(BaseModel):
     industry: Optional[str] = None
     provider: Optional[str] = None
     source: Optional[str] = None
-    is_mock: bool = False
+    is_non_real: bool = False
     data_quality: Optional[str] = None
     source_fields_used: Optional[Dict[str, Any]] = None
     unavailable_fields: list[str] = []
@@ -44,7 +44,7 @@ class PriceHistory(BaseModel):
     interval: str
     data: list
     provider: Optional[str] = None
-    is_mock: bool = False
+    is_non_real: bool = False
     data_quality: Optional[str] = None
     error: Optional[str] = None
 

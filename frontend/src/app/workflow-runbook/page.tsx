@@ -122,7 +122,7 @@ function DataModeCard({ run }: { run: OrchestratorRunRecord | null }) {
       <h3 className="text-xs font-semibold uppercase tracking-[0.2em] text-slate-500">Data mode</h3>
       <div className="mt-3 grid gap-2 sm:grid-cols-2 lg:grid-cols-4">
         <FieldCard label="source_mode" value={String(run?.source_mode ?? run?.source ?? "candidate")} />
-        <FieldCard label="using_mock_data" value={String(run?.using_mock_data ?? false)} tone={run?.using_mock_data ? "warn" : "good"} />
+        <FieldCard label="using_non_real_data" value={String(run?.using_non_real_data ?? false)} tone={run?.using_non_real_data ? "warn" : "good"} />
         <FieldCard label="workflow mode" value={String(run?.mode ?? "paper_first")} />
         <FieldCard label="asset / horizon" value={`${String(run?.asset_class ?? "stock")} / ${String(run?.horizon ?? "day_trading")}`} />
       </div>
@@ -145,7 +145,7 @@ function DataPipelineCard({ prSystems, run }: { prSystems?: Record<string, unkno
         <FieldCard label="freshness_status" value="checked_per_run" />
         <FieldCard label="redis_status" value={String(redis?.configured === true ? "configured" : "optional_not_configured")} />
         <FieldCard label="kafka_status" value="configured_optional_not_active" tone="warn" />
-        <FieldCard label="using_mock_data" value={String(run?.using_mock_data ?? false)} tone={run?.using_mock_data ? "warn" : "good"} />
+        <FieldCard label="using_non_real_data" value={String(run?.using_non_real_data ?? false)} tone={run?.using_non_real_data ? "warn" : "good"} />
       </div>
     </section>
   );

@@ -149,8 +149,8 @@ def _reject_reasons(row: CandidateFeatureRow) -> list[str]:
         reasons.append("symbol_missing")
     if row.synthetic:
         reasons.append("synthetic_candidate_rejected")
-    if row.mock:
-        reasons.append("mock_candidate_rejected")
+    if row.non_real:
+        reasons.append("non_real_candidate_rejected")
     if row.source not in ALLOWED_SOURCES:
         reasons.append("unsupported_candidate_source")
     if row.last_price is None:
@@ -268,7 +268,7 @@ def _no_qualified(reason: str, blockers: list[str] | None = None, warnings: list
         reason=reason,
         blockers=sorted(set(blockers or [])),
         warnings=sorted(set(warnings or [])),
-        mock_data_used=False,
+        non_real_data_used=False,
         synthetic_data_used=False,
         submitted_order=False,
         broker_called=False,
@@ -297,7 +297,7 @@ def generate_alpha_recommendation(request: AlphaEngineRequest) -> AlphaRecommend
             status=status,
             reason=reason,
             blockers=sorted(set(rejected)),
-            mock_data_used=False,
+            non_real_data_used=False,
             synthetic_data_used=False,
             submitted_order=False,
             broker_called=False,
@@ -370,7 +370,7 @@ def generate_alpha_recommendation(request: AlphaEngineRequest) -> AlphaRecommend
         },
         warnings=warnings,
         reason=reason,
-        mock_data_used=False,
+        non_real_data_used=False,
         synthetic_data_used=False,
         submitted_order=False,
         broker_called=False,

@@ -18,6 +18,16 @@ def evaluate_trade_risk(
     target_price: float,
     profile: AccountRiskProfile,
 ) -> RiskCheckResult:
+    if entry_price <= 0:
+        max_dollar_risk = profile.account_equity * (profile.max_risk_per_trade_percent / 100)
+        return RiskCheckResult(
+            passed=False,
+            reward_risk_ratio=0.0,
+            max_dollar_risk=round(max_dollar_risk, 2),
+            stop_distance_percent=0.0,
+            risk_status="blocked_or_review",
+            blockers=["No valid entry price returned from selected source."],
+        )
     risk_per_share = max(entry_price - stop_loss, 0.01)
     reward_per_share = max(target_price - entry_price, 0.01)
     reward_risk = reward_per_share / risk_per_share

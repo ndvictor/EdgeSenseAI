@@ -46,8 +46,8 @@ def _float_or_none(value: Any) -> float | None:
         return None
 
 
-def _is_mock_or_synthetic(row: dict[str, Any]) -> bool:
-    return bool(row.get("mock") or row.get("is_mock") or row.get("using_mock_data") or row.get("synthetic") or row.get("synthetic_data_used") or row.get("spread_synthetic"))
+def _is_non_real(row: dict[str, Any]) -> bool:
+    return bool(row.get("non_real") or row.get("is_non_real") or row.get("using_non_real_data") or row.get("synthetic") or row.get("synthetic_data_used") or row.get("spread_synthetic"))
 
 
 def _worker_status_payload(*, worker: str, status: str, worker_run_id: str | None, payload: dict[str, Any]) -> dict[str, Any]:
@@ -102,7 +102,7 @@ def save_scanner_candidates(
     rows: list[dict[str, Any]] = []
     for candidate in candidates:
         symbol = _clean_symbol(candidate.get("symbol"))
-        if not symbol or _is_mock_or_synthetic(candidate):
+        if not symbol or _is_non_real(candidate):
             continue
         row = {
             "symbol": symbol,
@@ -156,7 +156,7 @@ def save_market_snapshots(
     rows: list[dict[str, Any]] = []
     for snapshot in snapshots:
         symbol = _clean_symbol(snapshot.get("symbol"))
-        if not symbol or _is_mock_or_synthetic(snapshot):
+        if not symbol or _is_non_real(snapshot):
             continue
         row = {
             **snapshot,
@@ -213,7 +213,7 @@ def save_feature_rows(
     rows: list[dict[str, Any]] = []
     for feature in feature_rows:
         symbol = _clean_symbol(feature.get("symbol") or feature.get("ticker"))
-        if not symbol or _is_mock_or_synthetic(feature):
+        if not symbol or _is_non_real(feature):
             continue
         row = {
             **feature,
@@ -277,8 +277,8 @@ def get_latest_scanner_candidates(limit: int = 25) -> list[dict[str, Any]]:
     latest = get_latest_worker_status("market-scanner-worker")
     rows = latest.get("scanner_candidates") if isinstance(latest, dict) else None
     if isinstance(rows, list) and rows:
-        return [dict(row) for row in rows if isinstance(row, dict) and not _is_mock_or_synthetic(row)][:limit]
-    return [dict(row) for row in _MEMORY["scanner_candidates"] if not _is_mock_or_synthetic(row)][:limit]
+        return [dict(row) for row in rows if isinstance(row, dict) and not _is_non_real(row)][:limit]
+    return [dict(row) for row in _MEMORY["scanner_candidates"] if not _is_non_real(row)][:limit]
 
 
 def _latest_feature_rows_from_db(*, kind: str, limit: int) -> list[dict[str, Any]]:
@@ -287,7 +287,7 @@ def _latest_feature_rows_from_db(*, kind: str, limit: int) -> list[dict[str, Any
         values = record.get("feature_values") or record.get("metadata") or record.get("metadata_json") or {}
         if not isinstance(values, dict) or values.get("kind") != kind:
             continue
-        if _is_mock_or_synthetic(values):
+        if _is_non_real(values):
             continue
         rows.append(dict(values))
         if len(rows) >= limit:
@@ -298,7 +298,7 @@ def _latest_feature_rows_from_db(*, kind: str, limit: int) -> list[dict[str, Any
 def get_latest_market_snapshots(limit: int = 25, *, production_scanner_chain_only: bool = False) -> list[dict[str, Any]]:
     fetch_n = max(limit * 4, limit) if production_scanner_chain_only else limit
     rows = _latest_feature_rows_from_db(kind="worker_market_snapshot", limit=fetch_n)
-    mem = [dict(row) for row in _MEMORY["market_snapshots"] if not _is_mock_or_synthetic(row)]
+    mem = [dict(row) for row in _MEMORY["market_snapshots"] if not _is_non_real(row)]
     out = rows if rows else mem
     if production_scanner_chain_only:
         out = [r for r in out if str(r.get("run_source") or "") == RUN_SOURCE_PRODUCTION_INGESTION]
@@ -307,7 +307,7 @@ def get_latest_market_snapshots(limit: int = 25, *, production_scanner_chain_onl
 
 def get_latest_feature_rows(limit: int = 25) -> list[dict[str, Any]]:
     rows = _latest_feature_rows_from_db(kind="worker_feature_row", limit=limit)
-    return rows or [dict(row) for row in _MEMORY["feature_rows"] if not _is_mock_or_synthetic(row)][:limit]
+    return rows or [dict(row) for row in _MEMORY["feature_rows"] if not _is_non_real(row)][:limit]
 
 
 def get_latest_feature_rows_for_production_discovery(limit: int = 25) -> list[dict[str, Any]]:

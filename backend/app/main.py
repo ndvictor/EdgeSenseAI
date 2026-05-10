@@ -315,9 +315,9 @@ def _command_center_data_source_confirmation(
     from app.services.market_data_service import market_data_provider_priority_from_runtime
 
     primary = (effective_str("MARKET_DATA_PROVIDER") or "not_configured").lower().strip()
-    if primary == "mock":
+    if primary == "disabled_test_provider":
         primary = "not_configured"
-    fallback_chain = [provider for provider in market_data_provider_priority_from_runtime() if provider != "mock"]
+    fallback_chain = [provider for provider in market_data_provider_priority_from_runtime() if provider != "disabled_test_provider"]
     return CommandCenterDataSourceConfirmation(
         market_data_primary=primary,
         market_data_fallback_chain=fallback_chain,
@@ -386,7 +386,7 @@ def _build_decision_command_center() -> CommandCenterResponse:
             symbol=candidate.symbol,
             provider=candidate.provider,
             data_quality=candidate.data_quality,
-            is_mock=False,
+            is_non_real=False,
             error="; ".join(candidate.blockers) if candidate.blockers else None,
             pipeline_source=candidate.source,
         )
@@ -492,7 +492,7 @@ def _run_command_center_workflow() -> CommandCenterResponse:
             symbol=candidate.symbol,
             provider=candidate.provider,
             data_quality=candidate.data_quality,
-            is_mock=False,
+            is_non_real=False,
             error="; ".join(candidate.blockers) if candidate.blockers else None,
             pipeline_source=candidate.source,
         )
@@ -616,11 +616,11 @@ def _resolved_market_provider(provider: str | None) -> str:
     if provider and provider.strip():
         p = provider.strip().lower()
         if p != "auto":
-            if p == "mock":
+            if p == "disabled_test_provider":
                 return "not_configured"
             return p
     primary = (effective_str("MARKET_DATA_PROVIDER") or "not_configured").lower().strip()
-    return "not_configured" if primary == "mock" else primary
+    return "not_configured" if primary == "disabled_test_provider" else primary
 
 
 @app.get("/api/market/{symbol}/snapshot", response_model=MarketSnapshot)

@@ -84,7 +84,7 @@ def _mark_workflow_cooldown(strategy_key: str, symbol: str, matched_signal_key: 
 
 
 def _source_label(snapshot: dict[str, Any]) -> str:
-    if snapshot.get("is_mock"):
+    if snapshot.get("is_non_real"):
         return "demo"
     if snapshot.get("provider") and snapshot.get("data_quality") not in {"unavailable", "not_configured"}:
         return "source_backed"
@@ -161,8 +161,8 @@ def _evaluate_real_discovery_criteria(symbol: str, snapshot: dict[str, Any]) -> 
     max_spread_bps = _env_float("SCANNER_MAX_SPREAD_BPS", 35.0)
     min_day_change_pct = _env_float("SCANNER_MIN_DAY_CHANGE_PCT", 1.0)
 
-    if snapshot.get("is_mock") or snapshot.get("mock") or snapshot.get("using_mock_data"):
-        blockers.append("mock_market_data_rejected")
+    if snapshot.get("is_non_real") or snapshot.get("non_real") or snapshot.get("using_non_real_data"):
+        blockers.append("non_real_market_data_rejected")
     if snapshot.get("synthetic") or snapshot.get("synthetic_data_used") or snapshot.get("spread_synthetic"):
         blockers.append("synthetic_market_data_rejected")
     if snapshot.get("data_quality") in {"unavailable", "not_configured"} or _source_label(snapshot) != "source_backed":

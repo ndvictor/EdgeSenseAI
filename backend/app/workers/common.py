@@ -32,6 +32,8 @@ def require_production_data_policy() -> None:
         blockers.append("environment_not_production")
     if market_data_mode not in {"provider", "runtime"}:
         blockers.append("market_data_mode_must_be_provider_or_runtime")
+    if env_bool("ALLOW_NON_REAL_MARKET_DATA", False):
+        blockers.append("non_real_market_data_enabled")
     if env_bool("ALLOW_SYNTHETIC_MARKET_DATA", False):
         blockers.append("synthetic_market_data_enabled")
     if env_bool("LIVE_TRADING_ENABLED", False):

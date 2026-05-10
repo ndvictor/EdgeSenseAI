@@ -153,7 +153,7 @@ def assign_watchlist_ttl_minutes(
 
     Adjustments:
     - high signal_strength can extend modestly, but never across phase boundaries meaningfully
-    - degraded/mock/unavailable data should not extend TTL
+    - degraded/non_real/unavailable data should not extend TTL
     - research_only keeps TTL short (still can be watchlisted)
     """
     (mn, mx) = _base_ttl(scanner_group, market_phase)
@@ -169,11 +169,11 @@ def assign_watchlist_ttl_minutes(
 
     # Data quality degraded: do not extend.
     dq = (data_quality or "").lower()
-    if dq in ("mock", "degraded", "poor", "unavailable", "not_configured"):
+    if dq in ("non_real", "degraded", "poor", "unavailable", "not_configured"):
         base = min(base, max(5, mn))
 
     # Signal strength: modest adjustment
-    if signal_strength >= 85 and dq not in ("mock", "degraded", "poor", "unavailable", "not_configured"):
+    if signal_strength >= 85 and dq not in ("non_real", "degraded", "poor", "unavailable", "not_configured"):
         base = int(base * 1.15)
     elif signal_strength <= 35:
         base = int(base * 0.75)

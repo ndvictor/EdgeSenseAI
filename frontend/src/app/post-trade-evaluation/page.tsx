@@ -37,7 +37,7 @@ const CHECKERS = [
 const defaultSample: PostTradeEvaluationRequest = {
   trade: {
     trade_id: "trade_sample",
-    symbol: "AMD",
+    symbol: "",
     asset_class: "stock",
     horizon: "day_trading",
     side: "long",
@@ -480,7 +480,7 @@ export default function PostTradeEvaluationPage() {
               <button
                 type="button"
                 className="rounded-lg border border-white/10 bg-[#0a1018] px-3 py-1.5 text-sm text-slate-300 hover:border-emerald-400/25 hover:text-slate-100"
-                onClick={() => setForm((f) => ({ ...f, trade: { ...f.trade, asset_class: "crypto", symbol: "BTC-USD" } }))}
+                onClick={() => setForm((f) => ({ ...f, trade: { ...f.trade, asset_class: "crypto", symbol: "" } }))}
               >
                 Crypto Blocked Sample
               </button>

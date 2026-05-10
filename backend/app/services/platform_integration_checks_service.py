@@ -62,7 +62,7 @@ class IntegrationCheckResult(BaseModel):
 class PlatformIntegrationChecksRequest(BaseModel):
     model_config = ConfigDict(protected_namespaces=())
 
-    symbols: list[str] = Field(default_factory=lambda: ["SPY", "AAPL"])
+    symbols: list[str] = Field(default_factory=list)
     source: Literal["auto", "yfinance", "alpaca", "polygon"] = "auto"
 
     checks: list[str] | None = Field(
@@ -620,10 +620,7 @@ def run_platform_integration_checks(request: PlatformIntegrationChecksRequest) -
                     data_quality="pass",
                     account_equity=5_000.0,
                     buying_power=5_000.0,
-                    open_positions=[
-                        OpenPosition(symbol="MSFT", side="long", entry_price=400.0, quantity=2.0),
-                        OpenPosition(symbol="AAPL", side="long", entry_price=180.0, quantity=5.0),
-                    ],
+                    open_positions=[],
                 )
             )
 

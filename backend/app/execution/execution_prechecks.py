@@ -64,7 +64,7 @@ def run_data_quality_precheck(req: ExecutionRequest, source: str = "auto") -> Pr
         blockers.append(f"market_data_error:{snap.get('error')[:80]}")
     if not snap.get("current_price"):
         blockers.append("missing_reference_price")
-    if snap.get("is_mock"):
+    if snap.get("is_non_real"):
         blockers.append("non_real_market_data_not_allowed_for_execution")
 
     spread = snap.get("bid_ask_spread")

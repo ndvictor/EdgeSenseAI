@@ -89,7 +89,7 @@ def run() -> dict[str, Any]:
         missing = list(snapshot.get("unavailable_fields") or snapshot.get("not_configured_fields") or [])
         if missing:
             missing_fields[symbol] = missing
-        if snapshot.get("price") is not None and not snapshot.get("is_mock") and snapshot.get("data_quality") not in {"unavailable", "not_configured"}:
+        if snapshot.get("price") is not None and not snapshot.get("is_non_real") and snapshot.get("data_quality") not in {"unavailable", "not_configured"}:
             successful.append(symbol)
             persisted_snapshots.append({**snapshot, "symbol": symbol})
         else:

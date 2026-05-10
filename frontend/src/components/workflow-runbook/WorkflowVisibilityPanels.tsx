@@ -751,7 +751,7 @@ export function WorkflowVisibilityPanels({
                 </div>
                 <div>Change: {priceSnap.change_percent != null ? `${priceSnap.change_percent.toFixed(2)}%` : "—"}</div>
                 <div>Provider: {priceSnap.provider ?? "—"}</div>
-                <div>Mock: {priceSnap.is_mock ? "yes" : "no"}</div>
+                <div>NonReal: {priceSnap.is_non_real ? "yes" : "no"}</div>
               </dl>
             ) : resolvedSymbol ? (
               <p className="mt-2 text-xs text-slate-500">Loading snapshot…</p>

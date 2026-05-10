@@ -25,7 +25,7 @@ const CHECKERS = [
 const defaultSample: ExecutionPlannerPlanRequest = {
   trigger_evaluation: {
     trigger_state: "fired",
-    symbol: "AMD",
+    symbol: "",
     asset_class: "stock",
     horizon: "day_trading",
     trigger_key: "rvol_vwap_breakout_confirm",
@@ -435,7 +435,7 @@ export default function ExecutionPlannerPage() {
                 onClick={() =>
                   setForm((f) => ({
                     ...f,
-                    trigger_evaluation: { ...f.trigger_evaluation, symbol: "BTC-USD", asset_class: "crypto" },
+                    trigger_evaluation: { ...f.trigger_evaluation, symbol: "", asset_class: "crypto" },
                   }))
                 }
               >

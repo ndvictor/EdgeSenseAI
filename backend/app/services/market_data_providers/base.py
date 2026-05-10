@@ -72,7 +72,7 @@ class MarketDataProvider:
             "source": self.name,
             "provider": self.name,
             "data_quality": data_quality,
-            "is_mock": False,
+            "is_non_real": False,
             "unavailable_fields": unavailable,
             "not_configured_fields": not_configured,
             "timestamp": datetime.utcnow().isoformat(),

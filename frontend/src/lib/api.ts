@@ -607,7 +607,7 @@ export type MarketDataSnapshot = {
   industry: string | null;
   provider: string | null;
   source?: string | null;
-  is_mock: boolean;
+  is_non_real: boolean;
   data_quality?: string | null;
   unavailable_fields?: string[];
   not_configured_fields?: string[];
@@ -621,7 +621,7 @@ export type PriceHistory = {
   interval: string;
   data: Array<{ date: string; open: number | null; high: number | null; low: number | null; close: number | null; volume: number | null }>;
   provider: string | null;
-  is_mock: boolean;
+  is_non_real: boolean;
   data_quality?: string | null;
   error?: string | null;
 };
@@ -894,7 +894,7 @@ export type SourceDataStatus = {
   symbol: string;
   provider?: string | null;
   data_quality?: string | null;
-  is_mock: boolean;
+  is_non_real: boolean;
   error?: string | null;
   /** Requested pipeline source for snapshots (e.g. auto uses MARKET_DATA_PROVIDER + priority). */
   pipeline_source?: string | null;
@@ -1190,7 +1190,7 @@ export type NormalizedMarketSnapshot = {
   vwap?: number | null;
   volatility_proxy?: number | null;
   data_quality?: string;
-  is_mock?: boolean;
+  is_non_real?: boolean;
 };
 
 export type FeatureStoreRow = {
@@ -3421,7 +3421,7 @@ export type DataFreshnessSymbolResult = {
   symbol: string;
   provider: string;
   data_quality: "excellent" | "good" | "fair" | "poor" | "unavailable";
-  is_mock: boolean;
+  is_non_real: boolean;
   quote_age_seconds: number | null;
   bar_age_seconds: number | null;
   has_price: boolean;
@@ -3440,7 +3440,7 @@ export type DataFreshnessSummary = {
   usable_count: number;
   degraded_count: number;
   blocked_count: number;
-  mock_blocked_count: number;
+  non_real_blocked_count: number;
   unavailable_count: number;
 };
 

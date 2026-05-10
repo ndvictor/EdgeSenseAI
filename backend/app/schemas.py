@@ -184,7 +184,7 @@ class SourceDataStatus(BaseModel):
     symbol: str
     provider: str | None = None
     data_quality: str | None = None
-    is_mock: bool = False
+    is_non_real: bool = False
     error: str | None = None
     """How snapshots were requested for this candidate (e.g. auto → resolves via MARKET_DATA_PROVIDER)."""
     pipeline_source: str | None = None

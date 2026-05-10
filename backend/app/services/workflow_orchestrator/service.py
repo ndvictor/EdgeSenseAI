@@ -29,13 +29,13 @@ def _recommendation_payload(
     status: str,
     symbol: str | None = None,
     reason: str | None = None,
-    mock_data_used: bool = False,
+    non_real_data_used: bool = False,
     synthetic_data_used: bool = False,
 ) -> dict[str, Any]:
     return {
         "status": status,
         "symbol": symbol,
-        "mock_data_used": bool(mock_data_used),
+        "non_real_data_used": bool(non_real_data_used),
         "synthetic_data_used": bool(synthetic_data_used),
         "reason": reason,
     }
@@ -68,7 +68,7 @@ def _blocked_run_response(*, body: OrchestratorRunRequest, blockers: list[str], 
         preview_continued_despite_governance_blockers=False,
         preview_continued_after_approval_boundary=False,
         source_mode=body.source,
-        using_mock_data=False,
+        using_non_real_data=False,
         recommendation=_recommendation_payload(status="data_unavailable", reason="; ".join(sorted(set(blockers)))[:500]),
         allow_submit=False,
         submitted_order=False,
@@ -216,7 +216,7 @@ def run_workflow(body: OrchestratorRunRequest) -> OrchestratorRunResponse:
             preview_continued_despite_governance_blockers=False,
             preview_continued_after_approval_boundary=False,
             source_mode=body.source,
-            using_mock_data=False,
+            using_non_real_data=False,
             allow_submit=False,
             submitted_order=False,
             broker_called=False,
@@ -316,7 +316,7 @@ def run_workflow(body: OrchestratorRunRequest) -> OrchestratorRunResponse:
                     "pipeline_inputs_snapshot": {
                         "symbols": list(state.symbols),
                         "source_mode": state.source_mode,
-                        "using_mock_data": state.using_mock_data,
+                        "using_non_real_data": state.using_non_real_data,
                         "submitted_order": False,
                         "broker_called": False,
                         "llm_used": False,
@@ -369,7 +369,7 @@ def run_workflow(body: OrchestratorRunRequest) -> OrchestratorRunResponse:
                     "evidence_warnings",
                     "provider_status",
                     "source_mode",
-                    "using_mock_data",
+                    "using_non_real_data",
                     "usable_symbols",
                     "rejected_symbols",
                     "latest_snapshot_count",
@@ -466,7 +466,7 @@ def run_workflow(body: OrchestratorRunRequest) -> OrchestratorRunResponse:
             status=recommendation_status,
             symbol=None,
             reason="; ".join(sorted(set(blockers)))[:500],
-            mock_data_used=bool(state.using_mock_data),
+            non_real_data_used=bool(state.using_non_real_data),
             synthetic_data_used=False,
         )
     elif state.selected_symbol or state.symbol:
@@ -474,7 +474,7 @@ def run_workflow(body: OrchestratorRunRequest) -> OrchestratorRunResponse:
             status="candidate_selected",
             symbol=state.selected_symbol or state.symbol,
             reason="Candidate selected by provider-backed workflow stages.",
-            mock_data_used=bool(state.using_mock_data),
+            non_real_data_used=bool(state.using_non_real_data),
             synthetic_data_used=False,
         )
     else:
@@ -482,7 +482,7 @@ def run_workflow(body: OrchestratorRunRequest) -> OrchestratorRunResponse:
             status="no_qualified_setup",
             symbol=None,
             reason="No provider-backed candidate qualified.",
-            mock_data_used=bool(state.using_mock_data),
+            non_real_data_used=bool(state.using_non_real_data),
             synthetic_data_used=False,
         )
 
@@ -504,7 +504,7 @@ def run_workflow(body: OrchestratorRunRequest) -> OrchestratorRunResponse:
         preview_continued_despite_governance_blockers=bool(body.dry_run and gov.blockers),
         preview_continued_after_approval_boundary=bool(preview_continued_after_approval_boundary),
         source_mode=state.source_mode or body.source,
-        using_mock_data=bool(state.using_mock_data),
+        using_non_real_data=bool(state.using_non_real_data),
         provider_status=dict(state.provider_status),
         provider_name=state.provider_name,
         usable_symbols=list(state.usable_symbols),

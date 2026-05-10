@@ -219,12 +219,12 @@ def run_market_regime_model(request: MarketRegimeRequest) -> MarketRegimeRespons
     qqq_data = _get_price_history_safe(request.qqq_symbol, request.source)
     qqq_available = qqq_data is not None and bool(qqq_data.get("data"))
 
-    if spy_available and spy_data and spy_data.get("is_mock"):
+    if spy_available and spy_data and spy_data.get("is_non_real"):
         blockers.append("SPY data is non-real")
         spy_available = False
         spy_data = None
 
-    if qqq_available and qqq_data and qqq_data.get("is_mock"):
+    if qqq_available and qqq_data and qqq_data.get("is_non_real"):
         blockers.append("QQQ data is non-real")
         qqq_available = False
         qqq_data = None

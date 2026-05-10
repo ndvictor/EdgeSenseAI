@@ -38,7 +38,7 @@ class NormalizedMarketSnapshot(BaseModel):
     vwap: float | None = None
     volatility_proxy: float | None = None
     data_quality: str = "unavailable"
-    is_mock: bool = False
+    is_non_real: bool = False
 
     def to_market_snapshot(self) -> MarketSnapshot:
         price = float(self.price or 0)
@@ -117,7 +117,7 @@ def normalize_market_snapshot(snapshot: dict[str, Any], asset_class: str = "stoc
         ticker=str(snapshot.get("symbol") or snapshot.get("ticker") or "UNKNOWN").upper(),
         asset_class=asset_class,
         provider=snapshot.get("provider"),
-        data_source=data_source or snapshot.get("data_source") or ("source_blocked" if snapshot.get("is_mock") else "source_backed" if snapshot.get("provider") else "source_unavailable"),
+        data_source=data_source or snapshot.get("data_source") or ("source_blocked" if snapshot.get("non_real") else "source_backed" if snapshot.get("provider") else "source_unavailable"),
         price=price,
         previous_close=previous_close,
         change_percent=snapshot.get("change_percent") or snapshot.get("day_change_percent"),
@@ -133,5 +133,5 @@ def normalize_market_snapshot(snapshot: dict[str, Any], asset_class: str = "stoc
         vwap=snapshot.get("vwap") or price,
         volatility_proxy=snapshot.get("volatility_proxy") or 0.3,
         data_quality=snapshot.get("data_quality") or "unavailable",
-        is_mock=bool(snapshot.get("is_mock", False)),
+        is_non_real=bool(snapshot.get("is_non_real", False)),
     )

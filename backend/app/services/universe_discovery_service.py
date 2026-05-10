@@ -279,7 +279,7 @@ def discover_universe(request: UniverseDiscoverRequest) -> UniverseDiscoverRespo
         except Exception as e:
             snapshot = {"symbol": sym, "data_quality": "unavailable", "provider": "unknown", "error": str(e)}
 
-        is_mock = bool(snapshot.get("is_mock", False))
+        is_non_real = bool(snapshot.get("is_non_real", False))
         dq = snapshot.get("data_quality") or fres.data_quality or "unavailable"
         data_quality_score = _data_quality_score_from_freshness(str(dq))
 
@@ -290,8 +290,8 @@ def discover_universe(request: UniverseDiscoverRequest) -> UniverseDiscoverRespo
 
         # Execution rules (always false for discovery output, but we keep blockers/warnings)
         execution_blockers: list[str] = []
-        if is_mock:
-            execution_blockers.append("Mock data cannot be used for execution.")
+        if is_non_real:
+            execution_blockers.append("NonReal data cannot be used for execution.")
         if request.source == "yfinance":
             # yfinance snapshots can synthesize a spread-like value, but they are not
             # broker-grade bid/ask quotes for execution readiness.
@@ -366,7 +366,7 @@ def discover_universe(request: UniverseDiscoverRequest) -> UniverseDiscoverRespo
                 market_phase=phase,
                 strategy_key=strategy_key,
                 signal_strength=signal_strength,
-                data_quality=("unavailable" if is_mock else ("degraded" if not has_bid_ask or spread_percent is None else str(dq))),
+                data_quality=("unavailable" if is_non_real else ("degraded" if not has_bid_ask or spread_percent is None else str(dq))),
                 risk_level=risk_level,
                 research_only=research_only,
             )

@@ -79,7 +79,7 @@ export const ownerPages: OwnerPageConfig[] = [
     group: "Performance Intelligence",
     icon: BarChart3,
     purpose: "Which strategies and models are actually working?",
-    hero: "Latest strategy ranking, model selection, and performance drift records — no mock win rates.",
+    hero: "Latest strategy ranking, model selection, and performance drift records — no non_real win rates.",
   },
   {
     key: "llm-cost-center",

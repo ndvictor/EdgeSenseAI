@@ -63,8 +63,8 @@ def check_market_data_quality(
         blockers.append("No configured provider returned usable data.")
     if data_quality in {"unavailable", "not_configured"}:
         blockers.append(f"Provider data quality is {data_quality}.")
-    if snapshot.get("is_mock"):
-        warnings.append("Snapshot is mock/demo data and must not be treated as live market data.")
+    if snapshot.get("is_non_real"):
+        warnings.append("Snapshot is non_real/demo data and must not be treated as live market data.")
 
     if snapshot.get("price") is None:
         missing_fields.append("price")

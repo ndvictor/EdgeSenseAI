@@ -174,7 +174,7 @@ def _build_candidate(symbol: str, request: DecisionWorkflowRunRequest) -> tuple[
 
     if quality == "fail":
         blockers.extend(feature_run.quality_report.blockers or ["Data quality failed."])
-    if normalized.is_mock:
+    if normalized.is_non_real:
         blockers.append("Non-real market data is blocked for decision workflow.")
     if price is None:
         blockers.append("No current price returned from selected source.")

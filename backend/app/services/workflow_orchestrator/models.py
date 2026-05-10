@@ -60,7 +60,7 @@ class OrchestratorRunResponse(BaseModel):
     preview_continued_despite_governance_blockers: bool = False
     preview_continued_after_approval_boundary: bool = False
     source_mode: str = "manual"
-    using_mock_data: bool = False
+    using_non_real_data: bool = False
     provider_status: dict[str, Any] = Field(default_factory=dict)
     provider_name: str | None = None
     usable_symbols: list[str] = Field(default_factory=list)

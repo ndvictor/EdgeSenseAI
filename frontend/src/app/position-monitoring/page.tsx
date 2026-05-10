@@ -18,7 +18,7 @@ const CHECKERS = ["PnL Calculator", "Thesis Validity Checker", "Position Risk Mo
 const defaultSample: PositionMonitoringEvaluateRequest = {
   position: {
     position_id: "pos_sample",
-    symbol: "AMD",
+    symbol: "",
     asset_class: "stock",
     horizon: "day_trading",
     side: "long",
@@ -387,7 +387,7 @@ export default function PositionMonitoringPage() {
               <button
                 type="button"
                 className="rounded-lg border border-white/10 bg-[#0a1018] px-3 py-1.5 text-sm text-slate-300 hover:border-emerald-400/25 hover:text-slate-100"
-                onClick={() => setForm((f) => ({ ...f, position: { ...f.position, asset_class: "crypto", symbol: "BTC-USD" } }))}
+                onClick={() => setForm((f) => ({ ...f, position: { ...f.position, asset_class: "crypto", symbol: "" } }))}
               >
                 Crypto Blocked Sample
               </button>

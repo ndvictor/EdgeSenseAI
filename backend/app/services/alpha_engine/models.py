@@ -29,7 +29,7 @@ class CandidateFeatureRow(BaseModel):
     session_state: str | None = None
     source: str = "provider"
     synthetic: bool = False
-    mock: bool = False
+    non_real: bool = False
     provider_name: str | None = None
     metadata: dict[str, Any] = Field(default_factory=dict)
 
@@ -66,7 +66,7 @@ class AlphaRecommendation(BaseModel):
     blockers: list[str] = Field(default_factory=list)
     warnings: list[str] = Field(default_factory=list)
     reason: str = ""
-    mock_data_used: bool = False
+    non_real_data_used: bool = False
     synthetic_data_used: bool = False
     submitted_order: bool = False
     broker_called: bool = False

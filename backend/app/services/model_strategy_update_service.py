@@ -112,7 +112,7 @@ def _update_from_record(row: dict) -> ModelStrategyUpdateResponse | None:
         return None
 
 
-# Mock current weights (in real system these would come from meta-model)
+# NonReal current weights (in real system these would come from meta-model)
 _STRATEGY_WEIGHTS: dict[str, float] = {}
 _MODEL_WEIGHTS: dict[str, float] = {}
 

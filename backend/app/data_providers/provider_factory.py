@@ -23,7 +23,7 @@ class UnavailableMarketDataProvider:
             vwap=0.0,
             volatility_proxy=0.0,
             data_mode="source_unavailable",
-            is_mock=False,
+            is_non_real=False,
         )
 
     def get_watchlist_snapshots(self) -> list[MarketSnapshot]:

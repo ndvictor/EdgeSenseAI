@@ -20,7 +20,7 @@ def evaluate_small_account_inputs(inputs: dict[str, Any]) -> dict[str, Any]:
         day_trades_used=int(inputs.get("day_trades_used") or 0),
         proof_status=str(inputs.get("proof_status")) if inputs.get("proof_status") is not None else None,
         source_mode=str(inputs.get("source_mode")) if inputs.get("source_mode") is not None else None,
-        using_mock_data=bool(inputs.get("using_mock_data", False)),
+        using_non_real_data=bool(inputs.get("using_non_real_data", False)),
         persistence_status=str(inputs.get("persistence_status")) if inputs.get("persistence_status") is not None else None,
         max_risk_per_trade_pct=float(inputs.get("max_risk_per_trade_percent") or inputs.get("max_risk_per_trade_pct") or 0.005),
         max_daily_loss_pct=float(inputs.get("max_daily_loss_percent") or inputs.get("max_daily_loss_pct") or 0.015),

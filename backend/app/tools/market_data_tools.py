@@ -7,11 +7,11 @@ _MARKET_DATA = MarketDataService()
 
 
 def classify_market_data_source(snapshot: dict[str, Any]) -> str:
-    if snapshot.get("is_mock"):
-        return "demo"
+    if snapshot.get("is_non_real"):
+        return "source_blocked"
     if snapshot.get("data_quality") in {"real", "delayed", "partial"} and snapshot.get("provider"):
         return "source_backed"
-    return "placeholder"
+    return "source_unavailable"
 
 
 def get_safe_market_snapshot(symbol: str, source: str = "auto") -> dict[str, Any]:
@@ -22,13 +22,13 @@ def get_safe_market_snapshot(symbol: str, source: str = "auto") -> dict[str, Any
 
 def get_safe_market_snapshots(symbols: list[str], source: str = "auto") -> dict[str, Any]:
     snapshots = [get_safe_market_snapshot(symbol, source=source) for symbol in symbols]
-    sources = {snapshot.get("data_source", "placeholder") for snapshot in snapshots}
+    sources = {snapshot.get("data_source", "source_unavailable") for snapshot in snapshots}
     if "source_backed" in sources:
         data_source = "source_backed"
-    elif "demo" in sources:
-        data_source = "demo"
+    elif "source_blocked" in sources:
+        data_source = "source_blocked"
     else:
-        data_source = "placeholder"
+        data_source = "source_unavailable"
     warnings = [
         f"{snapshot.get('symbol')}: {snapshot.get('error')}"
         for snapshot in snapshots

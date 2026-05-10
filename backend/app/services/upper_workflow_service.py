@@ -344,7 +344,7 @@ def run_upper_workflow(request: UpperWorkflowRequest) -> UpperWorkflowResponse:
             blockers=[str(e)],
         ))
         blockers.append(f"Data freshness check failed: {e}")
-        warnings.append("Data provider failure blocked upper workflow before strategy/universe/scoring stages. No mock data was used.")
+        warnings.append("Data provider failure blocked upper workflow before strategy/universe/scoring stages. No non_real data was used.")
         completed_at = datetime.now(timezone.utc)
         duration_ms = int((completed_at - started_at).total_seconds() * 1000)
         return _save_upper_workflow_run(UpperWorkflowResponse(

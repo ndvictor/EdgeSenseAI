@@ -16,7 +16,7 @@ class MarketSnapshot(BaseModel):
     vwap: float
     volatility_proxy: float
     data_mode: str = "source_unavailable"
-    is_mock: bool = False
+    is_non_real: bool = False
 
 
 class MarketCandle(BaseModel):

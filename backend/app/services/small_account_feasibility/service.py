@@ -29,7 +29,7 @@ class SmallAccountFeasibilityRequest(BaseModel):
     day_trades_used: int = 0
     proof_status: str | None = None
     source_mode: str | None = None
-    using_mock_data: bool = False
+    using_non_real_data: bool = False
     persistence_status: str | None = None
     max_risk_per_trade_pct: float = DEFAULT_MAX_RISK_PER_TRADE_PCT
     max_daily_loss_pct: float = DEFAULT_MAX_DAILY_LOSS_PCT
@@ -123,8 +123,8 @@ def evaluate_small_account_feasibility(request: SmallAccountFeasibilityRequest) 
     if proof_status in {"", "backtest_required", "proof_required"}:
         warnings.append("proof_not_ready_for_small_account")
 
-    if request.using_mock_data:
-        warnings.append("mock_data_used_for_small_account_feasibility")
+    if request.using_non_real_data:
+        warnings.append("non_real_data_used_for_small_account_feasibility")
 
     if str(request.persistence_status or "").lower() in {"memory_fallback", "unavailable"}:
         warnings.append("persistence_not_confirmed_for_small_account_feasibility")

@@ -235,7 +235,7 @@ type ProviderSummary = {
   detail: string;
   quality: string;
   freshness: string;
-  isMock: boolean;
+  isNonReal: boolean;
   attempts: ProviderAttemptSummary[];
   warnings: string[];
 };
@@ -289,22 +289,22 @@ function summarizeProviderStatus(providerStatus: unknown, fallbackProvider: unkn
   const record = symbolEntry ? asRecord(symbolEntry[1]) : raw;
   const attempts = asList(record.attempts).map((attempt) => providerAttemptStatus(asRecord(attempt)));
   const provider = providerDisplayName(record.provider ?? fallbackProvider ?? attempts.find((attempt) => attempt.status.includes("live"))?.provider);
-  const isMock = Boolean(record.is_mock) || provider.toLowerCase() === "mock";
+  const isNonReal = Boolean(record.is_non_real);
   const quality = text(record.quality_status, attempts.find((attempt) => attempt.status.includes("live")) ? "real" : "unknown");
   const freshness = text(record.freshness_status, "checked per run");
   const rawStatus = text(record.status, "");
-  const hasLiveAttempt = attempts.some((attempt) => attempt.status.includes("live")) || (!isMock && rawStatus === "usable");
-  const status = isMock ? "Blocked non-real data" : hasLiveAttempt ? "Configured and live" : rawStatus || "Not configured";
+  const hasLiveAttempt = attempts.some((attempt) => attempt.status.includes("live")) || (!isNonReal && rawStatus === "usable");
+  const status = isNonReal ? "Blocked non-real data" : hasLiveAttempt ? "Configured and live" : rawStatus || "Not configured";
   const warnings = asList(record.warnings).map((warning) => text(warning)).filter(Boolean);
 
   return {
     symbol,
     provider,
     status,
-    detail: isMock ? "Non-real market data was detected and must not be used." : hasLiveAttempt ? "Real market data is being used for workflow readiness." : "No live provider is currently usable.",
+    detail: isNonReal ? "Non-real market data was detected and must not be used." : hasLiveAttempt ? "Real market data is being used for workflow readiness." : "No live provider is currently usable.",
     quality,
     freshness,
-    isMock,
+    isNonReal,
     attempts,
     warnings,
   };
@@ -525,13 +525,13 @@ function ProviderStatusCard({ summary }: { summary: ProviderSummary }) {
         </div>
         <div className="rounded-2xl border border-emerald-300/20 bg-black/25 p-4">
           <div className="mb-3 flex flex-wrap items-center gap-2">
-            <Badge tone={summary.status === "Configured and live" ? "safe" : summary.isMock ? "warn" : "blocked"}>{summary.status}</Badge>
+            <Badge tone={summary.status === "Configured and live" ? "safe" : summary.isNonReal ? "warn" : "blocked"}>{summary.status}</Badge>
             <Badge tone="paper">{summary.symbol}</Badge>
           </div>
           <div className="grid gap-2">
             <Metric label="Freshness" value={summary.freshness} tone={summary.freshness === "fresh" ? "text-emerald-100" : "text-amber-100"} />
             <Metric label="Quality" value={summary.quality} />
-            <Metric label="Mock data" value={summary.isMock ? "yes" : "no"} tone={summary.isMock ? "text-amber-100" : "text-emerald-100"} />
+            <Metric label="NonReal data" value={summary.isNonReal ? "yes" : "no"} tone={summary.isNonReal ? "text-amber-100" : "text-emerald-100"} />
           </div>
         </div>
       </div>
@@ -600,7 +600,7 @@ function RunWorkflowPanel({ onRun, busy }: { onRun: (symbols: string, stopStage:
             className="mt-2 w-full rounded-xl border border-white/10 bg-black/30 px-3 py-2 text-sm normal-case tracking-normal text-slate-100 outline-none focus:border-emerald-400/50"
             placeholder="Leave blank to scan the real market"
           />
-          <span className="mt-1 block text-xs normal-case tracking-normal text-slate-500">Blank means scanner/provider discovery. No mock data or default ticker is used.</span>
+          <span className="mt-1 block text-xs normal-case tracking-normal text-slate-500">Blank means scanner/provider discovery. No non_real data or default ticker is used.</span>
         </label>
         <label className="text-xs font-semibold uppercase tracking-[0.14em] text-slate-500">
           Stop stage
@@ -1047,7 +1047,7 @@ export default function DayTradingWorkflowPage() {
             <Card title="Data Status" error={data.readiness.error}>
               <div className="grid gap-2 md:grid-cols-2">
                 <Metric label="source_mode" value={text(run?.source_mode)} />
-                <Metric label="using_mock_data" value={text(run?.using_mock_data ?? false)} />
+                <Metric label="using_non_real_data" value={text(run?.using_non_real_data ?? false)} />
                 <Metric label="provider_status" value={text(run?.provider_status ?? dataPipeline.provider_status)} />
                 <Metric label="provider_name" value={text(run?.provider_name ?? dataPipeline.provider_name)} />
                 <Metric label="usable_symbols" value={text(run?.usable_symbols)} />

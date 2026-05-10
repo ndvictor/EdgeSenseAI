@@ -104,13 +104,13 @@ function ResearchEvidenceContent() {
   const [artifacts, setArtifacts] = useState<Record<string, unknown>[]>([]);
   const [latestSig, setLatestSig] = useState<Record<string, unknown> | null>(null);
 
-  const [scoreJson, setScoreJson] = useState('{"symbol":"AMD","horizon":"day_trading","scores":{}}');
-  const [btJson, setBtJson] = useState('{"symbol":"AMD","backtest_run_id":"bt_ui_1","strategy_key":"stock_day_trading"}');
+  const [scoreJson, setScoreJson] = useState('{"symbol":"","horizon":"day_trading","scores":{}}');
+  const [btJson, setBtJson] = useState('{"symbol":"","backtest_run_id":"bt_ui_1","strategy_key":"stock_day_trading"}');
   const [modelArtJson, setModelArtJson] = useState('{"model_name":"ui_model","artifact_path":"/tmp/qlib_stub","artifact_type":"checkpoint"}');
 
   const [proofSt, setProofSt] = useState<Record<string, unknown> | null>(null);
   const [proofRecs, setProofRecs] = useState<Record<string, unknown>[]>([]);
-  const [proofForm, setProofForm] = useState('{"symbol":"AMD","strategy_key":"stock_day_trading","proof_status":"proof_required","source":"ui"}');
+  const [proofForm, setProofForm] = useState('{"symbol":"","strategy_key":"stock_day_trading","proof_status":"proof_required","source":"ui"}');
 
   const [modelSt, setModelSt] = useState<Record<string, unknown> | null>(null);
   const [modelRecs, setModelRecs] = useState<Record<string, unknown>[]>([]);

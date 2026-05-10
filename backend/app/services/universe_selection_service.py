@@ -162,7 +162,7 @@ def _weighted_universe_ranker_v1(
         blockers.append(f"Market snapshot failed: {exc}"[:200])
         return None
 
-    if snapshot.get("is_mock"):
+    if snapshot.get("is_non_real"):
         blockers.append("Non-real market data detected")
         return None
 

@@ -15,12 +15,12 @@ export function CryptoWorkspace() {
   useEffect(() => {
     Promise.all([
       api.getMarketSnapshots(),
-      api.getModelPipeline("BTC-USD"),
-      api.getAccountFeasibility("BTC-USD"),
-      api.getRiskCheck("BTC-USD"),
+      api.getModelPipeline(""),
+      api.getAccountFeasibility(""),
+      api.getRiskCheck(""),
     ])
       .then(([snapshots, pipelineResult, feasibilityResult, riskResult]) => {
-        setSnapshot(snapshots.find((item) => item.symbol === "BTC-USD") ?? snapshots[0]);
+        setSnapshot(snapshots[0]);
         setPipeline(pipelineResult);
         setFeasibility(feasibilityResult);
         setRisk(riskResult);
