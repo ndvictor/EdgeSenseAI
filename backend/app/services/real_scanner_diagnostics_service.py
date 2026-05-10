@@ -6,25 +6,26 @@ from uuid import uuid4
 
 from app.core.effective_runtime import effective_str
 from app.services.market_condition_scanner_service import _relative_volume, _session_state, _spread_bps
+from app.services.feature_enrichment_service import FeatureEnrichmentService, NormalizedScannerFeatureRow
 from app.services.market_data_service import MarketDataService
 
 
 REJECTION_REASONS = (
     "missing_price",
     "missing_volume",
-    "missing_relative_volume",
-    "relative_volume_too_low",
     "missing_spread",
     "spread_too_wide",
     "dollar_volume_too_low",
-    "price_out_of_range",
     "market_closed",
     "provider_unavailable",
     "stale_data",
+    "non_real_data",
+    "synthetic_data",
 )
 
 _ALLOWED_SCAN_SESSIONS = {"regular", "market_open", "open", "premarket", "unknown"}
 _MARKET_DATA = MarketDataService()
+_ENRICH = FeatureEnrichmentService()
 
 
 def _utc_now() -> str:
@@ -133,8 +134,6 @@ def _evaluate_symbol(symbol: str, snapshot: dict[str, Any]) -> tuple[list[str], 
         reasons.append("stale_data")
     if price is None or price <= 0:
         reasons.append("missing_price")
-    elif not (2.0 <= price <= 100.0):
-        reasons.append("price_out_of_range")
     if volume is None or volume <= 0:
         reasons.append("missing_volume")
     if relative_volume is None:
@@ -166,6 +165,32 @@ def _evaluate_symbol(symbol: str, snapshot: dict[str, Any]) -> tuple[list[str], 
     return reasons, metrics
 
 
+def _metrics_from_enriched(row: NormalizedScannerFeatureRow, *, candidate_source: str) -> dict[str, Any]:
+    return {
+        "symbol": row.symbol,
+        "last_price": row.last_price,
+        "volume": row.volume,
+        "avg_volume": row.avg_volume,
+        "relative_volume": row.relative_volume,
+        "spread_bps": row.spread_bps,
+        "dollar_volume": row.dollar_volume,
+        "vwap": row.vwap,
+        "rsi": row.rsi,
+        "macd_signal": row.macd_signal,
+        "provider_name": row.provider_primary,
+        "provider_chain": row.provider_chain,
+        "data_quality": row.data_quality,
+        "feature_quality": row.feature_quality,
+        "field_sources": row.field_sources,
+        "hard_blockers": row.hard_blockers,
+        "soft_warnings": row.soft_warnings,
+        "relative_volume_status": row.relative_volume_status,
+        "spread_status": row.spread_status,
+        "source": candidate_source,
+        "candidate_source": candidate_source,
+    }
+
+
 def build_scanner_diagnostics(
     *,
     symbols: list[str] | None,
@@ -188,24 +213,38 @@ def build_scanner_diagnostics(
     fallback_provider: str | None = None
     fallback_reason: str | None = None
 
-    for symbol in clean_symbols:
-        snapshot = _MARKET_DATA.get_market_snapshot(symbol, source=requested_source)
-        actual_provider = snapshot.get("provider") or provider_name
-        if snapshot.get("provider"):
-            provider_name = str(snapshot.get("provider"))
-        if _has_provider_data(snapshot):
+    enriched_rows = _ENRICH.enrich(clean_symbols, requested_source=requested_source, strategy_key="stock_day_trading", max_candidates=max_candidates)
+
+    for row in enriched_rows:
+        provider_name = provider_name or row.provider_primary
+        if row.data_quality == "real" and "provider_unavailable" not in row.hard_blockers:
             provider_data_count += 1
-        fallback_provider, fallback_reason = _merge_fallback_details(fallback_provider, fallback_reason, snapshot, provider_priority)
-        reasons, metrics = _evaluate_symbol(symbol, snapshot)
-        metrics["provider_name"] = metrics.get("provider_name") or actual_provider
-        metrics["source"] = candidate_source
+
+        # Best-effort preserve old fallback fields from MarketDataService snapshots.
+        # (Enrichment owns provider chain; this remains for legacy visibility only.)
+        try:
+            snap = _MARKET_DATA.get_market_snapshot(row.symbol, source=requested_source)
+            fallback_provider, fallback_reason = _merge_fallback_details(fallback_provider, fallback_reason, snap, provider_priority)
+        except Exception:
+            pass
+
+        metrics = _metrics_from_enriched(row, candidate_source=candidate_source)
+        reasons = list(row.hard_blockers)
+
         if reasons:
             for reason in reasons:
-                if reason in rejection_counts:
-                    rejection_counts[reason] += 1
-            rejected.append(metrics)
+                if reason == "synthetic_data":
+                    key = "synthetic_data"
+                elif reason == "non_real_data":
+                    key = "non_real_data"
+                else:
+                    key = reason
+                if key in rejection_counts:
+                    rejection_counts[key] += 1
+            rejected.append({**metrics, "rejection_reasons": reasons})
             continue
-        selected.append({**metrics, "score": 0.8, "source": candidate_source, "candidate_source": candidate_source})
+
+        selected.append({**metrics, "score": 0.8})
 
     status = "candidate_selected" if selected else ("data_unavailable" if clean_symbols and provider_data_count == 0 else "no_qualified_setup")
     diagnostics = {
