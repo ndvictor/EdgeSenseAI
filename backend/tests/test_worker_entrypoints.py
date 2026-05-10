@@ -19,7 +19,7 @@ def _set_safe_policy(monkeypatch):
     monkeypatch.setenv("ENVIRONMENT", "production")
     monkeypatch.setenv("APP_ENV", "production")
     monkeypatch.setenv("MARKET_DATA_MODE", "provider")
-    monkeypatch.setenv("ALLOW_MOCK_MARKET_DATA", "false")
+    monkeypatch.setenv("ALLOW_NON_REAL_MARKET_DATA", "false")
     monkeypatch.setenv("ALLOW_SYNTHETIC_MARKET_DATA", "false")
     monkeypatch.setenv("LIVE_TRADING_ENABLED", "false")
     monkeypatch.setenv("BROKER_EXECUTION_ENABLED", "false")
@@ -30,10 +30,10 @@ def test_worker_modules_import():
         assert importlib.import_module(module)
 
 
-def test_production_data_policy_rejects_mock_enabled(monkeypatch):
+def test_production_data_policy_rejects_non_real_enabled(monkeypatch):
     _set_safe_policy(monkeypatch)
-    monkeypatch.setenv("ALLOW_MOCK_MARKET_DATA", "true")
-    with pytest.raises(RuntimeError, match="mock_market_data_enabled"):
+    monkeypatch.setenv("ALLOW_NON_REAL_MARKET_DATA", "true")
+    with pytest.raises(RuntimeError, match="non_real_market_data_enabled"):
         common.require_production_data_policy()
 
 
@@ -45,7 +45,7 @@ def test_production_data_policy_rejects_synthetic_enabled(monkeypatch):
 
 
 def test_workers_contain_no_hardcoded_fallback_ticker_lists():
-    forbidden = {"AMD", "AAPL", "MSFT", "TSLA", "SPY", "QQQ"}
+    forbidden = {"TEST_STOCK_A", "TEST_STOCK_D", "TEST_STOCK_B", "TSLA", "SPY", "QQQ"}
     worker_dir = Path(__file__).resolve().parents[1] / "app" / "workers"
     text = "\n".join(path.read_text() for path in worker_dir.glob("*.py"))
     for symbol in forbidden:

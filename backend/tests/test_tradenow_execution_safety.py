@@ -23,7 +23,7 @@ def test_tradenow_order_dry_run_does_not_require_broker_keys():
     response = client.post(
         "/api/tradenow/orders",
         json={
-            "symbol": "AAPL",
+            "symbol": "TEST_STOCK_D",
             "side": "buy",
             "qty": 1,
             "type": "market",
@@ -37,7 +37,7 @@ def test_tradenow_order_dry_run_does_not_require_broker_keys():
     assert payload["status"] == "dry_run"
     assert payload["broker_response"] is None
     assert payload["asset_class"] == "stock"
-    assert payload["submitted_payload"]["symbol"] == "AAPL"
+    assert payload["submitted_payload"]["symbol"] == "TEST_STOCK_D"
 
 
 def test_tradenow_order_blocks_without_human_approval():
@@ -45,7 +45,7 @@ def test_tradenow_order_blocks_without_human_approval():
     response = client.post(
         "/api/tradenow/orders",
         json={
-            "symbol": "AAPL",
+            "symbol": "TEST_STOCK_D",
             "side": "buy",
             "qty": 1,
             "type": "market",
@@ -62,10 +62,10 @@ def test_tradenow_order_blocks_without_human_approval():
 def test_tradenow_supports_alpaca_paper_asset_classes_in_dry_run():
     update_trade_now_config(TradeNowConfigUpdate(user_enabled=True, execution_mode="dry_run"))
     examples = [
-        {"asset_class": "stock", "symbol": "AAPL", "time_in_force": "day"},
+        {"asset_class": "stock", "symbol": "TEST_STOCK_D", "time_in_force": "day"},
         {"asset_class": "etf", "symbol": "SPY", "time_in_force": "day"},
         {"asset_class": "crypto", "symbol": "BTC/USD", "time_in_force": "gtc"},
-        {"asset_class": "option", "symbol": "AAPL260116C00200000", "time_in_force": "day", "type": "limit", "limit_price": 1.25},
+        {"asset_class": "option", "symbol": "TEST_STOCK_D260116C00200000", "time_in_force": "day", "type": "limit", "limit_price": 1.25},
     ]
     for example in examples:
         response = client.post(
@@ -132,7 +132,7 @@ def test_autonomous_execution_defaults_blocked():
             "workflow_run_id": "workflow-test-1",
             "recommendation_id": "rec-test-1",
             "strategy_key": "stock_day_trading",
-            "symbol": "AAPL",
+            "symbol": "TEST_STOCK_D",
             "side": "buy",
             "qty": 1,
             "type": "market",
@@ -169,7 +169,7 @@ def test_autonomous_execution_requires_risk_gate_and_readiness():
             "source": "strategy_workflow",
             "workflow_run_id": "workflow-test-2",
             "strategy_key": "stock_day_trading",
-            "symbol": "AAPL",
+            "symbol": "TEST_STOCK_D",
             "side": "buy",
             "qty": 1,
             "type": "market",
@@ -203,7 +203,7 @@ def test_autonomous_execution_dry_run_when_all_request_gates_pass_but_env_blocks
             "workflow_run_id": "workflow-test-3",
             "recommendation_id": "rec-test-3",
             "strategy_key": "stock_day_trading",
-            "symbol": "AAPL",
+            "symbol": "TEST_STOCK_D",
             "side": "buy",
             "qty": 1,
             "type": "market",

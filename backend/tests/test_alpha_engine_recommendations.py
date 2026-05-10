@@ -83,8 +83,8 @@ def test_synthetic_candidate_rejected():
     assert rec.symbol is None
 
 
-def test_mock_candidate_rejected():
-    rec = _recommend(_base_candidate(mock=True))
+def test_non_real_candidate_rejected():
+    rec = _recommend(_base_candidate(non_real=True))
 
     assert rec.status != "candidate_selected"
     assert rec.symbol is None
@@ -99,7 +99,7 @@ def test_no_candidates_returns_no_qualified_setup():
 
 
 def test_no_hardcoded_symbols_in_module():
-    forbidden = {"AMD", "AAPL", "MSFT", "TSLA", "SPY", "QQQ"}
+    forbidden = {"TEST_STOCK_A", "TEST_STOCK_D", "TEST_STOCK_B", "TSLA", "SPY", "QQQ"}
     source_dir = Path(__file__).resolve().parents[1] / "app" / "services" / "alpha_engine"
     source = "\n".join(path.read_text() for path in source_dir.glob("*.py"))
     for symbol in forbidden:

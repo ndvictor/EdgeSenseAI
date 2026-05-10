@@ -26,7 +26,7 @@ def test_qlib_score_endpoint_unavailable_returns_placeholder_not_trained(monkeyp
     monkeypatch.setattr(qlib_service, "_probe_qlib", lambda: (False, None, ["qlib_not_installed_or_not_configured"]))
     monkeypatch.setattr(qlib_service, "_db_session", lambda: None)
 
-    response = client.post("/api/qlib/signals/score", json={"symbols": ["AMD"], "symbol": "AMD", "scores": {}})
+    response = client.post("/api/qlib/signals/score", json={"symbols": ["TEST_STOCK_A"], "symbol": "TEST_STOCK_A", "scores": {}})
 
     assert response.status_code == 200
     artifact = response.json()["artifact"]
@@ -35,7 +35,7 @@ def test_qlib_score_endpoint_unavailable_returns_placeholder_not_trained(monkeyp
     assert artifact["qlib_available"] is False
     assert "qlib_unavailable_scores_are_placeholder" in artifact["warnings"]
     assert artifact["metadata"]["trained_model_backed"] is False
-    assert artifact["scores"]["AMD"]["source"] == "placeholder_not_trained"
+    assert artifact["scores"]["TEST_STOCK_A"]["source"] == "placeholder_not_trained"
 
 
 def test_qlib_available_without_model_artifact_marks_scores_unavailable(monkeypatch):
@@ -44,7 +44,7 @@ def test_qlib_available_without_model_artifact_marks_scores_unavailable(monkeypa
     monkeypatch.setattr(qlib_service, "_db_session", lambda: None)
 
     artifact = qlib_service.save_signal_scores(
-        qlib_service.QlibSignalScoreCreate(symbols=["AMD"], symbol="AMD", scores={"AMD": {"score": 0.4}})
+        qlib_service.QlibSignalScoreCreate(symbols=["TEST_STOCK_A"], symbol="TEST_STOCK_A", scores={"TEST_STOCK_A": {"score": 0.4}})
     )
 
     assert artifact.artifact_type == "signal_scores"

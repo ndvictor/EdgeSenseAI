@@ -34,15 +34,15 @@ def _agent_result(agent_key: str, result: dict[str, Any], *, blockers: list[str]
 
 
 def test_data_pipeline_fields_carry_forward_to_state():
-    state = WorkflowCarryForwardState(symbols=["AMD", "MSFT"], source="runtime")
+    state = WorkflowCarryForwardState(symbols=["TEST_STOCK_A", "TEST_STOCK_B"], source="runtime")
     result = {
         "decision": "degraded",
-        "provider_status": {"AMD": {"status": "usable"}, "MSFT": {"status": "blocked"}},
+        "provider_status": {"TEST_STOCK_A": {"status": "usable"}, "TEST_STOCK_B": {"status": "blocked"}},
         "provider_name": "yfinance",
         "source_mode": "runtime",
-        "using_mock_data": False,
-        "usable_symbols": ["AMD"],
-        "rejected_symbols": ["MSFT"],
+        "using_non_real_data": False,
+        "usable_symbols": ["TEST_STOCK_A"],
+        "rejected_symbols": ["TEST_STOCK_B"],
         "latest_snapshot_count": 1,
         "feature_row_count": 1,
         "persistence_status": "memory_fallback",
@@ -55,11 +55,11 @@ def test_data_pipeline_fields_carry_forward_to_state():
     apply_stage_carryforward(agent_key="data_readiness_agent", agent_result=_agent_result("data_readiness_agent", result), state=state)
 
     assert state.source_mode == "runtime"
-    assert state.using_mock_data is False
-    assert state.usable_symbols == ["AMD"]
-    assert state.rejected_symbols == ["MSFT"]
-    assert state.symbols == ["AMD"]
-    assert state.selected_symbol == "AMD"
+    assert state.using_non_real_data is False
+    assert state.usable_symbols == ["TEST_STOCK_A"]
+    assert state.rejected_symbols == ["TEST_STOCK_B"]
+    assert state.symbols == ["TEST_STOCK_A"]
+    assert state.selected_symbol == "TEST_STOCK_A"
     assert state.kafka_status == "configured_optional_not_active"
     assert state.feature_row_count == 1
 
@@ -87,9 +87,9 @@ def test_watchlist_builder_splits_manual_seeds_and_discovery_after_carry_forward
             (),
             {
                 "sanitized_inputs": {
-                    "symbols": ["AMD"],
-                    "workflow_request_symbols": ["MSFT"],
-                    "usable_symbols": ["AMD"],
+                    "symbols": ["TEST_STOCK_A"],
+                    "workflow_request_symbols": ["TEST_STOCK_B"],
+                    "usable_symbols": ["TEST_STOCK_A"],
                     "source": "runtime",
                     "asset_class": "stock",
                     "horizon": "day_trading",
@@ -100,9 +100,9 @@ def test_watchlist_builder_splits_manual_seeds_and_discovery_after_carry_forward
         )(),
     )
 
-    assert captured["seed_symbols"] == ["MSFT"]
-    assert captured["discovery_symbols"] == ["AMD"]
-    assert out["tool_response"]["symbols"] == ["MSFT"]
+    assert captured["seed_symbols"] == ["TEST_STOCK_B"]
+    assert captured["discovery_symbols"] == ["TEST_STOCK_A"]
+    assert out["tool_response"]["symbols"] == ["TEST_STOCK_B"]
 
 
 @pytest.fixture()
@@ -136,11 +136,11 @@ def _orchestrator_memory(monkeypatch):
                 "data_readiness_agent",
                 {
                     "decision": "data_ready",
-                    "provider_status": {"AMD": {"status": "usable"}},
+                    "provider_status": {"TEST_STOCK_A": {"status": "usable"}},
                     "provider_name": "yfinance",
                     "source_mode": req.inputs["source"],
-                    "using_mock_data": False,
-                    "usable_symbols": ["AMD"],
+                    "using_non_real_data": False,
+                    "usable_symbols": ["TEST_STOCK_A"],
                     "rejected_symbols": [],
                     "latest_snapshot_count": 1,
                     "feature_row_count": 1,
@@ -152,8 +152,8 @@ def _orchestrator_memory(monkeypatch):
                 },
                 warnings=["kafka_optional_not_active"],
             )
-        assert req.inputs["usable_symbols"] == ["AMD"]
-        return _agent_result("watchlist_builder_agent", {"symbols": ["AMD"], "selected_candidate": "AMD"})
+        assert req.inputs["usable_symbols"] == ["TEST_STOCK_A"]
+        return _agent_result("watchlist_builder_agent", {"symbols": ["TEST_STOCK_A"], "selected_candidate": "TEST_STOCK_A"})
 
     monkeypatch.setattr(orchestrator_service, "create_workflow_run", fake_create_workflow_run)
     monkeypatch.setattr(orchestrator_service, "create_agent_run", fake_create_agent_run)
@@ -161,16 +161,16 @@ def _orchestrator_memory(monkeypatch):
 
 def test_orchestrator_dry_run_response_includes_data_pipeline_fields(_orchestrator_memory):
     run = orchestrator_service.run_workflow(
-        orchestrator_service.OrchestratorRunRequest(dry_run=True, source="runtime", symbols=["AMD"], allow_submit=False, stop_at_stage=2)
+        orchestrator_service.OrchestratorRunRequest(dry_run=True, source="runtime", symbols=["TEST_STOCK_A"], allow_submit=False, stop_at_stage=2)
     )
 
     assert run.source_mode == "runtime"
-    assert run.using_mock_data is False
-    assert run.usable_symbols == ["AMD"]
+    assert run.using_non_real_data is False
+    assert run.usable_symbols == ["TEST_STOCK_A"]
     assert run.latest_snapshot_count == 1
     assert run.feature_row_count == 1
     assert run.persistence_status == "memory_fallback"
     assert run.freshness_status == "fresh"
     assert run.kafka_status == "configured_optional_not_active"
     timeline = {row["agent_key"]: row for row in run.stage_timeline}
-    assert timeline["watchlist_builder_agent"]["pipeline_inputs_snapshot"]["usable_symbols"] == ["AMD"]
+    assert timeline["watchlist_builder_agent"]["pipeline_inputs_snapshot"]["usable_symbols"] == ["TEST_STOCK_A"]

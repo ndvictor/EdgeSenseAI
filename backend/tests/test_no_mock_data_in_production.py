@@ -3,12 +3,12 @@ from __future__ import annotations
 import pytest
 
 
-def test_resolved_market_provider_mock_blocked_in_production(monkeypatch: pytest.MonkeyPatch) -> None:
+def test_resolved_market_provider_non_real_blocked_in_production(monkeypatch: pytest.MonkeyPatch) -> None:
     monkeypatch.setenv("ENVIRONMENT", "production")
     monkeypatch.setenv("MARKET_DATA_PROVIDER", "yfinance")
     from app.main import _resolved_market_provider
 
-    assert _resolved_market_provider("mock") == "not_configured"
+    assert _resolved_market_provider("disabled_test_provider") == "not_configured"
 
 
 def test_edge_signals_empty_in_production(monkeypatch: pytest.MonkeyPatch) -> None:

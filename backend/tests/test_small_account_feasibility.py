@@ -6,9 +6,9 @@ from app.services.small_account_feasibility.service import SmallAccountFeasibili
 def _request(**overrides):
     payload = {
         "account_equity": 1000.0,
-        "symbols": ["AMD"],
-        "usable_symbols": ["AMD"],
-        "selected_symbol": "AMD",
+        "symbols": ["TEST_STOCK_A"],
+        "usable_symbols": ["TEST_STOCK_A"],
+        "selected_symbol": "TEST_STOCK_A",
         "latest_price": 25.0,
         "spread_bps": 5.0,
         "avg_dollar_volume": 50_000_000.0,
@@ -17,7 +17,7 @@ def _request(**overrides):
         "day_trades_used": 0,
         "proof_status": "paper_passed",
         "source_mode": "runtime",
-        "using_mock_data": False,
+        "using_non_real_data": False,
         "persistence_status": "persisted",
     }
     payload.update(overrides)
@@ -36,7 +36,7 @@ def test_valid_liquid_symbol_passes():
     out = evaluate_small_account_feasibility(_request())
 
     assert out.decision == "pass"
-    assert out.feasible_symbols == ["AMD"]
+    assert out.feasible_symbols == ["TEST_STOCK_A"]
     assert out.blockers == []
 
 
@@ -89,11 +89,11 @@ def test_high_price_warns_and_degrades():
     assert "latest_price_above_small_account_preferred_max" in out.warnings
 
 
-def test_mock_data_warns_but_does_not_block_by_itself():
-    out = evaluate_small_account_feasibility(_request(using_mock_data=True))
+def test_non_real_data_warns_but_does_not_block_by_itself():
+    out = evaluate_small_account_feasibility(_request(using_non_real_data=True))
 
     assert out.decision == "degraded"
-    assert "mock_data_used_for_small_account_feasibility" in out.warnings
+    assert "non_real_data_used_for_small_account_feasibility" in out.warnings
     assert out.blockers == []
 
 

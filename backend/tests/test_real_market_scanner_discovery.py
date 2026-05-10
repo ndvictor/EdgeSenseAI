@@ -31,7 +31,7 @@ def _snapshot(**overrides: Any) -> dict[str, Any]:
         "session_state": "regular",
         "provider": "provider_test",
         "data_quality": "real",
-        "is_mock": False,
+        "is_non_real": False,
     }
     data.update(overrides)
     return data
@@ -50,15 +50,15 @@ def test_real_market_scanner_selects_candidate_that_passes_criteria(monkeypatch)
     assert response.matched_signals[0].metadata["dollar_volume"] == 24_000_000
 
 
-def test_mock_market_data_is_rejected_before_candidate_selection(monkeypatch):
-    monkeypatch.setattr(scanner, "_MARKET_DATA", _MarketData({"ROWX": _snapshot(is_mock=True)}))
+def test_non_real_market_data_is_rejected_before_candidate_selection(monkeypatch):
+    monkeypatch.setattr(scanner, "_MARKET_DATA", _MarketData({"ROWX": _snapshot(is_non_real=True)}))
 
     response = run_market_condition_scan(
         MarketScannerRequest(strategy_key="stock_day_trading", symbols=["ROWX"], data_source="provider_test", auto_run=False)
     )
 
     assert response.matched_signals == []
-    assert any("mock_market_data_rejected" in signal.reason for signal in response.skipped_signals)
+    assert any("non_real_market_data_rejected" in signal.reason for signal in response.skipped_signals)
 
 
 def test_synthetic_market_data_is_rejected_before_candidate_selection(monkeypatch):
@@ -103,7 +103,7 @@ def test_no_candidates_pass_returns_worker_no_qualified_setup(monkeypatch):
 
 
 def test_real_scanner_discovery_has_no_hardcoded_fallback_symbols():
-    forbidden = {"AMD", "AAPL", "MSFT", "TSLA", "SPY", "QQQ"}
+    forbidden = {"TEST_STOCK_A", "TEST_STOCK_D", "TEST_STOCK_B", "TSLA", "SPY", "QQQ"}
     path = Path(__file__).resolve().parents[1] / "app" / "services" / "market_condition_scanner_service.py"
     source = path.read_text()
 

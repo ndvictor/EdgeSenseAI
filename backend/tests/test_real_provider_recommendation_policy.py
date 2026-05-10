@@ -27,9 +27,9 @@ def test_empty_symbols_recommendation_policy_uses_discovery_not_manual_symbol_bl
         glue_agents,
         "build_watchlist",
         lambda **_kwargs: {
-            "symbols": ["MSFT"],
-            "ranked_candidates": [{"symbol": "MSFT", "source_type": "scanner", "provider": "yfinance"}],
-            "selected_candidate": "MSFT",
+            "symbols": ["TEST_STOCK_B"],
+            "ranked_candidates": [{"symbol": "TEST_STOCK_B", "source_type": "scanner", "provider": "yfinance"}],
+            "selected_candidate": "TEST_STOCK_B",
             "candidate_source": "scanner/provider",
             "raw_candidate_count": 1,
             "filtered_candidate_count": 1,
@@ -52,6 +52,6 @@ def test_empty_symbols_recommendation_policy_uses_discovery_not_manual_symbol_bl
 
     assert "no_symbols_selected" not in run.blockers
     assert run.recommendation["status"] == "candidate_selected"
-    assert run.recommendation["symbol"] == "MSFT"
-    assert run.recommendation["mock_data_used"] is False
+    assert run.recommendation["symbol"] == "TEST_STOCK_B"
+    assert run.recommendation["non_real_data_used"] is False
     assert run.recommendation["synthetic_data_used"] is False

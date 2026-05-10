@@ -25,7 +25,7 @@ def _fake_data_ready(symbol: str):
         relative_volume=1.0,
         spread_percent=0.02,
         provider="yfinance",
-        is_mock=False,
+        is_non_real=False,
         data_quality="real",
     )
     report = SimpleNamespace(quality_status="pass", freshness_status="fresh", blockers=[], warnings=[])
@@ -77,7 +77,7 @@ def test_orchestrator_returns_structured_blocked_when_freshness_unavailable(monk
             "horizon": "day_trading",
             "mode": "paper_first",
             "source": "runtime",
-            "symbols": ["MSFT"],
+            "symbols": ["TEST_STOCK_B"],
             "max_candidates": 5,
             "stop_at_stage": 10,
             "dry_run": True,
@@ -100,7 +100,7 @@ def test_orchestrator_returns_structured_blocked_when_freshness_unavailable(monk
     assert run["broker_called"] is False
     assert run["llm_used"] is False
     assert run["recommendation"]["status"] in {"data_unavailable", "no_qualified_setup"}
-    assert run["recommendation"]["mock_data_used"] is False
+    assert run["recommendation"]["non_real_data_used"] is False
     assert run["recommendation"]["synthetic_data_used"] is False
     assert run["recommendation"]["symbol"] is None
 
@@ -126,6 +126,6 @@ def test_runtime_empty_symbols_do_not_fall_back_to_amd():
     assert run["submitted_order"] is False
     assert run["broker_called"] is False
     assert run["llm_used"] is False
-    assert run["recommendation"]["mock_data_used"] is False
+    assert run["recommendation"]["non_real_data_used"] is False
     assert run["recommendation"]["synthetic_data_used"] is False
-    assert "AMD" not in str(run)
+    assert "TEST_STOCK_A" not in str(run)

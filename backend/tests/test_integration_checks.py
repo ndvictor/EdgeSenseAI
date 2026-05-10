@@ -22,9 +22,8 @@ def test_integration_checks_run_subset():
     r = client.post(
         "/api/integration-checks/run",
         json={
-            "symbols": ["SPY"],
-            "source": "mock",
-            "allow_mock": True,
+            "symbols": [],
+            "source": "auto",
             "checks": [
                 "ranking_model",
                 "risk_check",
@@ -50,7 +49,7 @@ def test_integration_checks_run_subset():
 def test_integration_checks_no_secrets_in_response():
     r = client.post(
         "/api/integration-checks/run",
-        json={"symbols": ["AAPL"], "checks": ["alerts"], "allow_mock": True},
+        json={"symbols": ["TEST_STOCK_D"], "checks": ["alerts"]},
     )
     assert r.status_code == 200
     text = r.text

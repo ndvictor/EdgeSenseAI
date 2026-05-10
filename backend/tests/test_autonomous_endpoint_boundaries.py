@@ -56,7 +56,7 @@ def _force_memory_persistence(monkeypatch):
     def fake_create_agent_run(req: AgentRunRequest) -> AgentRunResult:
         inputs = dict(req.inputs or {})
         agent_key = req.agent_key
-        symbol = str(inputs.get("symbol") or inputs.get("selected_symbol") or (inputs.get("symbols") or ["AMD"])[0]).upper()
+        symbol = str(inputs.get("symbol") or inputs.get("selected_symbol") or (inputs.get("symbols") or ["TEST_STOCK_A"])[0]).upper()
         result: dict[str, Any] = {"status": "ok", "warnings": [], "blockers": []}
         if agent_key == "market_condition_agent":
             result["market_context"] = {"regime": "risk_on", "volatility_state": "normal", "liquidity_state": "good"}
@@ -117,7 +117,7 @@ def _run_orchestrator(payload: dict[str, Any] | None = None) -> dict[str, Any]:
     body = {
         "dry_run": True,
         "allow_submit": False,
-        "symbols": ["AMD"],
+        "symbols": ["TEST_STOCK_A"],
         "source": "manual",
         "stop_at_stage": 100,
     }
@@ -167,15 +167,15 @@ def test_orchestrator_stage_timeline_uses_default_stage_plan():
 
 
 def test_selected_symbol_carries_from_watchlist_into_downstream_snapshots():
-    run = _run_orchestrator({"symbols": ["AMD"]})
+    run = _run_orchestrator({"symbols": ["TEST_STOCK_A"]})
     timeline = _timeline_by_agent(run)
 
     watchlist_snapshot = timeline["watchlist_builder_agent"]["pipeline_inputs_snapshot"]
     downstream_snapshot = timeline["strategy_selection_agent"]["pipeline_inputs_snapshot"]
 
-    assert watchlist_snapshot["selected_symbol"] == "AMD"
-    assert downstream_snapshot["selected_symbol"] == "AMD"
-    assert downstream_snapshot["symbol"] == "AMD"
+    assert watchlist_snapshot["selected_symbol"] == "TEST_STOCK_A"
+    assert downstream_snapshot["selected_symbol"] == "TEST_STOCK_A"
+    assert downstream_snapshot["symbol"] == "TEST_STOCK_A"
 
 
 def test_execution_planner_uses_small_account_default_in_orchestrator_context():
@@ -205,7 +205,7 @@ def test_orchestrator_snapshots_include_small_account_fields():
     assert snapshot["small_account_decision"] == "pass"
     assert snapshot["max_risk_dollars"] == 5.0
     assert snapshot["max_daily_loss_dollars"] == 15.0
-    assert snapshot["feasible_symbols"] == ["AMD"]
+    assert snapshot["feasible_symbols"] == ["TEST_STOCK_A"]
 
 
 def test_orchestrator_response_does_not_leak_legacy_10000_account_default():
@@ -266,7 +266,7 @@ def test_dry_run_governance_blockers_continue_with_trace():
     assert "live_trading_blocked_v1" in run["governance_blockers"]
     assert run["preview_continued_despite_governance_blockers"] is True
     assert run["source_mode"] == "runtime"
-    assert run["using_mock_data"] is False
+    assert run["using_non_real_data"] is False
     assert run["allow_submit"] is False
     assert run["submitted_order"] is False
     assert run["broker_called"] is False

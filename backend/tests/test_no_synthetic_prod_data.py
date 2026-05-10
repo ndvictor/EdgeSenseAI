@@ -4,7 +4,7 @@ from app.services.workflow_orchestrator.models import OrchestratorRunRequest
 import app.services.workflow_orchestrator.service as orchestrator_service
 
 
-def test_empty_symbol_production_run_keeps_mock_and_synthetic_flags_false(monkeypatch):
+def test_empty_symbol_production_run_keeps_non_real_and_synthetic_flags_false(monkeypatch):
     import app.services.agent_runtime.wrappers.glue_agents as glue_agents
 
     monkeypatch.setattr(
@@ -51,8 +51,8 @@ def test_empty_symbol_production_run_keeps_mock_and_synthetic_flags_false(monkey
         )
     )
 
-    assert run.using_mock_data is False
-    assert run.recommendation["mock_data_used"] is False
+    assert run.using_non_real_data is False
+    assert run.recommendation["non_real_data_used"] is False
     assert run.recommendation["synthetic_data_used"] is False
     assert run.submitted_order is False
     assert run.broker_called is False

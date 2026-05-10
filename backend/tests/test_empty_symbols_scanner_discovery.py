@@ -54,15 +54,15 @@ def test_empty_symbols_uses_scanner_discovery_candidates(monkeypatch):
     def fake_watchlist(**kwargs):
         calls.append(kwargs)
         return {
-            "symbols": ["MSFT"],
-            "ranked_candidates": [{"symbol": "MSFT", "source_type": "scanner", "provider": "yfinance"}],
-            "selected_candidate": "MSFT",
+            "symbols": ["TEST_STOCK_B"],
+            "ranked_candidates": [{"symbol": "TEST_STOCK_B", "source_type": "scanner", "provider": "yfinance"}],
+            "selected_candidate": "TEST_STOCK_B",
             "candidate_source": "scanner/provider",
             "raw_candidate_count": 1,
             "filtered_candidate_count": 1,
             "blockers": [],
             "warnings": [],
-            "recommendation": {"status": "candidate_selected", "symbol": "MSFT", "mock_data_used": False, "synthetic_data_used": False},
+            "recommendation": {"status": "candidate_selected", "symbol": "TEST_STOCK_B", "non_real_data_used": False, "synthetic_data_used": False},
             "next_action": "Proceed to strategy selection.",
         }
 
@@ -76,13 +76,13 @@ def test_empty_symbols_uses_scanner_discovery_candidates(monkeypatch):
     assert calls[0]["seed_symbols"] == []
     assert "no_symbols_selected" not in run["blockers"]
     assert run["recommendation"]["status"] == "candidate_selected"
-    assert run["recommendation"]["symbol"] == "MSFT"
-    assert run["recommendation"]["mock_data_used"] is False
+    assert run["recommendation"]["symbol"] == "TEST_STOCK_B"
+    assert run["recommendation"]["non_real_data_used"] is False
     assert run["recommendation"]["synthetic_data_used"] is False
     assert run["submitted_order"] is False
     assert run["broker_called"] is False
     assert run["llm_used"] is False
-    assert "AMD" not in str(run)
+    assert "TEST_STOCK_A" not in str(run)
 
 
 def test_empty_symbols_no_candidates_returns_no_qualified_setup(monkeypatch):
@@ -100,7 +100,7 @@ def test_empty_symbols_no_candidates_returns_no_qualified_setup(monkeypatch):
             "filtered_candidate_count": 0,
             "blockers": ["no_scanner_candidates_passed_filters"],
             "warnings": [],
-            "recommendation": {"status": "no_qualified_setup", "symbol": None, "mock_data_used": False, "synthetic_data_used": False},
+            "recommendation": {"status": "no_qualified_setup", "symbol": None, "non_real_data_used": False, "synthetic_data_used": False},
             "next_action": "No provider-backed scanner/candidate symbols are available.",
         },
     )
@@ -112,12 +112,12 @@ def test_empty_symbols_no_candidates_returns_no_qualified_setup(monkeypatch):
     assert "no_symbols_selected" not in run["blockers"]
     assert run["recommendation"]["status"] == "no_qualified_setup"
     assert run["recommendation"]["symbol"] is None
-    assert run["recommendation"]["mock_data_used"] is False
+    assert run["recommendation"]["non_real_data_used"] is False
     assert run["recommendation"]["synthetic_data_used"] is False
     assert run["submitted_order"] is False
     assert run["broker_called"] is False
     assert run["llm_used"] is False
-    assert "AMD" not in str(run)
+    assert "TEST_STOCK_A" not in str(run)
 
 
 def test_empty_symbols_provider_unavailable_returns_data_unavailable(monkeypatch):
@@ -135,7 +135,7 @@ def test_empty_symbols_provider_unavailable_returns_data_unavailable(monkeypatch
             "filtered_candidate_count": 0,
             "blockers": ["scanner_or_provider_unavailable"],
             "warnings": ["provider unavailable"],
-            "recommendation": {"status": "data_unavailable", "symbol": None, "mock_data_used": False, "synthetic_data_used": False},
+            "recommendation": {"status": "data_unavailable", "symbol": None, "non_real_data_used": False, "synthetic_data_used": False},
             "next_action": "Provider-backed discovery failed.",
         },
     )
@@ -146,9 +146,9 @@ def test_empty_symbols_provider_unavailable_returns_data_unavailable(monkeypatch
     run = response.json()["run"]
     assert "no_symbols_selected" not in run["blockers"]
     assert run["recommendation"]["status"] == "data_unavailable"
-    assert run["recommendation"]["mock_data_used"] is False
+    assert run["recommendation"]["non_real_data_used"] is False
     assert run["recommendation"]["synthetic_data_used"] is False
     assert run["submitted_order"] is False
     assert run["broker_called"] is False
     assert run["llm_used"] is False
-    assert "AMD" not in str(run)
+    assert "TEST_STOCK_A" not in str(run)

@@ -21,7 +21,7 @@ def test_empty_symbols_enters_discovery_mode_without_inventing_symbols(monkeypat
     assert "no_symbols_selected" not in out["warnings"]
     assert "no_manual_symbols_using_scanner_discovery" in out["warnings"]
     assert out["next_agent"] == "watchlist_builder_agent"
-    assert out["using_mock_data"] is False
+    assert out["using_non_real_data"] is False
 
 
 def test_empty_symbols_hydrates_from_worker_feed_when_present(monkeypatch):
@@ -59,7 +59,7 @@ def _fake_resp(
     price: float | None = 100.0,
     quality: str = "pass",
     provider: str = "yfinance",
-    is_mock: bool = False,
+    is_non_real: bool = False,
     warnings: list[str] | None = None,
     blockers: list[str] | None = None,
     provider_statuses: list[dict[str, Any]] | None = None,
@@ -74,8 +74,8 @@ def _fake_resp(
         relative_volume=1.1,
         spread_percent=0.01,
         provider=provider,
-        is_mock=is_mock,
-        data_quality="mock" if is_mock else "real",
+        is_non_real=is_non_real,
+        data_quality="non_real" if is_non_real else "real",
     )
     report = SimpleNamespace(
         quality_status=quality,
@@ -97,7 +97,7 @@ def test_kafka_and_qlib_do_not_block_dry_run_data_readiness(monkeypatch):
     monkeypatch.setattr(adapter, "run_feature_store_pipeline", lambda req: _fake_resp(req.symbol))
     monkeypatch.setattr(adapter, "get_feature_row_persistence_status", lambda _row_id: {"persisted": False, "data_source": "in_memory_fallback"})
 
-    out = adapter.evaluate_data_readiness(symbols=["AMD"], asset_class="stock", horizon="day_trading", source="runtime")
+    out = adapter.evaluate_data_readiness(symbols=["TEST_STOCK_A"], asset_class="stock", horizon="day_trading", source="runtime")
 
     assert out["decision"] in {"data_ready", "degraded"}
     assert out["kafka_status"] == "configured_optional_not_active"
@@ -121,10 +121,10 @@ def test_provider_throttling_returns_degraded_warning_not_crash(monkeypatch):
     monkeypatch.setattr(adapter, "run_feature_store_pipeline", fake_pipeline)
     monkeypatch.setattr(adapter, "get_feature_row_persistence_status", lambda _row_id: {"persisted": False, "data_source": "in_memory_fallback"})
 
-    out = adapter.evaluate_data_readiness(symbols=["AMD"], asset_class="stock", horizon="day_trading", source="runtime")
+    out = adapter.evaluate_data_readiness(symbols=["TEST_STOCK_A"], asset_class="stock", horizon="day_trading", source="runtime")
 
     assert out["decision"] == "degraded"
-    assert out["usable_symbols"] == ["AMD"]
+    assert out["usable_symbols"] == ["TEST_STOCK_A"]
     assert any("HTTP 429" in warning or "fallback used" in warning for warning in out["warnings"])
 
 
@@ -135,7 +135,7 @@ def test_no_usable_symbols_blocks_workflow_data_readiness(monkeypatch):
         lambda req: _fake_resp(req.symbol, price=None, quality="fail", provider="unknown", blockers=["Price is required for feature generation and model routing."]),
     )
 
-    out = adapter.evaluate_data_readiness(symbols=["AMD"], asset_class="stock", horizon="day_trading", source="runtime")
+    out = adapter.evaluate_data_readiness(symbols=["TEST_STOCK_A"], asset_class="stock", horizon="day_trading", source="runtime")
 
     assert out["decision"] == "blocked"
     assert "no_usable_symbols" in out["blockers"]
@@ -144,38 +144,38 @@ def test_no_usable_symbols_blocks_workflow_data_readiness(monkeypatch):
 
 def test_partial_usable_symbols_degrades_but_continues(monkeypatch):
     def fake_pipeline(req):
-        if req.symbol == "AMD":
-            return _fake_resp("AMD")
+        if req.symbol == "TEST_STOCK_A":
+            return _fake_resp("TEST_STOCK_A")
         return _fake_resp(req.symbol, price=None, quality="fail", blockers=["missing price"])
 
     monkeypatch.setattr(adapter, "run_feature_store_pipeline", fake_pipeline)
     monkeypatch.setattr(adapter, "get_feature_row_persistence_status", lambda _row_id: {"persisted": False, "data_source": "in_memory_fallback"})
 
-    out = adapter.evaluate_data_readiness(symbols=["AMD", "MSFT"], asset_class="stock", horizon="day_trading", source="runtime")
+    out = adapter.evaluate_data_readiness(symbols=["TEST_STOCK_A", "TEST_STOCK_B"], asset_class="stock", horizon="day_trading", source="runtime")
 
     assert out["decision"] == "degraded"
-    assert out["usable_symbols"] == ["AMD"]
-    assert out["rejected_symbols"] == ["MSFT"]
+    assert out["usable_symbols"] == ["TEST_STOCK_A"]
+    assert out["rejected_symbols"] == ["TEST_STOCK_B"]
 
 
-def test_runtime_source_is_preserved_and_mock_source_is_explicit(monkeypatch):
-    monkeypatch.setattr(adapter, "run_feature_store_pipeline", lambda req: _fake_resp(req.symbol, is_mock=req.source == "mock", provider=req.source))
+def test_runtime_source_is_preserved_and_non_real_source_is_explicit(monkeypatch):
+    monkeypatch.setattr(adapter, "run_feature_store_pipeline", lambda req: _fake_resp(req.symbol, is_non_real=req.source == "non_real", provider=req.source))
     monkeypatch.setattr(adapter, "get_feature_row_persistence_status", lambda _row_id: {"persisted": False, "data_source": "in_memory_fallback"})
 
-    runtime = adapter.evaluate_data_readiness(symbols=["AMD"], asset_class="stock", horizon="day_trading", source="runtime")
-    mock = adapter.evaluate_data_readiness(symbols=["AMD"], asset_class="stock", horizon="day_trading", source="mock")
+    runtime = adapter.evaluate_data_readiness(symbols=["TEST_STOCK_A"], asset_class="stock", horizon="day_trading", source="runtime")
+    non_real = adapter.evaluate_data_readiness(symbols=["TEST_STOCK_A"], asset_class="stock", horizon="day_trading", source="non_real")
 
     assert runtime["source_mode"] == "runtime"
-    assert runtime["using_mock_data"] is False
-    assert mock["source_mode"] == "mock"
-    assert mock["using_mock_data"] is True
+    assert runtime["using_non_real_data"] is False
+    assert non_real["source_mode"] == "non_real"
+    assert non_real["using_non_real_data"] is True
 
 
 def test_data_readiness_output_includes_required_status_fields(monkeypatch):
     monkeypatch.setattr(adapter, "run_feature_store_pipeline", lambda req: _fake_resp(req.symbol))
     monkeypatch.setattr(adapter, "get_feature_row_persistence_status", lambda _row_id: {"persisted": True, "data_source": "postgres"})
 
-    out = adapter.evaluate_data_readiness(symbols=["AMD"], asset_class="stock", horizon="day_trading", source="runtime")
+    out = adapter.evaluate_data_readiness(symbols=["TEST_STOCK_A"], asset_class="stock", horizon="day_trading", source="runtime")
 
     for key in ["provider_status", "feature_store_status", "persistence_status", "freshness_status", "kafka_status"]:
         assert key in out

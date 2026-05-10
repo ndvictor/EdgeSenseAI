@@ -67,7 +67,7 @@ def test_qlib_research_agent_does_not_block_when_qlib_unavailable(monkeypatch):
 
 
 def test_orchestrator_carry_forward_includes_qlib_proof_model_strategy_evidence_fields():
-    state = WorkflowCarryForwardState(symbols=["AMD"])
+    state = WorkflowCarryForwardState(symbols=["TEST_STOCK_A"])
 
     apply_stage_carryforward(
         agent_key="qlib_research_agent",
@@ -115,7 +115,7 @@ def test_orchestrator_carry_forward_includes_qlib_proof_model_strategy_evidence_
                 "account_equity": 1000.0,
                 "max_risk_dollars": 5.0,
                 "max_daily_loss_dollars": 15.0,
-                "feasible_symbols": ["AMD"],
+                "feasible_symbols": ["TEST_STOCK_A"],
                 "rejected_symbols": [],
                 "blockers": [],
                 "warnings": ["proof_not_ready_for_small_account"],
@@ -136,5 +136,5 @@ def test_orchestrator_carry_forward_includes_qlib_proof_model_strategy_evidence_
     assert state.small_account_decision == "degraded"
     assert state.max_risk_dollars == 5.0
     assert state.max_daily_loss_dollars == 15.0
-    assert state.feasible_symbols == ["AMD"]
+    assert state.feasible_symbols == ["TEST_STOCK_A"]
     assert "proof_not_ready_for_small_account" in state.small_account_warnings

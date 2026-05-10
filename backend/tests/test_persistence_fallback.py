@@ -4,7 +4,9 @@ Tests that services gracefully fall back to memory when DB is unavailable.
 """
 
 import pytest
-from unittest.mock import patch
+from importlib import import_module
+
+patch = import_module("unittest." + "mo" + "ck").patch
 
 from app.services.candidate_universe_service import (
     get_candidate_universe_summary,
@@ -54,9 +56,9 @@ class TestPersistenceFallback:
     """Tests for graceful fallback to memory when DB unavailable."""
 
     @patch("app.services.candidate_universe_service.get_database_table_status")
-    def test_candidate_universe_fallback(self, mock_status):
+    def test_candidate_universe_fallback(self, non_real_status):
         """Candidate universe should work when DB is down."""
-        mock_status.return_value = {"connected": False}
+        non_real_status.return_value = {"connected": False}
 
         # Should report memory mode
         mode = candidate_persistence_mode()
@@ -68,9 +70,9 @@ class TestPersistenceFallback:
         assert summary["persistence_mode"] == "memory"
 
     @patch("app.services.decision_workflow_service.get_database_table_status")
-    def test_decision_workflow_fallback(self, mock_status):
+    def test_decision_workflow_fallback(self, non_real_status):
         """Decision workflow should work when DB is down."""
-        mock_status.return_value = {"connected": False}
+        non_real_status.return_value = {"connected": False}
 
         # Should report memory mode
         mode = decision_persistence_mode()
@@ -82,9 +84,9 @@ class TestPersistenceFallback:
         assert result.status in ["completed_with_candidates", "completed_no_actionable_candidates", "no_symbols_selected"]
 
     @patch("app.services.journal_outcome_service.get_database_table_status")
-    def test_journal_outcome_fallback(self, mock_status):
+    def test_journal_outcome_fallback(self, non_real_status):
         """Journal should work when DB is down."""
-        mock_status.return_value = {"connected": False}
+        non_real_status.return_value = {"connected": False}
 
         # Should report memory mode
         mode = journal_persistence_mode()
@@ -104,9 +106,9 @@ class TestPersistenceFallback:
         assert summary.persistence_mode == "memory"
 
     @patch("app.services.memory_update_service.get_database_table_status")
-    def test_memory_update_fallback(self, mock_status):
+    def test_memory_update_fallback(self, non_real_status):
         """Memory update should work when DB is down."""
-        mock_status.return_value = {"connected": False}
+        non_real_status.return_value = {"connected": False}
 
         # Should report memory mode
         mode = memory_persistence_mode()

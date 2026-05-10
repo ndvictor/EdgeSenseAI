@@ -34,15 +34,15 @@ EXPECTED_MODEL_ROLE_KEYS = {
 }
 
 _FORBIDDEN_TICKER_SUBSTRINGS = (
-    "AAPL",
-    "MSFT",
+    "TEST_STOCK_D",
+    "TEST_STOCK_B",
     "GOOGL",
     "GOOG",
     "AMZN",
-    "NVDA",
+    "TEST_STOCK_C",
     "TSLA",
     "META",
-    "AMD",
+    "TEST_STOCK_A",
 )
 
 

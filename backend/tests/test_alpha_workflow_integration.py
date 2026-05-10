@@ -72,8 +72,8 @@ def test_synthetic_feature_row_is_rejected():
     assert out["alpha_selected_symbol"] is None
 
 
-def test_mock_feature_row_is_rejected():
-    out = run_alpha_engine_selection({"feature_rows": [_real_feature_row(mock=True)]}, {"workflow_run_id": "wr_alpha_mock"})
+def test_non_real_feature_row_is_rejected():
+    out = run_alpha_engine_selection({"feature_rows": [_real_feature_row(non_real=True)]}, {"workflow_run_id": "wr_alpha_non_real"})
 
     assert out["alpha_status"] != "candidate_selected"
     assert out["alpha_selected_symbol"] is None

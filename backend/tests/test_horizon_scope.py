@@ -30,7 +30,7 @@ def test_orchestrator_accepts_day_trading(monkeypatch):
         lambda _req: SimpleNamespace(decision="allowed", blockers=[], warnings=[], next_action="ok", model_dump=lambda: {}),
     )
 
-    run = orchestrator_service.run_workflow(OrchestratorRunRequest(horizon="day_trading", dry_run=True, symbols=["AMD"]))
+    run = orchestrator_service.run_workflow(OrchestratorRunRequest(horizon="day_trading", dry_run=True, symbols=["TEST_STOCK_A"]))
 
     assert run.status == "completed_preview"
     assert "horizon_not_supported_for_autonomous_workflow" not in run.blockers
@@ -41,7 +41,7 @@ def test_orchestrator_blocks_swing_trading_horizon(monkeypatch):
     monkeypatch.setattr(orchestrator_service, "_db_session", lambda: None)
     monkeypatch.setattr(orchestrator_service, "write_event", lambda *_args, **_kwargs: None)
 
-    run = orchestrator_service.run_workflow(OrchestratorRunRequest(horizon="swing_trading", dry_run=True, symbols=["AMD"]))
+    run = orchestrator_service.run_workflow(OrchestratorRunRequest(horizon="swing_trading", dry_run=True, symbols=["TEST_STOCK_A"]))
 
     assert run.status == "blocked"
     assert "horizon_not_supported_for_autonomous_workflow" in run.blockers
@@ -55,7 +55,7 @@ def test_governance_blocks_non_day_trading_horizon(monkeypatch):
     monkeypatch.setattr(governance_service, "get_active_workflow_state", lambda *_args, **_kwargs: None)
     monkeypatch.setattr(governance_service, "effective_bool", lambda key: key in {"WORKFLOW_ENABLED", "PAPER_TRADING_ENABLED", "REQUIRE_HUMAN_APPROVAL"})
 
-    response = check_governance(WorkflowGovernanceCheckRequest(horizon="overnight", symbols=["AMD"]))
+    response = check_governance(WorkflowGovernanceCheckRequest(horizon="overnight", symbols=["TEST_STOCK_A"]))
 
     assert response.decision == "blocked"
     assert "horizon_not_supported_for_autonomous_workflow" in response.blockers
@@ -133,7 +133,7 @@ def test_model_evidence_with_swing_horizon_is_not_selected():
 def test_proof_record_with_swing_horizon_is_ignored_for_day_trading(monkeypatch):
     swing_proof = ProofRegistryRecordOut(
         proof_id="proof_swing",
-        symbol="AMD",
+        symbol="TEST_STOCK_A",
         asset_class="stock",
         horizon="swing",
         strategy_key="stock_day_trading",
@@ -184,8 +184,8 @@ def test_qlib_swing_artifact_is_not_promoted_into_workflow(monkeypatch):
         artifact_status="recorded",
         model_key=None,
         strategy_key="stock_day_trading",
-        symbol="AMD",
-        symbols=["AMD"],
+        symbol="TEST_STOCK_A",
+        symbols=["TEST_STOCK_A"],
         asset_class="stock",
         horizon="swing",
         qlib_available=True,

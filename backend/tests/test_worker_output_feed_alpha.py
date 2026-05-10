@@ -105,11 +105,11 @@ def test_no_candidates_still_returns_no_qualified_setup():
     assert out["alpha_selected_symbol"] is None
 
 
-def test_mock_and_synthetic_candidates_are_rejected():
+def test_non_real_and_synthetic_candidates_are_rejected():
     worker_output_store.save_feature_rows(
         worker_run_id="feature-test-3",
         provider_name="provider_test",
-        feature_rows=[_real_feature_row(symbol="MOCKX", mock=True), _real_feature_row(symbol="SYNX", synthetic=True)],
+        feature_rows=[_real_feature_row(symbol="NON_REALX", non_real=True), _real_feature_row(symbol="SYNX", synthetic=True)],
     )
 
     watchlist = build_watchlist(asset_class="stock", horizon="day_trading", orchestrator_mode=True, seed_symbols=[])
@@ -121,7 +121,7 @@ def test_mock_and_synthetic_candidates_are_rejected():
 
 
 def test_no_hardcoded_fallback_symbols_in_worker_feed_path():
-    forbidden = {"AMD", "AAPL", "MSFT", "TSLA", "SPY", "QQQ"}
+    forbidden = {"TEST_STOCK_A", "TEST_STOCK_D", "TEST_STOCK_B", "TSLA", "SPY", "QQQ"}
     root = Path(__file__).resolve().parents[1] / "app" / "services"
     files = [
         root / "worker_output_store.py",
@@ -153,7 +153,7 @@ def test_worker_status_latest_endpoint_reports_counts():
     worker_output_store.save_market_snapshots(
         worker_run_id="ingest-test-1",
         provider_name="provider_test",
-        snapshots=[{"symbol": "ROWX", "price": 10.0, "provider": "provider_test", "data_quality": "real", "is_mock": False}],
+        snapshots=[{"symbol": "ROWX", "price": 10.0, "provider": "provider_test", "data_quality": "real", "is_non_real": False}],
     )
     worker_output_store.save_feature_rows(
         worker_run_id="feature-test-4",

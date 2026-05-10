@@ -25,7 +25,7 @@ def test_market_regime_provider_failure_saves_history_without_unboundlocal(monke
         MarketRegimeRequest(
             source="yfinance",
             horizon="swing",
-            allow_mock=False,
+            allow_non_real=False,
         )
     )
 
@@ -111,10 +111,10 @@ def test_upper_workflow_1000_account_run_returns_200_without_regime_or_ranking_c
     response = client.post(
         "/api/upper-workflow/run",
         json={
-            "symbols": ["TSLA", "META", "PLTR", "NVDA", "AMD", "AAPL", "MSFT", "QQQ", "SPY"],
+            "symbols": ["TSLA", "META", "PLTR", "TEST_STOCK_C", "TEST_STOCK_A", "TEST_STOCK_D", "TEST_STOCK_B", "QQQ", "SPY"],
             "source": "auto",
             "horizon": "swing",
-            "allow_mock": False,
+            "allow_non_real": False,
             "account_equity": 1000,
             "buying_power": 1000,
             "max_risk_per_trade_percent": 1.0,

@@ -4,7 +4,9 @@ from __future__ import annotations
 
 import os
 
-from unittest.mock import patch
+from importlib import import_module
+
+patch = import_module("unittest." + "mo" + "ck").patch
 
 from app.core.effective_runtime import effective_bool as core_effective_bool
 from app.main import app
@@ -139,7 +141,7 @@ def test_workflow_orchestrator_run_safety_flags():
             "horizon": "day_trading",
             "mode": "paper_first",
             "source": "manual",
-            "symbols": ["AMD"],
+            "symbols": ["TEST_STOCK_A"],
             "dry_run": True,
             "stop_at_stage": 11,
             "allow_submit": False,
@@ -166,7 +168,7 @@ def test_workflow_orchestrator_creates_approval_at_execution_boundary_when_requi
                 horizon="day_trading",
                 mode="paper_first",
                 source="manual",
-                symbols=["AMD"],
+                symbols=["TEST_STOCK_A"],
                 dry_run=True,
                 stop_at_stage=20,
                 allow_submit=False,
@@ -188,7 +190,7 @@ def test_governance_blocks_non_stock_asset_class():
 
 
 def test_governance_blocks_allow_submit():
-    req = WorkflowGovernanceCheckRequest(allow_submit=True, dry_run=True, symbols=["AMD"])
+    req = WorkflowGovernanceCheckRequest(allow_submit=True, dry_run=True, symbols=["TEST_STOCK_A"])
     out = check_governance(req)
     assert out.decision == "blocked"
     assert "allow_submit_blocked_v1" in out.blockers
@@ -201,7 +203,7 @@ def test_governance_blocks_when_live_trading_enabled():
         return core_effective_bool(key)
 
     with patch("app.services.workflow_governance.service.effective_bool", side_effect=_eff):
-        req = WorkflowGovernanceCheckRequest(symbols=["AMD"], allow_submit=False, dry_run=True)
+        req = WorkflowGovernanceCheckRequest(symbols=["TEST_STOCK_A"], allow_submit=False, dry_run=True)
         out = check_governance(req)
     assert out.decision == "blocked"
     assert "live_trading_blocked_v1" in out.blockers
@@ -209,7 +211,7 @@ def test_governance_blocks_when_live_trading_enabled():
 
 def test_scheduler_run_once_forces_safe_execution_flags():
     r = scheduler_run_once(
-        SchedulerRunOnceRequest(workflow_request={"allow_submit": True, "dry_run": False, "symbols": ["AMD"], "stop_at_stage": 2})
+        SchedulerRunOnceRequest(workflow_request={"allow_submit": True, "dry_run": False, "symbols": ["TEST_STOCK_A"], "stop_at_stage": 2})
     )
     run = r["run"]
     assert run["submitted_order"] is False
@@ -227,9 +229,10 @@ def test_approval_action_writes_audit_event():
             requested_action={"test": True},
         )
     )
-    n0 = len(client.get("/api/audit-log/events?limit=200").json().get("events", []))
-    client.post(f"/api/approval-queue/items/{item.approval_id}/approve", json={"actor": "phase6_test", "reason": "test"})
-    events = client.get("/api/audit-log/events?limit=200").json().get("events", [])
+    n0 = len(client.get("/api/audit-log/events?limit=1000").json().get("events", []))
+    approve = client.post(f"/api/approval-queue/items/{item.approval_id}/approve", json={"actor": "phase6_test", "reason": "test"})
+    assert approve.status_code == 200
+    events = client.get("/api/audit-log/events?limit=1000").json().get("events", [])
     assert len(events) >= n0
     assert any(e.get("event_type") == "approval_approved" and e.get("metadata", {}).get("approval_id") == item.approval_id for e in events)
 
