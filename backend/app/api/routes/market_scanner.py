@@ -8,6 +8,8 @@ from app.orchestration.schedulers.edge_scheduler import run_scheduled_market_sca
 from app.services.candidate_universe_service import add_candidate
 from app.services.market_condition_scanner_service import MarketScannerRequest, MarketScannerResponse, run_market_condition_scan
 from app.services.market_scan_run_service import MarketScanRun, get_latest_scan_run, get_scan_run, list_scan_runs
+from app.services.real_scanner_diagnostics_service import build_scanner_diagnostics
+from app.services.worker_output_store import save_scanner_candidates
 from pydantic import BaseModel
 
 router = APIRouter()
@@ -18,6 +20,12 @@ class PromoteScannerToCandidatesRequest(BaseModel):
     max_candidates: int = 25
     horizon: str = "swing"
     source: str = "scanner"
+
+
+class ManualRealProviderScanRequest(BaseModel):
+    symbols: list[str]
+    max_candidates: int = 10
+    data_source: str = "auto"
 
 
 class PromoteScannerToCandidatesResponse(BaseModel):
@@ -32,6 +40,38 @@ class PromoteScannerToCandidatesResponse(BaseModel):
 @router.post("/market-scanner/scan", response_model=MarketScannerResponse)
 def post_market_scanner_scan(request: MarketScannerRequest):
     return run_market_condition_scan(request)
+
+
+@router.post("/scanner/run")
+def post_manual_real_provider_scan(request: ManualRealProviderScanRequest):
+    diagnostics = build_scanner_diagnostics(
+        symbols=request.symbols,
+        max_candidates=request.max_candidates,
+        requested_source=request.data_source,
+        source="manual_request",
+        candidate_source="manual_request",
+    )
+    save_scanner_candidates(
+        worker_run_id=str(diagnostics["scanner_run_id"]),
+        provider_name=diagnostics.get("provider_name"),
+        candidates=list(diagnostics.get("selected_candidates") or []),
+        rejected_candidates=list(diagnostics.get("rejected_candidates") or []),
+        status=str(diagnostics.get("status") or "no_qualified_setup"),
+        warnings=[],
+        blockers=[] if diagnostics.get("selected_candidates") else [str(diagnostics.get("reason") or "no_qualified_setup")],
+        run_source="manual_request",
+        candidate_source="manual_request",
+        diagnostics=diagnostics,
+    )
+    return {
+        "status": diagnostics.get("status"),
+        "source": "manual_request",
+        "candidate_source": "manual_request",
+        "scanner_diagnostics": diagnostics,
+        "submitted_order": False,
+        "broker_called": False,
+        "llm_used": False,
+    }
 
 
 @router.get("/market-scanner/runs", response_model=list[MarketScanRun])

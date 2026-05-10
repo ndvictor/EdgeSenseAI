@@ -3,8 +3,8 @@ from __future__ import annotations
 import os
 from typing import Any
 
-from app.services.candidate_universe_service import CandidateSourceType, add_candidate, get_persistence_mode, list_candidates
-from app.services.market_condition_scanner_service import MarketScannerRequest, run_market_condition_scan
+from app.services.candidate_universe_service import get_persistence_mode, list_candidates
+from app.services.real_scanner_diagnostics_service import build_scanner_diagnostics
 from app.services.universe_selection_service import get_latest_universe_selection
 from app.services.worker_output_store import record_worker_status, save_scanner_candidates
 from app.workers.common import clean_symbols, get_worker_run_id, print_summary, require_production_data_policy, setup_worker_logging
@@ -39,46 +39,61 @@ def run() -> dict[str, Any]:
         candidate_source = "latest_universe_selection"
 
     if not seed_symbols:
+        diagnostics = build_scanner_diagnostics(
+            symbols=[],
+            max_candidates=max_candidates,
+            requested_source=provider,
+            source="real_provider",
+            candidate_source="scanner",
+            scanner_run_id=worker_run_id,
+        )
         summary = {
             "worker": "market-scanner-worker",
             "worker_run_id": worker_run_id,
-            "provider": provider,
-            "candidate_source": "none",
+            "scanner_run_id": worker_run_id,
+            "provider": diagnostics.get("provider_name") or provider,
+            "provider_name": diagnostics.get("provider_name") or provider,
+            "provider_priority": diagnostics.get("provider_priority") or [],
+            "provider_configured": diagnostics.get("provider_configured") or False,
+            "candidate_source": "scanner",
             "recommendation_status": "no_qualified_setup",
             "raw_candidate_count": 0,
             "filtered_candidate_count": 0,
             "selected_symbols": [],
             "rejected_count": 0,
-            "blockers": ["no_scanner_candidates_passed_filters"],
+            "blockers": ["no_real_discovery_universe_configured"],
             "warnings": warnings,
             "persistence_status": get_persistence_mode(),
+            "scanner_diagnostics": diagnostics,
         }
         record_worker_status(
             worker="market-scanner-worker",
             status="no_qualified_setup",
             worker_run_id=worker_run_id,
-            provider=provider,
-            candidate_source="none",
+            provider=diagnostics.get("provider_name") or provider,
+            provider_name=diagnostics.get("provider_name") or provider,
+            provider_priority=diagnostics.get("provider_priority") or [],
+            provider_configured=diagnostics.get("provider_configured") or False,
+            source="real_provider",
+            candidate_source="scanner",
             selected_symbols=[],
             raw_candidate_count=0,
             filtered_candidate_count=0,
             warnings=warnings,
-            blockers=["no_scanner_candidates_passed_filters"],
+            blockers=["no_real_discovery_universe_configured"],
+            scanner_diagnostics=diagnostics,
         )
         print_summary(summary)
         return summary
 
     try:
-        scan = run_market_condition_scan(
-            MarketScannerRequest(
-                strategy_key=os.environ.get("WORKER_SCANNER_STRATEGY", "multi_factor"),
-                symbols=seed_symbols[:max_candidates],
-                data_source=os.environ.get("MARKET_DATA_PROVIDER", "auto"),
-                auto_run=False,
-                trigger_type="scheduled",
-                trigger_workflow=False,
-                use_latest_watchlist=False,
-            )
+        diagnostics = build_scanner_diagnostics(
+            symbols=seed_symbols[:max_candidates],
+            max_candidates=max_candidates,
+            requested_source=os.environ.get("MARKET_DATA_PROVIDER", "auto"),
+            source="real_provider",
+            candidate_source="scanner",
+            scanner_run_id=worker_run_id,
         )
     except Exception as exc:
         summary = {
@@ -110,42 +125,9 @@ def run() -> dict[str, Any]:
         print_summary(summary)
         return summary
 
-    selected_symbols = clean_symbols([signal.symbol for signal in scan.matched_signals])
-    scanner_candidates: list[dict[str, Any]] = []
-    for signal in scan.matched_signals:
-        metadata = dict(signal.metadata or {})
-        scanner_candidates.append(
-            {
-                "symbol": signal.symbol,
-                "source": "scanner",
-                "provider_name": scan.data_source if scan.data_source != "source_backed" else provider,
-                "last_price": metadata.get("last_price") or metadata.get("price"),
-                "volume": metadata.get("volume"),
-                "avg_volume": metadata.get("avg_volume") or metadata.get("average_volume"),
-                "relative_volume": metadata.get("relative_volume"),
-                "spread_bps": metadata.get("spread_bps"),
-                "vwap": metadata.get("vwap"),
-                "price_above_vwap": metadata.get("price_above_vwap"),
-                "session_state": metadata.get("session_state"),
-                "score": signal.confidence,
-                "signal_key": signal.signal_key,
-                "reason": signal.reason,
-            }
-        )
-        try:
-            add_candidate(
-                symbol=signal.symbol,
-                asset_class="stock",
-                horizon="day_trading",
-                source_type=CandidateSourceType.SCANNER,
-                source_detail=f"Worker scanner run {scan.run_id}: {signal.signal_key}",
-                priority_score=round(float(signal.confidence or 0) * 100, 2),
-                notes=signal.reason,
-            )
-        except Exception as exc:
-            warnings.append(f"candidate_persistence_failed:{exc}")
-
-    if not selected_symbols and scan.data_source == "placeholder":
+    scanner_candidates = list(diagnostics.get("selected_candidates") or [])
+    selected_symbols = clean_symbols([candidate.get("symbol") for candidate in scanner_candidates])
+    if diagnostics.get("status") == "data_unavailable":
         blockers.append("scanner_or_provider_unavailable")
         recommendation_status = "data_unavailable"
     elif not selected_symbols:
@@ -157,25 +139,36 @@ def run() -> dict[str, Any]:
     summary = {
         "worker": "market-scanner-worker",
         "worker_run_id": worker_run_id,
-        "provider": provider,
-        "candidate_source": candidate_source,
+        "scanner_run_id": worker_run_id,
+        "provider": diagnostics.get("provider_name") or provider,
+        "provider_name": diagnostics.get("provider_name") or provider,
+        "provider_priority": diagnostics.get("provider_priority") or [],
+        "provider_configured": diagnostics.get("provider_configured") or False,
+        "feed": diagnostics.get("feed"),
+        "fallback_provider": diagnostics.get("fallback_provider"),
+        "fallback_reason": diagnostics.get("fallback_reason"),
+        "source": "real_provider",
+        "candidate_source": "scanner",
         "recommendation_status": recommendation_status,
         "raw_candidate_count": len(seed_symbols),
         "filtered_candidate_count": len(selected_symbols),
         "selected_symbols": selected_symbols,
-        "rejected_count": len(scan.skipped_signals),
+        "rejected_count": int(diagnostics.get("total_symbols_rejected") or 0),
+        "rejection_counts": diagnostics.get("rejection_counts") or {},
         "blockers": blockers,
-        "warnings": warnings + list(scan.model_dump().get("warnings", []) or []),
+        "warnings": warnings,
         "persistence_status": get_persistence_mode(),
+        "scanner_diagnostics": diagnostics,
     }
     save_scanner_candidates(
         worker_run_id=worker_run_id,
-        provider_name=provider,
+        provider_name=diagnostics.get("provider_name") or provider,
         candidates=scanner_candidates,
-        rejected_candidates=[signal.model_dump() for signal in scan.skipped_signals],
+        rejected_candidates=list(diagnostics.get("rejected_candidates") or []),
         status=recommendation_status,
-        warnings=warnings + list(scan.model_dump().get("warnings", []) or []),
+        warnings=warnings,
         blockers=blockers,
+        diagnostics=diagnostics,
     )
     print_summary(summary)
     return summary

@@ -98,6 +98,7 @@ def save_scanner_candidates(
     blockers: list[str] | None = None,
     run_source: str = RUN_SOURCE_PRODUCTION_SCANNER,
     candidate_source: str = CANDIDATE_SOURCE_SCANNER,
+    diagnostics: dict[str, Any] | None = None,
 ) -> dict[str, Any]:
     rows: list[dict[str, Any]] = []
     for candidate in candidates:
@@ -106,7 +107,7 @@ def save_scanner_candidates(
             continue
         row = {
             "symbol": symbol,
-            "source": "scanner",
+            "source": candidate.get("source") or candidate_source,
             "provider_name": candidate.get("provider_name") or candidate.get("provider") or provider_name,
             "last_price": _float_or_none(candidate.get("last_price") or candidate.get("price") or candidate.get("close")),
             "volume": _float_or_none(candidate.get("volume")),
@@ -139,6 +140,7 @@ def save_scanner_candidates(
         blockers=blockers or [],
         run_source=run_source,
         candidate_source=candidate_source,
+        scanner_diagnostics=diagnostics or {},
     )
 
 
@@ -277,8 +279,19 @@ def get_latest_scanner_candidates(limit: int = 25) -> list[dict[str, Any]]:
     latest = get_latest_worker_status("market-scanner-worker")
     rows = latest.get("scanner_candidates") if isinstance(latest, dict) else None
     if isinstance(rows, list) and rows:
-        return [dict(row) for row in rows if isinstance(row, dict) and not _is_non_real(row)][:limit]
-    return [dict(row) for row in _MEMORY["scanner_candidates"] if not _is_non_real(row)][:limit]
+        return [
+            dict(row)
+            for row in rows
+            if isinstance(row, dict)
+            and not _is_non_real(row)
+            and str(row.get("candidate_source") or CANDIDATE_SOURCE_SCANNER) == CANDIDATE_SOURCE_SCANNER
+        ][:limit]
+    return [
+        dict(row)
+        for row in _MEMORY["scanner_candidates"]
+        if not _is_non_real(row)
+        and str(row.get("candidate_source") or CANDIDATE_SOURCE_SCANNER) == CANDIDATE_SOURCE_SCANNER
+    ][:limit]
 
 
 def _latest_feature_rows_from_db(*, kind: str, limit: int) -> list[dict[str, Any]]:
@@ -334,6 +347,7 @@ def get_latest_worker_output_summary() -> dict[str, Any]:
         persistence_mode = "postgres" if health.get("postgres_persistence_status") == "connected" else "memory"
     return {
         "scanner_worker": scanner_status,
+        "latest_scanner_diagnostics": scanner_status.get("scanner_diagnostics") if isinstance(scanner_status, dict) else None,
         "ingestion_worker": ingestion_status,
         "feature_worker": feature_status,
         "candidate_count": len(candidates),
