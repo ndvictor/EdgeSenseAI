@@ -32,7 +32,7 @@ create_or_update_job() {
     MARKET_DATA_MODE=provider
     MARKET_DATA_PROVIDER=yfinance
     MARKET_DATA_PROVIDER_PRIORITY=polygon,alpaca,yfinance
-    ALLOW_MOCK_MARKET_DATA=false
+    ALLOW_NON_REAL_MARKET_DATA=false
     ALLOW_SYNTHETIC_MARKET_DATA=false
     QLIB_REQUIRED=false
     PAPER_TRADING_ENABLED=true

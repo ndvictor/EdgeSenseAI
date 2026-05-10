@@ -138,8 +138,8 @@ require_false("llm_used")
 if run.get("source_mode") != "runtime":
     print(f"expected source_mode=runtime but got {run.get('source_mode')!r}", file=sys.stderr)
     sys.exit(9)
-if bool(run.get("using_mock_data")):
-    print("runtime source silently became mock data", file=sys.stderr)
+if bool(run.get("using_non_real_data")):
+    print("runtime source silently became non-real data", file=sys.stderr)
     sys.exit(9)
 
 for key in ("provider_status", "feature_store_status", "persistence_status", "freshness_status", "kafka_status"):
@@ -203,14 +203,14 @@ printf '%s' "$final_json" | json_assert_bool_equals "safety.no_default_broker_su
 printf '%s' "$final_json" | json_assert_bool_equals "safety.no_default_live_trading" "true" >/dev/null
 printf '%s' "$final_json" | json_assert_bool_equals "safety.no_llm_decisioning" "true" >/dev/null
 
-note "Running AMD dry-run orchestrator workflow"
+note "Running dry-run orchestrator workflow"
 run_json="$(post_json /api/workflow-orchestrator/run '{
   "workflow_name": "US Stock Day-Trading Paper Workflow v1",
   "asset_class": "stock",
   "horizon": "day_trading",
   "mode": "paper_first",
   "source": "runtime",
-  "symbols": ["AMD"],
+  "symbols": [],
   "max_candidates": 5,
   "stop_at_stage": 9,
   "dry_run": true,
