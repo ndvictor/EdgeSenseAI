@@ -24,8 +24,7 @@ def _no_hard_blockers(row: dict[str, Any]) -> bool:
 def seed_workflow_state_from_scanner_diagnostics(
     state: WorkflowCarryForwardState,
     scanner_diagnostics: dict[str, Any],
-    latest_scanner_status: dict[str, Any],
-    workflow_source: str,
+    latest_scanner_status: dict[str, Any] | None = None,
 ) -> None:
     """Populate state from ``selected_candidates`` (or unblocked watchlist-style lists only).
 
@@ -71,7 +70,7 @@ def seed_workflow_state_from_scanner_diagnostics(
         state.source_mode = str(prov)
         state.provider_name = str(prov)
     elif not state.source_mode:
-        state.source_mode = workflow_source
+        state.source_mode = state.source
 
     merged_ps: dict[str, Any] = dict(state.provider_status)
     merged_ps.update(
@@ -80,7 +79,7 @@ def seed_workflow_state_from_scanner_diagnostics(
             "provider_configured": scanner_diagnostics.get("provider_configured"),
             "alpaca_configured": scanner_diagnostics.get("alpaca_configured"),
             "provider_priority": scanner_diagnostics.get("provider_priority"),
-            "scanner_latest_status": latest_scanner_status,
+            "scanner_latest_status": latest_scanner_status or {},
         }
     )
     state.provider_status = merged_ps

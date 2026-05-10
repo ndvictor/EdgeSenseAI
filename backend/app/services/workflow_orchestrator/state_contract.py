@@ -89,5 +89,5 @@ class WorkflowCarryForwardState(BaseModel):
         data["submitted_order"] = False
         data["broker_called"] = False
         data["llm_used"] = False
-        data.setdefault("llm_used_for_trade_decision", False)
+        data["llm_used_for_trade_decision"] = False
         return data

@@ -61,6 +61,36 @@ def _price_from_worker_row(row: dict[str, Any]) -> float | None:
     return None
 
 
+def _volume_positive_from_row(row: dict[str, Any]) -> bool:
+    raw = row.get("volume")
+    if raw is None:
+        return False
+    try:
+        return float(raw) > 0
+    except (TypeError, ValueError):
+        return False
+
+
+def _scanner_row_ok_for_hydration(sc_row: dict[str, Any] | None) -> bool:
+    """Scanner fallback only when real price + volume exist; no synthetic/non-real/hard blockers."""
+    if not sc_row or not isinstance(sc_row, dict):
+        return False
+    if _price_from_worker_row(sc_row) is None:
+        return False
+    if not _volume_positive_from_row(sc_row):
+        return False
+    hb = sc_row.get("hard_blockers")
+    if isinstance(hb, list) and hb:
+        return False
+    if bool(sc_row.get("synthetic") or sc_row.get("synthetic_data_used")):
+        return False
+    if bool(sc_row.get("non_real") or sc_row.get("is_non_real")):
+        return False
+    if str(sc_row.get("data_quality") or "").lower() == "fail":
+        return False
+    return True
+
+
 def _worker_feed_readiness_payload(
     *,
     source_mode: str,
@@ -336,13 +366,7 @@ def evaluate_data_readiness(
         except Exception as exc:
             sc_row = scanner_by_symbol.get(sym.upper())
             sc_price = _price_from_worker_row(sc_row) if sc_row else None
-            if (
-                sc_row is not None
-                and sc_price is not None
-                and not bool(sc_row.get("synthetic") or sc_row.get("synthetic_data_used"))
-                and not bool(sc_row.get("non_real") or sc_row.get("is_non_real"))
-                and str(sc_row.get("data_quality") or "").lower() != "fail"
-            ):
+            if _scanner_row_ok_for_hydration(sc_row):
                 usable_symbols.append(sym)
                 fr = _feature_row_from_scanner_candidate(sc_row, source_mode=source_mode)
                 feature_rows.append(fr)
@@ -416,13 +440,7 @@ def evaluate_data_readiness(
         else:
             sc_row = scanner_by_symbol.get(sym.upper())
             sc_price = _price_from_worker_row(sc_row) if sc_row else None
-            if (
-                sc_row is not None
-                and sc_price is not None
-                and not bool(sc_row.get("synthetic") or sc_row.get("synthetic_data_used"))
-                and not bool(sc_row.get("non_real") or sc_row.get("is_non_real"))
-                and str(sc_row.get("data_quality") or "").lower() != "fail"
-            ):
+            if _scanner_row_ok_for_hydration(sc_row):
                 usable_symbols.append(sym)
                 fr = _feature_row_from_scanner_candidate(sc_row, source_mode=source_mode)
                 feature_rows.append(fr)
