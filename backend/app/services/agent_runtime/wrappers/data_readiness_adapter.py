@@ -3,6 +3,8 @@ from __future__ import annotations
 from typing import Any
 
 from app.services.feature_store_service import FeatureStoreRunRequest, get_feature_row_persistence_status, run_feature_store_pipeline
+from app.services.persistence_service import get_persistence_status
+from app.services.worker_output_store import get_latest_feature_rows, get_latest_scanner_candidates
 
 
 def _provider_source_for(source_mode: str) -> str:
@@ -44,6 +46,175 @@ def _status_from_persistence(resp: Any) -> str:
     return "unavailable"
 
 
+def _price_from_worker_row(row: dict[str, Any]) -> float | None:
+    for key in ("last_price", "price", "close", "current_price"):
+        raw = row.get(key)
+        if raw is None:
+            continue
+        try:
+            return float(raw)
+        except (TypeError, ValueError):
+            continue
+    return None
+
+
+def _worker_feed_readiness_payload(
+    *,
+    source_mode: str,
+    provider_source: str,
+    max_symbols: int = 5,
+) -> dict[str, Any] | None:
+    """If worker_output_store has recent feature rows or scanner rows, hydrate readiness without inventing symbols."""
+    feature_src = get_latest_feature_rows(50)
+    scanner_src = get_latest_scanner_candidates(50)
+    if not feature_src and not scanner_src:
+        return None
+
+    merged: dict[str, dict[str, Any]] = {}
+    order: list[str] = []
+    for row in feature_src:
+        sym = str(row.get("symbol") or row.get("ticker") or "").strip().upper()
+        if not sym or sym in merged:
+            continue
+        merged[sym] = dict(row)
+        order.append(sym)
+    for row in scanner_src:
+        sym = str(row.get("symbol") or "").strip().upper()
+        if not sym or sym in merged:
+            continue
+        merged[sym] = dict(row)
+        order.append(sym)
+
+    warnings: list[str] = ["worker_output_feed_used"]
+    blockers: list[str] = []
+    provider_status: dict[str, Any] = {}
+    feature_rows: list[dict[str, Any]] = []
+    latest_snapshots: list[dict[str, Any]] = []
+    usable_symbols: list[str] = []
+    rejected_symbols: list[str] = []
+    clean_symbols: list[str] = []
+
+    health = get_persistence_status()
+    pg_ok = health.get("postgres_persistence_status") == "connected"
+    persistence_label = "persisted" if pg_ok else "memory_fallback"
+
+    for sym in order:
+        if len(clean_symbols) >= max_symbols:
+            break
+        row = merged[sym]
+        price = _price_from_worker_row(row)
+        clean_symbols.append(sym)
+        prov = str(row.get("provider_name") or row.get("provider") or "worker_feed")
+        if price is None:
+            rejected_symbols.append(sym)
+            provider_status[sym] = {
+                "provider": prov,
+                "status": "blocked",
+                "is_mock": False,
+                "quality_status": "fail",
+                "freshness_status": "unknown",
+                "blockers": ["missing_price_in_worker_row"],
+                "warnings": [],
+                "attempts": [],
+            }
+            warnings.append(f"{sym}: worker_feed_missing_price")
+            continue
+
+        usable_symbols.append(sym)
+        ts = str(row.get("created_at") or row.get("timestamp") or "")
+        feature_rows.append(
+            {
+                "symbol": sym,
+                "timestamp": ts,
+                "last_price": price,
+                "volume": row.get("volume"),
+                "day_change_pct": row.get("day_change_pct") or row.get("change_percent"),
+                "relative_volume": row.get("relative_volume"),
+                "spread_bps": row.get("spread_bps"),
+                "source_mode": source_mode,
+                "provider_name": prov,
+                "feature_row_id": row.get("feature_row_id") or row.get("id"),
+                "data_quality": row.get("data_quality") or "real",
+            }
+        )
+        latest_snapshots.append(
+            {
+                "symbol": sym,
+                "timestamp": ts,
+                "price": price,
+                "last": price,
+                "close": price,
+                "volume": row.get("volume"),
+                "provider_name": prov,
+                "source_mode": source_mode,
+                "using_mock_data": False,
+            }
+        )
+        provider_status[sym] = {
+            "provider": prov,
+            "status": "usable",
+            "is_mock": False,
+            "quality_status": "pass",
+            "freshness_status": "unknown",
+            "blockers": [],
+            "warnings": [],
+            "attempts": [{"provider": prov, "data_quality": "real", "error": None}],
+        }
+
+    if not usable_symbols:
+        blockers.append("no_usable_symbols")
+
+    if source_mode != "mock" and any(v.get("is_mock") for v in provider_status.values()):
+        blockers.append("unexpected_mock_data_for_non_mock_source")
+
+    if blockers:
+        decision = "blocked"
+    elif rejected_symbols or warnings:
+        decision = "degraded"
+    else:
+        decision = "data_ready"
+
+    provider_names = sorted({str(v.get("provider") or "unknown") for v in provider_status.values()})
+    provider_name = provider_names[0] if len(provider_names) == 1 else ",".join(provider_names) if provider_names else "worker_feed"
+
+    kafka_status = "configured_optional_not_active"
+    if kafka_status not in warnings:
+        warnings.append("kafka_optional_not_active")
+
+    return {
+        "decision": decision,
+        "discovery_mode": False,
+        "provider_status": provider_status,
+        "provider_name": provider_name,
+        "source_mode": source_mode,
+        "using_mock_data": False,
+        "symbols": clean_symbols,
+        "usable_symbols": usable_symbols,
+        "rejected_symbols": rejected_symbols,
+        "symbol_count": len(clean_symbols),
+        "latest_snapshot_status": "available" if latest_snapshots else "missing",
+        "latest_snapshot_count": len(latest_snapshots),
+        "feature_store_status": persistence_label if feature_rows else "unavailable",
+        "feature_row_count": len(feature_rows),
+        "persistence_status": persistence_label if feature_rows else "unavailable",
+        "freshness_status": "unknown",
+        "kafka_status": kafka_status,
+        "blockers": sorted(set(blockers)),
+        "warnings": sorted(set(warnings)),
+        "artifacts": {
+            "provider_status": provider_status,
+            "source_mode": source_mode,
+            "provider_source": provider_source,
+            "feature_rows": feature_rows,
+            "latest_snapshots": latest_snapshots,
+            "kafka_status": kafka_status,
+            "qlib_status": "optional_not_checked",
+        },
+        "next_agent": "market_condition_agent" if decision != "blocked" else None,
+        "next_action": "Proceed to market condition scan." if decision != "blocked" else "Resolve hard data blockers before running the workflow.",
+    }
+
+
 def _provider_warnings(symbol: str, statuses: list[dict[str, Any]]) -> list[str]:
     warnings: list[str] = []
     if len(statuses) > 1:
@@ -75,6 +246,12 @@ def evaluate_data_readiness(*, symbols: list[str], asset_class: str, horizon: st
     freshness_statuses: list[str] = []
 
     if not symbols:
+        worker_payload = _worker_feed_readiness_payload(
+            source_mode=source_mode,
+            provider_source=provider_source,
+        )
+        if worker_payload is not None:
+            return worker_payload
         return {
             "decision": "discovery",
             "discovery_mode": True,

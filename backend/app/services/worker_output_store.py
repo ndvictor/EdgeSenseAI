@@ -4,7 +4,13 @@ from datetime import datetime, timezone
 from typing import Any
 from uuid import uuid4
 
-from app.services.persistence_service import list_feature_store_rows, list_market_scan_runs, save_feature_store_row, save_market_scan_run
+from app.services.persistence_service import (
+    get_persistence_status,
+    list_feature_store_rows,
+    list_market_scan_runs,
+    save_feature_store_row,
+    save_market_scan_run,
+)
 
 
 _MEMORY: dict[str, list[dict[str, Any]]] = {
@@ -238,6 +244,16 @@ def get_latest_worker_output_summary() -> dict[str, Any]:
     candidates = get_latest_scanner_candidates()
     snapshots = get_latest_market_snapshots()
     feature_rows = get_latest_feature_rows()
+    embedded = (
+        scanner_status.get("persistence_status")
+        or ingestion_status.get("persistence_status")
+        or feature_status.get("persistence_status")
+    )
+    if embedded in {"postgres", "memory"}:
+        persistence_mode = embedded
+    else:
+        health = get_persistence_status()
+        persistence_mode = "postgres" if health.get("postgres_persistence_status") == "connected" else "memory"
     return {
         "scanner_worker": scanner_status,
         "ingestion_worker": ingestion_status,
@@ -245,7 +261,7 @@ def get_latest_worker_output_summary() -> dict[str, Any]:
         "candidate_count": len(candidates),
         "snapshot_count": len(snapshots),
         "feature_row_count": len(feature_rows),
-        "persistence_mode": scanner_status.get("persistence_status") or ingestion_status.get("persistence_status") or feature_status.get("persistence_status") or "memory",
+        "persistence_mode": persistence_mode,
     }
 
 

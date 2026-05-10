@@ -265,6 +265,22 @@ jobs:
                 DATABASE_URL="$DATABASE_URL"
           fi
 
+      - name: Sync scheduled worker jobs to same image as API
+        shell: bash
+        run: |
+          IMAGE="$ACR_LOGIN_SERVER/$IMAGE_NAME:${{ github.sha }}"
+          for JOB in edgesenseai-market-scan-job edgesenseai-data-ingest-job edgesenseai-feature-pipe-job; do
+            if az containerapp job show --name "$JOB" --resource-group "$RESOURCE_GROUP" >/dev/null 2>&1; then
+              echo "Updating worker job $JOB -> $IMAGE"
+              az containerapp job update \
+                --name "$JOB" \
+                --resource-group "$RESOURCE_GROUP" \
+                --image "$IMAGE"
+            else
+              echo "Worker job $JOB not found in $RESOURCE_GROUP; create it with scripts/azure-create-workers.sh"
+            fi
+          done
+
       - name: Show Container App URL and image
         shell: bash
         run: |

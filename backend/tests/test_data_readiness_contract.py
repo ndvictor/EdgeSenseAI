@@ -7,7 +7,10 @@ from typing import Any
 import app.services.agent_runtime.wrappers.data_readiness_adapter as adapter
 
 
-def test_empty_symbols_enters_discovery_mode_without_inventing_symbols():
+def test_empty_symbols_enters_discovery_mode_without_inventing_symbols(monkeypatch):
+    monkeypatch.setattr(adapter, "get_latest_feature_rows", lambda limit=25: [])
+    monkeypatch.setattr(adapter, "get_latest_scanner_candidates", lambda limit=25: [])
+
     out = adapter.evaluate_data_readiness(symbols=[], asset_class="stock", horizon="day_trading", source="runtime")
 
     assert out["decision"] == "discovery"
@@ -19,6 +22,35 @@ def test_empty_symbols_enters_discovery_mode_without_inventing_symbols():
     assert "no_manual_symbols_using_scanner_discovery" in out["warnings"]
     assert out["next_agent"] == "watchlist_builder_agent"
     assert out["using_mock_data"] is False
+
+
+def test_empty_symbols_hydrates_from_worker_feed_when_present(monkeypatch):
+    monkeypatch.setattr(adapter, "get_latest_feature_rows", lambda limit=25: [])
+    monkeypatch.setattr(
+        adapter,
+        "get_latest_scanner_candidates",
+        lambda limit=25: [
+            {
+                "symbol": "ROWX",
+                "last_price": 12.5,
+                "volume": 1_000_000,
+                "relative_volume": 2.0,
+                "spread_bps": 5.0,
+                "provider_name": "provider_test",
+                "source": "scanner",
+            }
+        ],
+    )
+
+    out = adapter.evaluate_data_readiness(symbols=[], asset_class="stock", horizon="day_trading", source="manual")
+
+    assert out["discovery_mode"] is False
+    assert out["decision"] in {"data_ready", "degraded"}
+    assert out["usable_symbols"] == ["ROWX"]
+    assert out["feature_row_count"] == 1
+    assert out["latest_snapshot_count"] == 1
+    assert out["artifacts"]["feature_rows"][0]["symbol"] == "ROWX"
+    assert "worker_output_feed_used" in out["warnings"]
 
 
 def _fake_resp(
