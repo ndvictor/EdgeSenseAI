@@ -6,6 +6,7 @@ from typing import Any
 from app.services.candidate_universe_service import list_candidates
 from app.services.market_data_service import MarketDataService
 from app.services.universe_selection_service import get_latest_universe_selection
+from app.services.worker_output_store import get_latest_scanner_candidates, record_worker_status, save_market_snapshots
 from app.workers.common import clean_symbols, get_worker_run_id, print_summary, require_production_data_policy, setup_worker_logging
 
 
@@ -28,6 +29,9 @@ def _symbols_to_ingest(limit: int) -> list[str]:
     symbols = _env_symbols()
     if symbols:
         return symbols[:limit]
+    symbols = clean_symbols([row.get("symbol") for row in get_latest_scanner_candidates(limit)])
+    if symbols:
+        return symbols
     symbols = _candidate_symbols(limit)
     if symbols:
         return symbols
@@ -55,6 +59,17 @@ def run() -> dict[str, Any]:
             "blockers": [],
             "warnings": [],
         }
+        record_worker_status(
+            worker="data-ingestion-worker",
+            status="no_symbols_to_ingest",
+            worker_run_id=worker_run_id,
+            provider=provider,
+            attempted_symbols=[],
+            successful_symbols=[],
+            failed_symbols=[],
+            warnings=[],
+            blockers=[],
+        )
         print_summary(summary)
         return summary
 
@@ -63,6 +78,7 @@ def run() -> dict[str, Any]:
     failed: list[str] = []
     provider_status: dict[str, Any] = {}
     missing_fields: dict[str, list[str]] = {}
+    persisted_snapshots: list[dict[str, Any]] = []
     for symbol in symbols:
         snapshot = service.get_market_snapshot(symbol, source=provider)
         provider_status[symbol] = {
@@ -75,6 +91,7 @@ def run() -> dict[str, Any]:
             missing_fields[symbol] = missing
         if snapshot.get("price") is not None and not snapshot.get("is_mock") and snapshot.get("data_quality") not in {"unavailable", "not_configured"}:
             successful.append(symbol)
+            persisted_snapshots.append({**snapshot, "symbol": symbol})
         else:
             failed.append(symbol)
 
@@ -91,6 +108,16 @@ def run() -> dict[str, Any]:
         "blockers": [] if successful else ["provider_data_unavailable"],
         "warnings": [],
     }
+    status = "data_available" if successful else "data_unavailable"
+    save_market_snapshots(
+        worker_run_id=worker_run_id,
+        provider_name=provider,
+        snapshots=persisted_snapshots,
+        status=status,
+        warnings=[],
+        blockers=[] if successful else ["provider_data_unavailable"],
+    )
+    summary["persistence_status"] = "postgres_or_memory_worker_output_store"
     print_summary(summary)
     return summary
 

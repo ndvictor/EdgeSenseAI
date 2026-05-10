@@ -5,6 +5,8 @@ from typing import Any
 from app.services.candidate_universe_service import list_candidates
 from app.services.feature_store_service import get_latest_feature_rows
 from app.services.universe_selection_service import UniverseSelectionRequest, get_latest_universe_selection, run_universe_selection
+from app.services.worker_output_store import get_latest_feature_rows as get_latest_worker_feature_rows
+from app.services.worker_output_store import get_latest_scanner_candidates
 
 
 def _norm_symbols(raw: list[str] | None) -> list[str]:
@@ -77,6 +79,22 @@ def _symbols_from_candidate_universe(*, asset_class: str, horizon: str, max_pick
     return out
 
 
+def _worker_output_candidates(*, max_pick: int) -> tuple[list[str], list[dict[str, Any]], list[dict[str, Any]]]:
+    scanner_candidates = get_latest_scanner_candidates(max_pick)
+    feature_rows = get_latest_worker_feature_rows(max_pick)
+    seen: set[str] = set()
+    symbols: list[str] = []
+    for row in [*feature_rows, *scanner_candidates]:
+        symbol = str(row.get("symbol") or row.get("ticker") or "").strip().upper()
+        if not symbol or symbol in seen:
+            continue
+        seen.add(symbol)
+        symbols.append(symbol)
+        if len(symbols) >= max_pick:
+            break
+    return symbols, scanner_candidates, feature_rows
+
+
 def build_watchlist(
     *,
     asset_class: str,
@@ -106,6 +124,33 @@ def build_watchlist(
         if ac_raw not in ("stock", "option", "crypto"):
             ac_raw = "stock"
         try:
+            if not seeds:
+                seeds, scanner_candidates, feature_rows = _worker_output_candidates(max_pick=cap)
+                if seeds:
+                    symbols = seeds[:cap]
+                    return {
+                        "decision": "candidate_selected",
+                        "recommendation": {
+                            "status": "candidate_selected",
+                            "symbol": symbols[0],
+                            "mock_data_used": False,
+                            "synthetic_data_used": False,
+                            "reason": None,
+                        },
+                        "symbols": symbols,
+                        "usable_symbols": symbols,
+                        "ranked_candidates": [{"symbol": symbol, "source_type": "scanner"} for symbol in symbols],
+                        "scanner_candidates": scanner_candidates,
+                        "feature_rows": feature_rows,
+                        "source_breakdown": {"scanner": len(scanner_candidates), "feature_rows": len(feature_rows)},
+                        "selected_candidate": symbols[0],
+                        "candidate_source": "scanner",
+                        "raw_candidate_count": len(scanner_candidates) or len(feature_rows),
+                        "filtered_candidate_count": len(symbols),
+                        "blockers": [],
+                        "warnings": [],
+                        "next_action": "Proceed to Alpha Engine selection.",
+                    }
             if not seeds:
                 seeds = _symbols_from_candidate_universe(asset_class=ac_raw, horizon=horizon, max_pick=cap)
                 candidate_source = "candidate_universe" if seeds else candidate_source

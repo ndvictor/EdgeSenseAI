@@ -6,6 +6,7 @@ from typing import Any
 from app.services.candidate_universe_service import CandidateSourceType, add_candidate, get_persistence_mode, list_candidates
 from app.services.market_condition_scanner_service import MarketScannerRequest, run_market_condition_scan
 from app.services.universe_selection_service import get_latest_universe_selection
+from app.services.worker_output_store import record_worker_status, save_scanner_candidates
 from app.workers.common import clean_symbols, get_worker_run_id, print_summary, require_production_data_policy, setup_worker_logging
 
 
@@ -52,6 +53,18 @@ def run() -> dict[str, Any]:
             "warnings": warnings,
             "persistence_status": get_persistence_mode(),
         }
+        record_worker_status(
+            worker="market-scanner-worker",
+            status="no_qualified_setup",
+            worker_run_id=worker_run_id,
+            provider=provider,
+            candidate_source="none",
+            selected_symbols=[],
+            raw_candidate_count=0,
+            filtered_candidate_count=0,
+            warnings=warnings,
+            blockers=["no_scanner_candidates_passed_filters"],
+        )
         print_summary(summary)
         return summary
 
@@ -82,11 +95,43 @@ def run() -> dict[str, Any]:
             "warnings": [str(exc)],
             "persistence_status": get_persistence_mode(),
         }
+        record_worker_status(
+            worker="market-scanner-worker",
+            status="data_unavailable",
+            worker_run_id=worker_run_id,
+            provider=provider,
+            candidate_source=candidate_source,
+            selected_symbols=[],
+            raw_candidate_count=len(seed_symbols),
+            filtered_candidate_count=0,
+            warnings=[str(exc)],
+            blockers=["scanner_or_provider_unavailable"],
+        )
         print_summary(summary)
         return summary
 
     selected_symbols = clean_symbols([signal.symbol for signal in scan.matched_signals])
+    scanner_candidates: list[dict[str, Any]] = []
     for signal in scan.matched_signals:
+        metadata = dict(signal.metadata or {})
+        scanner_candidates.append(
+            {
+                "symbol": signal.symbol,
+                "source": "scanner",
+                "provider_name": scan.data_source if scan.data_source != "source_backed" else provider,
+                "last_price": metadata.get("last_price") or metadata.get("price"),
+                "volume": metadata.get("volume"),
+                "avg_volume": metadata.get("avg_volume") or metadata.get("average_volume"),
+                "relative_volume": metadata.get("relative_volume"),
+                "spread_bps": metadata.get("spread_bps"),
+                "vwap": metadata.get("vwap"),
+                "price_above_vwap": metadata.get("price_above_vwap"),
+                "session_state": metadata.get("session_state"),
+                "score": signal.confidence,
+                "signal_key": signal.signal_key,
+                "reason": signal.reason,
+            }
+        )
         try:
             add_candidate(
                 symbol=signal.symbol,
@@ -123,6 +168,15 @@ def run() -> dict[str, Any]:
         "warnings": warnings + list(scan.model_dump().get("warnings", []) or []),
         "persistence_status": get_persistence_mode(),
     }
+    save_scanner_candidates(
+        worker_run_id=worker_run_id,
+        provider_name=provider,
+        candidates=scanner_candidates,
+        rejected_candidates=[signal.model_dump() for signal in scan.skipped_signals],
+        status=recommendation_status,
+        warnings=warnings + list(scan.model_dump().get("warnings", []) or []),
+        blockers=blockers,
+    )
     print_summary(summary)
     return summary
 

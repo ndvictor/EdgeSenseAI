@@ -122,6 +122,11 @@ def apply_stage_carryforward(*, agent_key: str, agent_result: AgentRunResult, st
         syms = _clean_symbols(tr.get("symbols"))
         if syms:
             state.symbols = syms
+            state.usable_symbols = syms
+        usable = _clean_symbols(tr.get("usable_symbols"))
+        if usable:
+            state.usable_symbols = usable
+            state.symbols = usable
         for attr in ("candidate_source",):
             if tr.get(attr) is not None:
                 setattr(state, attr, str(tr[attr]))

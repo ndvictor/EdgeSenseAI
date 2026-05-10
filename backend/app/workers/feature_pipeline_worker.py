@@ -7,6 +7,7 @@ from app.services.candidate_universe_service import list_candidates
 from app.services.feature_store_service import FeatureStoreRunRequest, get_feature_row_persistence_status, run_feature_store_pipeline
 from app.services.market_data_service import MarketDataService
 from app.services.universe_selection_service import get_latest_universe_selection
+from app.services.worker_output_store import get_latest_market_snapshots, get_latest_scanner_candidates, record_worker_status, save_feature_rows
 from app.workers.common import clean_symbols, get_worker_run_id, print_summary, require_production_data_policy, setup_worker_logging
 
 
@@ -14,6 +15,12 @@ def _symbols(limit: int) -> list[str]:
     env_symbols = clean_symbols((os.environ.get("WORKER_SYMBOLS") or "").split(","))
     if env_symbols:
         return env_symbols[:limit]
+    snapshot_symbols = clean_symbols([row.get("symbol") for row in get_latest_market_snapshots(limit)])
+    if snapshot_symbols:
+        return snapshot_symbols
+    scanner_symbols = clean_symbols([row.get("symbol") for row in get_latest_scanner_candidates(limit)])
+    if scanner_symbols:
+        return scanner_symbols
     candidate_symbols = clean_symbols([c.symbol for c in list_candidates(status="active")[:limit]])
     if candidate_symbols:
         return candidate_symbols
@@ -21,6 +28,70 @@ def _symbols(limit: int) -> list[str]:
     if latest is None:
         return []
     return clean_symbols([c.symbol for c in (latest.selected_watchlist or latest.ranked_candidates or [])[:limit]])
+
+
+def _spread_bps(snapshot: dict[str, Any]) -> float | None:
+    if snapshot.get("spread_bps") is not None:
+        return float(snapshot["spread_bps"])
+    if snapshot.get("bid_ask_spread") is not None:
+        return float(snapshot["bid_ask_spread"]) * 100.0
+    if snapshot.get("spread_percent") is not None:
+        return float(snapshot["spread_percent"]) * 100.0
+    price = snapshot.get("price")
+    bid = snapshot.get("bid")
+    ask = snapshot.get("ask")
+    if price is None or bid is None or ask is None:
+        return None
+    try:
+        return ((float(ask) - float(bid)) / float(price)) * 10_000.0
+    except (TypeError, ValueError, ZeroDivisionError):
+        return None
+
+
+def _relative_volume(snapshot: dict[str, Any]) -> float | None:
+    if snapshot.get("relative_volume") is not None:
+        return float(snapshot["relative_volume"])
+    volume = snapshot.get("volume")
+    average = snapshot.get("average_volume") or snapshot.get("avg_volume")
+    if volume is None or average is None:
+        return None
+    try:
+        return float(volume) / float(average)
+    except (TypeError, ValueError, ZeroDivisionError):
+        return None
+
+
+def _alpha_feature_row(symbol: str, snapshot: dict[str, Any], response_row: Any | None = None) -> dict[str, Any]:
+    price = snapshot.get("price") or snapshot.get("last_price") or snapshot.get("close")
+    vwap = snapshot.get("vwap")
+    price_above_vwap = None
+    if price is not None and vwap is not None:
+        try:
+            price_above_vwap = float(price) > float(vwap)
+        except (TypeError, ValueError):
+            price_above_vwap = None
+    return {
+        "symbol": symbol,
+        "last_price": price,
+        "volume": snapshot.get("volume"),
+        "avg_volume": snapshot.get("average_volume") or snapshot.get("avg_volume"),
+        "relative_volume": _relative_volume(snapshot),
+        "day_change_pct": snapshot.get("change_percent") or snapshot.get("day_change_pct"),
+        "spread_bps": _spread_bps(snapshot),
+        "vwap": vwap,
+        "price_above_vwap": price_above_vwap,
+        "high_of_day": snapshot.get("day_high") or snapshot.get("high_of_day"),
+        "low_of_day": snapshot.get("day_low") or snapshot.get("low_of_day"),
+        "trend_score": getattr(response_row, "momentum_score", None),
+        "liquidity_score": getattr(response_row, "liquidity_score", None),
+        "volatility_score": getattr(response_row, "volatility_score", None),
+        "session_state": snapshot.get("session_state"),
+        "source": "feature_store",
+        "provider_name": snapshot.get("provider"),
+        "data_quality": snapshot.get("data_quality"),
+        "mock": bool(snapshot.get("is_mock")),
+        "synthetic": bool(snapshot.get("synthetic") or snapshot.get("spread_synthetic")),
+    }
 
 
 def run() -> dict[str, Any]:
@@ -41,17 +112,29 @@ def run() -> dict[str, Any]:
             "blockers": [],
             "warnings": [],
         }
+        record_worker_status(
+            worker="feature-pipeline-worker",
+            status="missing_features",
+            worker_run_id=worker_run_id,
+            provider=provider,
+            feature_row_count=0,
+            missing_features=["no_symbols_available"],
+            warnings=[],
+            blockers=[],
+        )
         print_summary(summary)
         return summary
 
     market_data = MarketDataService()
+    latest_snapshots = {str(row.get("symbol", "")).upper(): row for row in get_latest_market_snapshots(limit)}
     feature_row_count = 0
     missing_features: list[str] = []
     persistence_statuses: list[str] = []
     blockers: list[str] = []
     warnings: list[str] = []
+    alpha_feature_rows: list[dict[str, Any]] = []
     for symbol in symbols:
-        snapshot = market_data.get_market_snapshot(symbol, source=provider)
+        snapshot = latest_snapshots.get(symbol) or market_data.get_market_snapshot(symbol, source=provider)
         if snapshot.get("price") is None or snapshot.get("is_mock") or snapshot.get("data_quality") in {"unavailable", "not_configured"}:
             missing_features.append(symbol)
             continue
@@ -65,6 +148,7 @@ def run() -> dict[str, Any]:
             continue
         if response.quality_report.quality_status in {"pass", "warn"}:
             feature_row_count += 1
+            alpha_feature_rows.append(_alpha_feature_row(symbol, snapshot, response.row))
             persisted = get_feature_row_persistence_status(response.row.id)
             persistence_statuses.append("persisted" if persisted.get("persisted") else str(persisted.get("data_source") or response.storage_mode))
             warnings.extend(response.warnings or [])
@@ -83,6 +167,14 @@ def run() -> dict[str, Any]:
         "blockers": sorted(set(blockers)),
         "warnings": sorted(set(warnings)),
     }
+    save_feature_rows(
+        worker_run_id=worker_run_id,
+        provider_name=provider,
+        feature_rows=alpha_feature_rows,
+        status="features_available" if feature_row_count else "missing_features",
+        warnings=sorted(set(warnings)),
+        blockers=sorted(set(blockers)),
+    )
     print_summary(summary)
     return summary
 
