@@ -3,16 +3,34 @@ import Link from "next/link";
 function accentBarClass(accent: string) {
   if (accent === "sky") return "bg-sky-400/90";
   if (accent === "violet") return "bg-violet-400/90";
+  if (accent === "emerald") return "bg-emerald-400/90";
+  if (accent === "amber") return "bg-amber-400/90";
   return "bg-cyan-400/90";
 }
 
 export default function Home() {
   const cards = [
     {
-      title: "Autonomous Day-Trading Workflow",
-      subtitle: "Paper-first, day-trading-only autonomous agent workflow.",
-      badges: ["US stocks only", "Day trading only", "Paper-first", "Human approval", "No broker submit"],
-      cta: "Enter Workflow",
+      title: "Production v1 Day-Trading Dashboard",
+      subtitle: "Clean production workflow UI backed only by /api/v1/daytrading routes.",
+      badges: ["v1 routes", "Production contract", "Paper-first", "No legacy fetches", "No broker submit"],
+      cta: "Open v1 Dashboard",
+      href: "/daytrading-workflow/new",
+      accent: "emerald",
+    },
+    {
+      title: "Day Trading Control Center",
+      subtitle: "Mapped dashboard with route migration table, market-session visibility, and settings UI.",
+      badges: ["Route map", "Settings", "Azure env", "Market session", "Migration view"],
+      cta: "Open Control Center",
+      href: "/daytrading-control-center",
+      accent: "amber",
+    },
+    {
+      title: "Classic Workflow View",
+      subtitle: "Original visual surface kept for reference while legacy routes are migrated behind v1.",
+      badges: ["Legacy visual", "Reference only", "May be blocked", "Do not wire new work here"],
+      cta: "Open Classic View",
       href: "/daytrading-workflow",
       accent: "black",
     },
@@ -41,12 +59,11 @@ export default function Home() {
           <div className="mb-4 inline-flex rounded-full border border-white/10 bg-black/35 px-4 py-1.5 text-xs font-bold uppercase tracking-[0.22em] text-cyan-200 backdrop-blur-xl">
             EdgeSenseAI
           </div>
-          <h1 className="max-w-xl text-xl font-black tracking-[-0.04em] text-cyan-400 lg:text-5xl">
+          <h1 className="max-w-3xl text-xl font-black tracking-[-0.04em] text-cyan-400 lg:text-5xl">
             Choose the right trading workspace.
           </h1>
-          <p className="mt-4 max-w-3xl text-base leading-7 text-slate-400">
-            Autonomous day-trading, legacy manual trading, and lab research are separate surfaces. The autonomous workflow remains paper-first,
-            day-trading-only, and gated by human approval.
+          <p className="mt-4 max-w-4xl text-base leading-7 text-slate-400">
+            The new production dashboard and control center are the source of truth for v1 route migration. The classic workflow remains available as a visual reference while legacy runtime routes are quarantined and migrated cleanly.
           </p>
         </div>
 
@@ -80,6 +97,18 @@ export default function Home() {
         </section>
 
         <section className="mt-8 flex flex-wrap gap-3 text-sm">
+          <Link
+            href="/daytrading-control-center#settings"
+            className="rounded-xl border border-amber-400/35 bg-black/35 px-4 py-2 text-amber-100 backdrop-blur-xl transition hover:bg-amber-400/10"
+          >
+            Settings UI →
+          </Link>
+          <Link
+            href="/daytrading-control-center#mapping"
+            className="rounded-xl border border-cyan-400/35 bg-black/35 px-4 py-2 text-cyan-100 backdrop-blur-xl transition hover:bg-cyan-400/10"
+          >
+            Route Mapping →
+          </Link>
           <Link
             href="/owner"
             className="rounded-xl border border-white/10 bg-black/35 px-4 py-2 text-slate-300 backdrop-blur-xl transition hover:bg-black/45 hover:text-cyan-200"
