@@ -45,13 +45,14 @@ def build_status() -> AgentRuntimeStatusResponse:
             "persistence_mode": persistence_mode(),
             "redis_mode": redis_status.redis_mode,
             "llm_required": False,
+            "agent_reasoning_advisory_only": True,
             "broker_submission_enabled": False,
-            "next_action": "Phase 2 wrappers available for Stage 3/5/7/8/9/11/12/13/14 agents. Orchestrator comes later.",
+            "next_action": "Existing wrappers run deterministic gates; optional Agent Reasoning Runtime attaches audited advisory reasoning only.",
         },
         safety={
             "no_broker_calls": True,
             "no_execution_submit": True,
-            "no_llm_calls": True,
+            "no_llm_for_trade_decision": True,
             "dry_run_default": True,
         },
     )
@@ -109,6 +110,52 @@ def _trace_event(event: str, details: dict[str, Any] | None = None) -> dict[str,
     return {"event": event, "details": details or {}, "at": iso_utc_now()}
 
 
+def _attach_advisory_reasoning(
+    *,
+    agent_key: str,
+    workflow_run_id: str,
+    inputs: dict[str, Any],
+    context: dict[str, Any],
+    tool_request: dict[str, Any],
+    tool_response: dict[str, Any],
+) -> tuple[dict[str, Any], dict[str, Any] | None, list[str]]:
+    """Attach audited AI reasoning to a tool response without changing hard gate outcome."""
+    warnings: list[str] = []
+    if not isinstance(tool_response, dict):
+        return tool_response, None, warnings
+    try:
+        from app.services.agent_reasoning import ReasoningRuntime
+
+        if not ReasoningRuntime.supported_agent(agent_key):
+            return tool_response, None, warnings
+        workflow_state: dict[str, Any] = {
+            **(inputs or {}),
+            **(tool_response or {}),
+            "workflow_run_id": workflow_run_id,
+            "orchestrator_run_id": context.get("orchestrator_run_id"),
+            "agent_key": agent_key,
+            "tool_name": tool_request.get("tool_name") if isinstance(tool_request, dict) else None,
+        }
+        # Normalize common response fields into evidence-builder names without creating symbols/data.
+        for key in ("selected_candidates", "watchlist_candidates", "scanner_candidates", "feature_rows", "watchlist"):
+            if key not in workflow_state and isinstance(tool_response.get(key), list):
+                workflow_state[key] = tool_response[key]
+        reasoning = ReasoningRuntime.reason(agent_key, workflow_state)
+        reasoning_payload = reasoning.model_dump()
+        merged = dict(tool_response)
+        merged["agent_reasoning"] = reasoning_payload
+        ro = merged.get("reasoning_outputs") if isinstance(merged.get("reasoning_outputs"), dict) else {}
+        ro[agent_key] = reasoning_payload
+        merged["reasoning_outputs"] = ro
+        merged["reasoning_blockers"] = list(reasoning_payload.get("hard_blockers") or [])
+        merged["reasoning_warnings"] = list(reasoning_payload.get("soft_warnings") or [])
+        merged["llm_used_for_trade_decision"] = False
+        return merged, reasoning_payload, warnings
+    except Exception as exc:  # Defensive: reasoning must never break deterministic agent execution.
+        warnings.append(f"agent_reasoning_attach_failed:{type(exc).__name__}")
+        return tool_response, None, warnings
+
+
 def create_agent_run(req: AgentRunRequest) -> AgentRunResult:
     descriptor = require_agent(req.agent_key)
     if descriptor is None:
@@ -146,6 +193,7 @@ def create_agent_run(req: AgentRunRequest) -> AgentRunResult:
     # Phase 2 dispatch
     from app.services.agent_runtime.wrappers import WRAPPED_AGENT_KEYS, run_wrapped_agent
 
+    reasoning_payload: dict[str, Any] | None = None
     is_wrapped = req.agent_key in WRAPPED_AGENT_KEYS and descriptor.status == "ready"
     try:
         if is_wrapped:
@@ -155,6 +203,14 @@ def create_agent_run(req: AgentRunRequest) -> AgentRunResult:
             tool_resp = wrapper_out["tool_response"]
             next_agent = wrapper_out.get("next_agent")
             safety = wrapper_out.get("safety")
+            tool_resp, reasoning_payload, reasoning_attach_warnings = _attach_advisory_reasoning(
+                agent_key=req.agent_key,
+                workflow_run_id=wr.workflow_run_id,
+                inputs=req.inputs or {},
+                context=req.context or {},
+                tool_request={"tool_name": tool_name, **(tool_req if isinstance(tool_req, dict) else {})},
+                tool_response=tool_resp if isinstance(tool_resp, dict) else {"raw_tool_response": tool_resp},
+            )
 
             decision_payload, blockers, warnings, next_action, next_agent, artifacts = wrapper_outcome_to_result(
                 agent_key=req.agent_key,
@@ -164,7 +220,12 @@ def create_agent_run(req: AgentRunRequest) -> AgentRunResult:
                 safety=safety,
                 next_agent=next_agent,
             )
+            warnings = sorted(set(warnings + reasoning_attach_warnings))
             status = "completed" if not blockers and tool_resp.get("status") != "blocked" else "blocked"
+            if reasoning_payload:
+                artifacts["agent_reasoning"] = reasoning_payload
+                artifacts["llm_used"] = bool(reasoning_payload.get("llm_used"))
+                artifacts["llm_used_for_trade_decision"] = False
             decision = {
                 "phase": "phase_2_wrapped",
                 "agent_key": req.agent_key,
@@ -176,7 +237,7 @@ def create_agent_run(req: AgentRunRequest) -> AgentRunResult:
             blockers = ["agent_wrapper_not_implemented"]
             warnings = []
             next_agent = None
-            artifacts = {"llm_used": False, "broker_called": False, "submitted_order": False}
+            artifacts = {"llm_used": False, "broker_called": False, "submitted_order": False, "llm_used_for_trade_decision": False}
             decision = {
                 "implementation_status": "not_implemented",
                 "message": "Agent is registered but wrapper is not implemented in Phase 2.",
@@ -194,13 +255,14 @@ def create_agent_run(req: AgentRunRequest) -> AgentRunResult:
             {
                 "no_broker_calls": True,
                 "no_execution_submit": True,
-                "no_llm_calls": True,
+                "no_llm_for_trade_decision": True,
                 "dry_run_default": True,
             },
         ),
         _trace_event("tool_selected", {"wrapped": bool(is_wrapped)}),
         _trace_event("tool_called", {"tool": decision.get("tool") if isinstance(decision, dict) else None}),
         _trace_event("tool_result_received", {"status": status}),
+        _trace_event("agent_reasoning_attached", {"attached": bool(reasoning_payload), "llm_used": bool(reasoning_payload and reasoning_payload.get("llm_used"))}),
         _trace_event("idempotency_checked", {"fingerprint": fp, "idempotency_key": req.idempotency_key}),
         _trace_event("decision_recorded", {"agent_key": req.agent_key}),
         _trace_event(
