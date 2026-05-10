@@ -18,10 +18,10 @@ export function AppShell({ children }: { children: React.ReactNode }) {
   const isOwnerPlatformRoute = pathname === "/owner" || pathname.startsWith("/owner/");
   const isOpsPlatformRoute = pathname === "/ops" || pathname.startsWith("/ops/");
   const isDayTradingPlatformRoute = pathname === "/daytrading-workflow" || pathname.startsWith("/daytrading-workflow/");
+  const isDayTradingControlCenterRoute = pathname === "/daytrading-control-center" || pathname.startsWith("/daytrading-control-center/");
 
-  if (isPublicRoute || isOwnerPlatformRoute || isOpsPlatformRoute || isDayTradingPlatformRoute) {
-    const publicBg =
-      pathname === "/" || pathname === "/login" ? "bg-[#000000]" : "bg-[#03070b]";
+  if (isPublicRoute || isOwnerPlatformRoute || isOpsPlatformRoute || isDayTradingPlatformRoute || isDayTradingControlCenterRoute) {
+    const publicBg = pathname === "/" || pathname === "/login" ? "bg-[#000000]" : "bg-[#03070b]";
     return <main className={`min-h-screen ${publicBg}`}>{children}</main>;
   }
 
