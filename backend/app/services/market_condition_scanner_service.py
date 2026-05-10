@@ -154,8 +154,6 @@ def _evaluate_real_discovery_criteria(symbol: str, snapshot: dict[str, Any]) -> 
     spread_bps = _spread_bps(snapshot, price)
     session_state = _session_state(snapshot)
 
-    min_price = _env_float("SCANNER_MIN_PRICE", 2.0)
-    max_price = _env_float("SCANNER_MAX_PRICE", 100.0)
     min_relative_volume = _env_float("SCANNER_MIN_RELATIVE_VOLUME", 1.5)
     min_dollar_volume = _env_float("SCANNER_MIN_DOLLAR_VOLUME", 1_000_000.0)
     max_spread_bps = _env_float("SCANNER_MAX_SPREAD_BPS", 35.0)
@@ -167,8 +165,8 @@ def _evaluate_real_discovery_criteria(symbol: str, snapshot: dict[str, Any]) -> 
         blockers.append("synthetic_market_data_rejected")
     if snapshot.get("data_quality") in {"unavailable", "not_configured"} or _source_label(snapshot) != "source_backed":
         blockers.append("provider_market_data_unavailable")
-    if price is None or not (min_price <= price <= max_price):
-        blockers.append("price_out_of_range")
+    if price is None or price <= 0:
+        blockers.append("missing_price")
     if relative_volume is None or relative_volume < min_relative_volume:
         blockers.append("relative_volume_below_threshold")
     dollar_volume = price * volume if price is not None and volume is not None else None
@@ -197,8 +195,6 @@ def _evaluate_real_discovery_criteria(symbol: str, snapshot: dict[str, Any]) -> 
         "session_state": session_state,
         "dollar_volume": dollar_volume,
         "criteria": {
-            "min_price": min_price,
-            "max_price": max_price,
             "min_relative_volume": min_relative_volume,
             "min_dollar_volume": min_dollar_volume,
             "max_spread_bps": max_spread_bps,
