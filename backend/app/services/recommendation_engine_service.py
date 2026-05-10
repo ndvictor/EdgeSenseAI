@@ -7,10 +7,10 @@ def build_model_votes() -> list[ModelVote]:
 
 def _unavailable_top_action() -> TradeRecommendation:
     return TradeRecommendation(
-        symbol="UNAVAILABLE",
+        symbol="",
         asset_class="stock",
         action="watch",
-        action_label="LEGACY DEMO DISABLED",
+        action_label="No source-backed recommendation",
         horizon="swing",
         confidence=0.0,
         final_score=0,

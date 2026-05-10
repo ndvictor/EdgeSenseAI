@@ -8,7 +8,7 @@ def test_top_action_is_unavailable_placeholder_in_production(monkeypatch: pytest
     from app.services.recommendation_engine_service import build_top_action_recommendation
 
     top = build_top_action_recommendation()
-    assert top.symbol == "UNAVAILABLE"
+    assert top.symbol == ""
     assert top.data_mode == "source_unavailable"
 
 
