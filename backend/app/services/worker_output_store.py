@@ -87,6 +87,26 @@ def record_worker_status(*, worker: str, status: str, worker_run_id: str | None 
     return record
 
 
+def _session_fields_from_diagnostics(diagnostics: dict[str, Any] | None) -> dict[str, Any]:
+    if not isinstance(diagnostics, dict):
+        return {}
+    keys = (
+        "market_session",
+        "market_date",
+        "current_time_et",
+        "clock_source",
+        "is_trading_day",
+        "is_market_open",
+        "is_pre_market",
+        "is_regular_market",
+        "is_post_market",
+        "next_open",
+        "next_close",
+        "scanner_mode",
+    )
+    return {key: diagnostics.get(key) for key in keys if key in diagnostics}
+
+
 def save_scanner_candidates(
     *,
     worker_run_id: str,
@@ -126,6 +146,7 @@ def save_scanner_candidates(
         }
         rows.append({k: v for k, v in row.items() if v is not None})
     _MEMORY["scanner_candidates"] = rows
+    session_fields = _session_fields_from_diagnostics(diagnostics)
     return record_worker_status(
         worker="market-scanner-worker",
         status=status,
@@ -141,6 +162,7 @@ def save_scanner_candidates(
         run_source=run_source,
         candidate_source=candidate_source,
         scanner_diagnostics=diagnostics or {},
+        **session_fields,
     )
 
 
@@ -367,6 +389,7 @@ def _latest_scanner_summary_fields(scanner_status: dict[str, Any]) -> dict[str, 
         "total_symbols_passed": int(diagnostics.get("total_symbols_passed") or 0),
         "rejection_counts": diagnostics.get("rejection_counts") or {},
         "no_qualified_setup_reason": no_qualified_setup_reason,
+        **_session_fields_from_diagnostics(diagnostics),
     }
 
 
