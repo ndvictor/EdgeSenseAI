@@ -41,8 +41,7 @@ class UniverseDiscoverRequest(BaseModel):
     horizon: Literal["day_trade", "swing", "one_month"] = "swing"
     market_phase: Literal["auto"] | DiscoveryMarketPhase = "auto"
     scanner_groups: list[str] = Field(default_factory=list)
-    source: Literal["auto", "yfinance", "alpaca", "polygon", "mock"] = "auto"
-    allow_mock: bool = False
+    source: Literal["auto", "yfinance", "alpaca", "polygon"] = "auto"
     small_account_mode: bool = True
     promote_to_candidate_universe: bool = False
 
@@ -154,8 +153,6 @@ def _data_quality_score_from_freshness(quality: str) -> float:
         return 35.0
     if q in ("unavailable", "not_configured"):
         return 0.0
-    if q == "mock":
-        return 15.0
     return 50.0
 
 
@@ -260,7 +257,6 @@ def discover_universe(request: UniverseDiscoverRequest) -> UniverseDiscoverRespo
             asset_class=request.asset_class,
             source=request.source,
             require_bid_ask=False,
-            allow_mock=request.allow_mock,
             market_phase=phase,
             horizon=request.horizon,
         )
@@ -370,7 +366,7 @@ def discover_universe(request: UniverseDiscoverRequest) -> UniverseDiscoverRespo
                 market_phase=phase,
                 strategy_key=strategy_key,
                 signal_strength=signal_strength,
-                data_quality=("mock" if is_mock else ("degraded" if not has_bid_ask or spread_percent is None else str(dq))),
+                data_quality=("unavailable" if is_mock else ("degraded" if not has_bid_ask or spread_percent is None else str(dq))),
                 risk_level=risk_level,
                 research_only=research_only,
             )

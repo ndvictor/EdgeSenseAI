@@ -37,7 +37,7 @@ function featureRunsFromArtifacts(artifacts: Record<string, unknown> | undefined
 }
 
 export default function FeaturePipelinePage() {
-  const [symbol, setSymbol] = useState("AMD");
+  const [symbol, setSymbol] = useState("");
   const [assetClass, setAssetClass] = useState("stock");
   const [horizon, setHorizon] = useState<"intraday" | "day_trade" | "swing" | "one_month">("swing");
   const [source, setSource] = useState<string>("auto");
@@ -47,7 +47,7 @@ export default function FeaturePipelinePage() {
   const [loadError, setLoadError] = useState<string | null>(null);
   const [runError, setRunError] = useState<string | null>(null);
 
-  const [autoSeeds, setAutoSeeds] = useState("SPY, QQQ, AAPL, MSFT, AMD, NVDA");
+  const [autoSeeds, setAutoSeeds] = useState("");
   const [autoHorizon, setAutoHorizon] = useState("day_trading");
   const [autoMaxCandidates, setAutoMaxCandidates] = useState(10);
   const [autoDryRun, setAutoDryRun] = useState(true);
@@ -97,8 +97,8 @@ export default function FeaturePipelinePage() {
         asset_class: assetClass,
         horizon: autoHorizon,
         mode: "paper_first" as const,
-        source: autoDryRun ? "mock" : source,
-        seed_symbols: seeds.length ? seeds : ["AMD"],
+        source,
+        seed_symbols: seeds,
         max_candidates: Math.max(1, Math.min(100, autoMaxCandidates)),
         dry_run: autoDryRun,
         require_human_approval: true,
@@ -167,7 +167,7 @@ export default function FeaturePipelinePage() {
                 className={field}
                 value={autoSeeds}
                 onChange={(e) => setAutoSeeds(e.target.value)}
-                placeholder="SPY, QQQ, AMD…"
+                placeholder="Optional symbols; blank uses scanner/provider discovery"
               />
             </label>
             <div className="grid gap-4 sm:grid-cols-2">
@@ -196,7 +196,7 @@ export default function FeaturePipelinePage() {
           <div className="mt-4 flex flex-wrap items-center gap-4">
             <label className="flex cursor-pointer items-center gap-2 text-sm text-slate-300">
               <input type="checkbox" checked={autoDryRun} onChange={(e) => setAutoDryRun(e.target.checked)} className="rounded border-emerald-400/40" />
-              Dry run (mock market data — recommended)
+              Dry run
             </label>
             <label className="flex cursor-pointer items-center gap-2 text-sm text-slate-300">
               <input type="checkbox" checked={featuresOnly} onChange={(e) => setFeaturesOnly(e.target.checked)} className="rounded border-emerald-400/40" />
@@ -290,7 +290,7 @@ export default function FeaturePipelinePage() {
           <div className="grid gap-4 md:grid-cols-2 lg:grid-cols-4">
             <label className="block space-y-1">
               <span className="text-xs uppercase tracking-wide text-slate-500">Symbol</span>
-              <input className={field} value={symbol} onChange={(e) => setSymbol(e.target.value)} placeholder="e.g. AMD" />
+              <input className={field} value={symbol} onChange={(e) => setSymbol(e.target.value)} placeholder="Enter symbol" />
             </label>
             <label className="block space-y-1">
               <span className="text-xs uppercase tracking-wide text-slate-500">Asset class</span>
@@ -316,7 +316,6 @@ export default function FeaturePipelinePage() {
                 <option value="alpaca">alpaca</option>
                 <option value="yfinance">yfinance</option>
                 <option value="polygon">polygon</option>
-                <option value="mock">mock (explicit)</option>
               </select>
             </label>
           </div>

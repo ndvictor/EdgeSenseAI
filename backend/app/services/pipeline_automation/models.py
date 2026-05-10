@@ -11,7 +11,7 @@ class PipelineAutomationRunRequest(BaseModel):
     """Single-entry automated pipeline that prepares inputs then runs the workflow orchestrator.
 
     This is intentionally deterministic and safe:
-    - It can run in dry_run mode (mock market data only).
+    - It can run in dry_run mode without order submission.
     - It does not submit orders unless the downstream orchestrator is explicitly configured to allow it.
     """
 
@@ -22,7 +22,7 @@ class PipelineAutomationRunRequest(BaseModel):
     mode: str = "paper_first"
     source: str = "auto"
 
-    seed_symbols: list[str] = Field(default_factory=lambda: ["SPY", "QQQ", "AAPL", "MSFT", "AMD", "NVDA"])
+    seed_symbols: list[str] = Field(default_factory=list)
     max_candidates: int = 10
 
     dry_run: bool = True

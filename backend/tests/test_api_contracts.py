@@ -1741,11 +1741,11 @@ def test_agent_runtime_unknown_agent_key_returns_400():
 
 def _patch_market_routes_use_mock(monkeypatch: pytest.MonkeyPatch) -> None:
     """These routes call ``get_market_data_provider()`` with no query override; tests must not depend on workspace runtime_settings.json (e.g. Polygon)."""
-    from app.data_providers.mock_provider import MockMarketDataProvider
+    from app.data_providers.provider_factory import UnavailableMarketDataProvider
 
     import app.main as main_mod
 
-    monkeypatch.setattr(main_mod, "get_market_data_provider", lambda provider=None: MockMarketDataProvider())
+    monkeypatch.setattr(main_mod, "get_market_data_provider", lambda provider=None: UnavailableMarketDataProvider())
 
 
 def test_health_contract():

@@ -64,8 +64,8 @@ def run_data_quality_precheck(req: ExecutionRequest, source: str = "auto") -> Pr
         blockers.append(f"market_data_error:{snap.get('error')[:80]}")
     if not snap.get("current_price"):
         blockers.append("missing_reference_price")
-    if snap.get("is_mock") and not req.metadata.get("allow_mock_data"):
-        blockers.append("mock_market_data_not_allowed_for_execution")
+    if snap.get("is_mock"):
+        blockers.append("non_real_market_data_not_allowed_for_execution")
 
     spread = snap.get("bid_ask_spread")
     if spread is None and req.order_type in {"limit", "market"}:

@@ -65,10 +65,9 @@ class SignalScoringRequest(BaseModel):
 
     events: list[EventScannerMatchedEvent] = Field(default_factory=list)
     use_latest_events: bool = True
-    source: Literal["auto", "yfinance", "alpaca", "polygon", "mock"] = "auto"
+    source: Literal["auto", "yfinance", "alpaca", "polygon"] = "auto"
     horizon: Literal["day_trade", "swing", "one_month"] = "swing"
     strategy_key: str | None = None
-    allow_mock: bool = False
 
 
 class SignalScoringResponse(BaseModel):
@@ -99,7 +98,7 @@ def _feature_row_from_event(event: EventScannerMatchedEvent, horizon: str) -> Fe
     except Exception:
         detected = datetime.now(timezone.utc)
     dq_raw = event.event_data.get("data_quality")
-    dq = str(dq_raw) if dq_raw else ("mock_fallback" if event.event_data.get("is_mock") else "unknown")
+    dq = str(dq_raw) if dq_raw else "unknown"
     ds = str(
         event.event_data.get("provider")
         or event.event_data.get("data_source")

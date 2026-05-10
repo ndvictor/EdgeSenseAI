@@ -52,8 +52,7 @@ function SettingsPageInner() {
   const [loading, setLoading] = useState(false);
   const [message, setMessage] = useState<string | null>(null);
   const [integrationMode, setIntegrationMode] = useState<"full" | "quick">("quick");
-  const [integrationSymbols, setIntegrationSymbols] = useState("SPY,AAPL");
-  const [integrationAllowMock, setIntegrationAllowMock] = useState(false);
+  const [integrationSymbols, setIntegrationSymbols] = useState("");
   const [integrationRunning, setIntegrationRunning] = useState(false);
   const [integrationReport, setIntegrationReport] = useState<PlatformIntegrationChecksResponse | null>(null);
   const [integrationRunMs, setIntegrationRunMs] = useState<number | null>(null);
@@ -267,9 +266,8 @@ function SettingsPageInner() {
     try {
       const symbols = integrationSymbols.split(",").map((s) => s.trim()).filter(Boolean);
       const payload = {
-        symbols: symbols.length ? symbols : ["SPY", "AAPL"],
+        symbols,
         source: "auto" as const,
-        allow_mock: integrationAllowMock,
         ...(integrationMode === "quick" ? { checks: INTEGRATION_QUICK_CHECKS } : {}),
         submit_real_paper_order: false,
       };
@@ -629,7 +627,7 @@ function SettingsPageInner() {
               </p>
               <div className="mt-4 space-y-2">
                 {[
-                  { name: "Market Data", ok: Boolean(finalReadiness?.endpoints?.some((e) => e.path === "/api/qlib/status" && e.present) ?? false) || settings.market_data.market_data_provider !== "mock" },
+                  { name: "Market Data", ok: Boolean(finalReadiness?.endpoints?.some((e) => e.path === "/api/qlib/status" && e.present) ?? false) || settings.market_data.market_data_provider !== "not_configured" },
                   { name: "Data Quality + Timestamp Validation", ok: Boolean(finalReadiness?.endpoints?.some((e) => e.path === "/api/platform-readiness/status" && e.present) ?? false) },
                   { name: "Feature Store", ok: Boolean(settings.platform.vector_memory_enabled) },
                   { name: "Qlib Research Agent", ok: Boolean(finalReadiness?.endpoints?.some((e) => e.path === "/api/qlib/status" && e.present) ?? false) },
@@ -848,7 +846,6 @@ function SettingsPageInner() {
                                 value={settings.market_data.market_data_provider}
                                 onChange={(val) => updateMarketData({ market_data_provider: val })}
                                 options={[
-                                  { value: "mock", label: "Mock Data" },
                                   { value: "alpaca", label: "Alpaca" },
                                   { value: "polygon", label: "Polygon.io" },
                                   { value: "yfinance", label: "YFinance" },
@@ -859,7 +856,7 @@ function SettingsPageInner() {
                                 description="Additional feeds to try in order after primary (comma-separated)."
                                 value={settings.market_data.market_data_provider_priority}
                                 onChange={(val) => updateMarketData({ market_data_provider_priority: val })}
-                                placeholder="polygon,alpaca,yfinance,mock"
+                                placeholder="alpaca,polygon,yfinance"
                               />
                               <NumberInput
                                 label="Timeout (seconds)"
@@ -1198,19 +1195,9 @@ function SettingsPageInner() {
                     value={integrationSymbols}
                     onChange={(e) => setIntegrationSymbols(e.target.value)}
                     disabled={integrationRunning}
-                    placeholder="SPY,AAPL"
+                    placeholder="Optional symbols; blank checks configured services only"
                     className="mt-2 w-full rounded-lg border border-emerald-400/20 bg-black/40 px-3 py-2 text-sm text-white"
                   />
-                  <label className="mt-3 flex cursor-pointer items-center gap-2 text-sm text-slate-300">
-                    <input
-                      type="checkbox"
-                      checked={integrationAllowMock}
-                      onChange={(e) => setIntegrationAllowMock(e.target.checked)}
-                      disabled={integrationRunning}
-                      className="rounded border-emerald-400/40"
-                    />
-                    Allow mock provider (CI / offline demos only)
-                  </label>
                 </div>
               </div>
 

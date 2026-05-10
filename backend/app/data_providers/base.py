@@ -15,7 +15,7 @@ class MarketSnapshot(BaseModel):
     spread_percent: float
     vwap: float
     volatility_proxy: float
-    data_mode: str = "synthetic_prototype"
+    data_mode: str = "source_unavailable"
     is_mock: bool = False
 
 

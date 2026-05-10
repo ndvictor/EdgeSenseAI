@@ -8,8 +8,8 @@ class RegimeFactor(BaseModel):
     value: str
     signal: str
     impact: str
-    data_source: str = "hardcoded_prototype"
-    source_detail: str = "Static placeholder factor from market_regime_service.py"
+    data_source: str = "source_unavailable"
+    source_detail: str = "Market regime factor source is not configured."
 
 
 class MarketRegimeResponse(BaseModel):
@@ -20,19 +20,19 @@ class MarketRegimeResponse(BaseModel):
     blocked_strategies: list[str]
     factors: list[RegimeFactor]
     notes: list[str]
-    data_source: str = "hardcoded_prototype"
-    source_type: str = "static_placeholder"
-    source_detail: str = "backend/app/services/market_regime_service.py returns static prototype values. No live provider data is used here yet."
+    data_source: str = "source_unavailable"
+    source_type: str = "not_configured"
+    source_detail: str = "Market regime provider inputs are not configured."
     provider: str = "none"
     model_used: str = "none"
     llm_used: str = "none"
     agent_used: str = "none"
-    calculation_engine: str = "static_rule_placeholder"
+    calculation_engine: str = "not_configured"
     real_data_used: bool = False
     generated_at: datetime
 
 
-def build_market_regime(source_type: str = "static_prototype") -> MarketRegimeResponse:
+def build_market_regime(source_type: str = "source_backed") -> MarketRegimeResponse:
     from app.services.market_regime_providers import get_market_regime_provider
 
     return get_market_regime_provider(source_type).build_regime()

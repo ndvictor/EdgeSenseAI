@@ -13,7 +13,7 @@ except Exception:  # pragma: no cover - dependency may not be installed in local
 
 SCHEDULER_STATUS = "configured_not_started"
 DEFAULT_SCHEDULED_SCAN_STRATEGY = "stock_day_trading"
-DEFAULT_SCHEDULED_SCAN_SYMBOLS = ["AMD", "NVDA", "AAPL", "MSFT", "BTC-USD"]
+DEFAULT_SCHEDULED_SCAN_SYMBOLS: list[str] = []
 _LAST_SCHEDULED_SCAN_RESULT: dict[str, Any] | None = None
 
 

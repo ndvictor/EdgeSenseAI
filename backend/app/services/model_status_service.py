@@ -11,7 +11,7 @@ class ModelStatus(BaseModel):
 
 
 class ModelStatusResponse(BaseModel):
-    data_mode: str = "synthetic_prototype"
+    data_mode: str = "source_unavailable"
     live_prediction_enabled: bool = False
     models: list[ModelStatus]
 

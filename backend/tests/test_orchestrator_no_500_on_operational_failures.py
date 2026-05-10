@@ -84,7 +84,6 @@ def test_orchestrator_returns_structured_blocked_when_freshness_unavailable(monk
             "require_human_approval": True,
             "allow_submit": False,
             "metadata": {
-                "allow_mock_market_data": False,
                 "allow_synthetic_market_data": False,
             },
         },

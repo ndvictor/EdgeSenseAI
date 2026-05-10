@@ -235,7 +235,6 @@ export function OwnerRuntimeSettingsPanel({ settings, bundleLoading, onAfterSave
             onChange={(e) => patchMarket({ market_data_provider: e.target.value })}
             className="w-full rounded-lg border border-emerald-400/25 bg-black/50 px-3 py-2 text-sm text-white"
           >
-            <option value="mock">mock</option>
             <option value="yfinance">yfinance</option>
             <option value="alpaca">alpaca</option>
             <option value="polygon">polygon</option>

@@ -60,13 +60,15 @@ Command Center Top Action
 
 The data provider layer normalizes market data before it reaches the rest of the platform.
 
-Current provider:
+Current providers:
 
 ```text
-MockMarketDataProvider
+AlpacaProvider
+PolygonProvider
+YFinanceProvider
 ```
 
-Future providers:
+Unavailable market data is returned as source unavailable; the platform must not fabricate provider payloads.
 
 ```text
 PolygonProvider

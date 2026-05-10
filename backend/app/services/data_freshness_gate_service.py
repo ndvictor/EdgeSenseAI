@@ -45,11 +45,10 @@ class DataFreshnessCheckRequest(BaseModel):
 
     symbols: list[str] = Field(default_factory=list, description="Explicit symbols to check. NO defaults.")
     asset_class: Literal["stock", "option", "crypto"] = "stock"
-    source: Literal["auto", "yfinance", "alpaca", "polygon", "mock"] = "auto"
+    source: Literal["auto", "yfinance", "alpaca", "polygon"] = "auto"
     max_quote_age_seconds: float = 90.0
     max_bar_age_seconds: float = 300.0
     require_bid_ask: bool = False  # yfinance doesn't have bid/ask
-    allow_mock: bool = False
     market_phase: str | None = None
     horizon: Literal["day_trade", "swing", "one_month"] = "swing"
 
@@ -94,7 +93,6 @@ def _check_symbol_freshness(
     max_quote_age: float,
     max_bar_age: float,
     require_bid_ask: bool,
-    allow_mock: bool,
     horizon: str,
 ) -> DataFreshnessSymbolResult:
     """Check data freshness for a single symbol."""
@@ -119,9 +117,8 @@ def _check_symbol_freshness(
     result.provider = snapshot.get("provider", "unknown")
     result.data_quality = snapshot.get("data_quality", "unavailable")
 
-    # Block if mock and not allowed
-    if is_mock and not allow_mock:
-        blockers.append("Mock data detected but allow_mock=false")
+    if is_mock:
+        blockers.append("Non-real market data detected")
         result.blockers = blockers
         result.warnings = warnings
         result.decision = "blocked"
@@ -228,7 +225,6 @@ def run_data_freshness_check(request: DataFreshnessCheckRequest) -> DataFreshnes
                 max_quote_age=request.max_quote_age_seconds,
                 max_bar_age=request.max_bar_age_seconds,
                 require_bid_ask=request.require_bid_ask,
-                allow_mock=request.allow_mock,
                 horizon=request.horizon,
             )
         except Exception as exc:

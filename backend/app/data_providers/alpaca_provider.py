@@ -11,7 +11,7 @@ from app.data_providers.base import MarketCandle, MarketCandlesResponse, MarketS
 class AlpacaProvider:
     """US equities snapshot via Alpaca Market Data API (aligned with other data_providers)."""
 
-    default_symbols = ["AMD", "NVDA", "AAPL"]
+    default_symbols: list[str] = []
 
     def __init__(self, timeout_seconds: int | None = None) -> None:
         self.api_key = settings.alpaca_api_key

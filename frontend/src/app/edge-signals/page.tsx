@@ -33,8 +33,6 @@ export default function EdgeSignalsPage() {
   return <EdgeSignalsPanel />;
 }
 
-const MOCK_SCANNER_SOURCE_ENABLED = process.env.NEXT_PUBLIC_ENABLE_MOCK_DATA === "true";
-
 export function EdgeSignalsPanel() {
   const [signals, setSignals] = useState<EdgeSignal[]>([]);
   const [signalSourceStatus, setSignalSourceStatus] = useState<string | null>(null);
@@ -235,7 +233,7 @@ export function EdgeSignalsPanel() {
             <label>
               <span className="text-xs uppercase tracking-wide text-slate-400">Data Source</span>
               <select value={scannerSource} onChange={(event) => setScannerSource(event.target.value)} className="mt-1 w-full rounded-lg border border-slate-700 bg-slate-900 px-3 py-2 text-sm text-white">
-                {(MOCK_SCANNER_SOURCE_ENABLED ? ["auto", "yfinance", "mock"] : ["auto", "yfinance"]).map((source) => (
+                {["auto", "yfinance", "alpaca", "polygon"].map((source) => (
                   <option key={source}>{source}</option>
                 ))}
               </select>

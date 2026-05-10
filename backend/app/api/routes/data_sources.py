@@ -103,17 +103,6 @@ def _check_alpaca_market_data() -> dict:
     }
 
 
-def _mock_status() -> dict:
-    return {
-        "status": "test_only",
-        "configured": True,
-        "connected": True,
-        "configured_label": "Test provider",
-        "connection_label": "Always available",
-        "message": "Mock provider is available for explicit UI testing only. Auto mode does not silently use mock data.",
-    }
-
-
 def _pgvector_status(persistence: dict) -> dict:
     pgvector_status = persistence.get("pgvector_status", "unknown")
     postgres_connected = persistence.get("postgres_persistence_status") == "connected"
@@ -211,7 +200,6 @@ def get_data_sources_status():
         },
         "pgvector": _pgvector_status(persistence),
         "redis": _env_status(settings.redis_url, "REDIS_URL is set.", "REDIS_URL is not configured."),
-        "mock": _mock_status(),
         "platform_persistence": _platform_persistence_status(),
     }
 
@@ -231,7 +219,6 @@ def get_data_sources_status():
         ("pgvector / Vector Memory", "pgvector", "database", ["vector_memory", "embeddings", "similarity_search", "agent_context"], ["memory_foundation", "semantic_retrieval", "agent_trace_recall"]),
         ("Redis", "redis", "database", ["caching", "agent_jobs", "sessions"], ["background_jobs"]),
         ("Platform Persistence", "platform_persistence", "database", ["candidate_universe", "decision_workflows", "recommendations", "paper_trades", "training_data"], ["workflow_state", "historical_outcomes"]),
-        ("Mock Provider", "mock", "testing", ["ui_testing", "offline_demo"], ["explicit_testing_only"]),
     ]
 
     sources = [

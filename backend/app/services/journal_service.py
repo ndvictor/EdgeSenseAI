@@ -26,34 +26,7 @@ class JournalSummary(BaseModel):
 
 
 def build_journal_summary() -> JournalSummary:
-    entries = [
-        JournalEntry(
-            id="JRN-AMD-001",
-            symbol="AMD",
-            asset_class="stock",
-            setup="Small-account momentum with model evidence alignment",
-            planned_action="BUY WATCHLIST",
-            entry_zone="$161.20 - $163.00",
-            stop="$157.80",
-            target="$171.50",
-            status="paper_ready",
-            outcome_label="pending",
-            lesson="Track whether target is hit before stop and whether regime stays supportive after entry.",
-        ),
-        JournalEntry(
-            id="JRN-BTC-001",
-            symbol="BTC-USD",
-            asset_class="crypto",
-            setup="Volatility burst with regime review",
-            planned_action="WATCH ONLY",
-            entry_zone="pending recalculation",
-            stop="pending",
-            target="pending",
-            status="watch_only",
-            outcome_label="pending",
-            lesson="Do not promote crypto volatility bursts unless risk gate and regime gate align.",
-        ),
-    ]
+    entries: list[JournalEntry] = []
     return JournalSummary(
         total_entries=len(entries),
         pending_reviews=len([entry for entry in entries if entry.outcome_label == "pending"]),

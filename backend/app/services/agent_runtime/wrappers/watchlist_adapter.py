@@ -116,7 +116,6 @@ def build_watchlist(
     discovery_symbols: list[str] | None = None,
     orchestrator_mode: bool = False,
     data_source: str = "auto",
-    include_mock: bool = False,
 ) -> dict[str, Any]:
     """Build a workflow-ready watchlist.
 
@@ -266,7 +265,7 @@ def build_watchlist(
                 "warnings": [],
                 "next_action": "Proceed to strategy selection." if symbols else "No provider-backed scanner/candidate symbols are available.",
             }
-        src = data_source if data_source in ("auto", "yfinance", "alpaca", "polygon", "mock") else "auto"
+        src = data_source if data_source in ("auto", "yfinance", "alpaca", "polygon") else "auto"
         try:
             univ = run_universe_selection(
                 UniverseSelectionRequest(
@@ -276,7 +275,6 @@ def build_watchlist(
                     source=src,  # type: ignore[arg-type]
                     max_candidates=cap,
                     min_score=40,
-                    include_mock=include_mock or src == "mock",
                 )
             )
         except Exception as exc:

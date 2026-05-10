@@ -4,10 +4,9 @@ import requests
 import yfinance as yf
 
 from app.core.effective_runtime import effective_str
-from app.core.production_safety import allow_mock_market_data, allow_synthetic_market_data, is_production_environment
+from app.core.production_safety import allow_synthetic_market_data
 from app.core.settings import settings
 from app.services.market_data_providers.alpaca_provider import AlpacaMarketDataProvider
-from app.services.market_data_providers.mock_provider import MockMarketDataProvider
 from app.services.market_data_providers.polygon_provider import PolygonMarketDataProvider
 from app.services.market_data_providers.yfinance_provider import YFinanceMarketDataProvider
 
@@ -23,11 +22,11 @@ class MarketDataService:
     """Read-only market data service using configured provider priority.
 
     Important product rule:
-    - source=mock is allowed only when mock market data is explicitly enabled.
-    - source=auto must never silently fall back to mock, because that can make fake data look real.
-    - Explicit workflow/UI ``source`` (yfinance, polygon, alpaca, mock) always wins over defaults.
+    - source=mock is not supported and returns unavailable.
+    - source=auto must never silently fall back to fake data.
+    - Explicit workflow/UI ``source`` (yfinance, polygon, alpaca) always wins over defaults.
     - For ``auto``, MARKET_DATA_PROVIDER (human primary in Settings/runtime) is attempted first, then
-      MARKET_DATA_PROVIDER_PRIORITY entries (mock last unless primary is mock).
+      MARKET_DATA_PROVIDER_PRIORITY entries.
     """
 
     def __init__(self, provider_priority: Optional[list[str]] = None, providers: Optional[Dict[str, Any]] = None):
@@ -36,13 +35,12 @@ class MarketDataService:
             "alpaca": AlpacaMarketDataProvider(),
             "yfinance": YFinanceMarketDataProvider(),
             "polygon": PolygonMarketDataProvider(),
-            "mock": MockMarketDataProvider(),
         }
 
     def _priority_for_source(self, source: str | None = None) -> list[str]:
         requested = source.lower().strip() if source and source.strip() else "auto"
         if requested == "mock":
-            return ["mock"] if allow_mock_market_data() else []
+            return []
 
         primary = (effective_str("MARKET_DATA_PROVIDER") or "").lower().strip()
         tail = list(self.provider_priority)
@@ -52,23 +50,21 @@ class MarketDataService:
         if requested not in {"auto", "runtime", "manual", "candidate"}:
             ordered.append(requested)
             seen.add(requested)
-        elif primary:
+        elif primary and primary != "mock":
             ordered.append(primary)
             seen.add(primary)
 
         for name in tail:
-            if name in seen:
+            if name == "mock":
                 continue
-            if name == "mock" and (primary != "mock" or not allow_mock_market_data()):
+            if name in seen:
                 continue
             ordered.append(name)
             seen.add(name)
 
         if not ordered:
             ordered = [p for p in tail if p != "mock"]
-        if is_production_environment():
-            ordered = [name for name in ordered if name != "mock"]
-        return ordered or ["yfinance"]
+        return ordered
 
     def get_quote(self, symbol: str, source: str | None = None) -> Dict[str, Any]:
         snapshot = self.get_market_snapshot(symbol, source=source)
@@ -112,9 +108,7 @@ class MarketDataService:
     def get_price_history(self, symbol: str, period: str = "6mo", interval: str = "1d", source: str | None = None) -> Dict[str, Any]:
         requested_source = (source or "auto").lower().strip()
         if requested_source == "mock":
-            if not allow_mock_market_data():
-                return self._get_unavailable_history(symbol, period, interval, error="mock_market_data_disabled")
-            return self._get_mock_history(symbol, period, interval)
+            return self._get_unavailable_history(symbol, period, interval, error="mock_market_data_removed")
 
         yfinance_error = None
         try:
@@ -255,31 +249,6 @@ class MarketDataService:
         snapshot = self._get_unavailable_snapshot(symbol, error=final_error or "No configured real provider returned market data")
         snapshot["provider_statuses"] = provider_statuses
         return snapshot
-
-    def _get_mock_history(self, symbol: str, period: str, interval: str, data_quality: str = "mock", error: str | None = None) -> Dict[str, Any]:
-        snapshot = self.providers["mock"].get_snapshot(symbol)
-        start = float(snapshot.get("price") or 100.0)
-        data = []
-        for i in range(30):
-            close = start * (0.94 + i * 0.004)
-            data.append({
-                "date": f"2026-01-{i + 1:02d}T00:00:00",
-                "open": round(close * 0.995, 4),
-                "high": round(close * 1.012, 4),
-                "low": round(close * 0.988, 4),
-                "close": round(close, 4),
-                "volume": int((snapshot.get("volume") or 1000000) * (0.7 + i * 0.01)),
-            })
-        return {
-            "symbol": symbol.upper(),
-            "period": period,
-            "interval": interval,
-            "data": data,
-            "provider": "mock",
-            "is_mock": True,
-            "data_quality": data_quality,
-            "error": error,
-        }
 
     def _timestamp_to_iso(self, timestamp: int) -> str:
         from datetime import datetime, timezone

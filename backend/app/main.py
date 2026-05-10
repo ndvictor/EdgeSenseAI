@@ -88,8 +88,8 @@ from app.api.routes.universe_selection import router as universe_selection_route
 from app.api.routes.upper_workflow import router as upper_workflow_router
 from app.api.routes.watchlists import router as watchlists_router
 from app.api.routes.pipeline_automation import router as pipeline_automation_router
+from app.api.routes.promotion_center import router as promotion_center_router
 from app.core.effective_runtime import effective_str
-from app.core.production_safety import allow_mock_market_data
 from app.core.settings import settings
 from app.data_providers.base import MarketCandlesResponse, MarketSnapshot
 from app.data_providers.provider_factory import get_market_data_provider
@@ -233,6 +233,7 @@ app.include_router(qlib_integration_router, prefix="/api")
 app.include_router(workflow_orchestrator_router, prefix="/api")
 app.include_router(worker_status_router, prefix="/api")
 app.include_router(pipeline_automation_router, prefix="/api")
+app.include_router(promotion_center_router, prefix="/api")
 app.include_router(workflow_governance_router, prefix="/api")
 app.include_router(approval_queue_router, prefix="/api")
 app.include_router(audit_log_router, prefix="/api")
@@ -313,10 +314,13 @@ def _command_center_data_source_confirmation(
     from app.core.effective_runtime import effective_bool, effective_str, news_provider_priority_from_runtime
     from app.services.market_data_service import market_data_provider_priority_from_runtime
 
-    primary = (effective_str("MARKET_DATA_PROVIDER") or "alpaca").lower().strip()
+    primary = (effective_str("MARKET_DATA_PROVIDER") or "not_configured").lower().strip()
+    if primary == "mock":
+        primary = "not_configured"
+    fallback_chain = [provider for provider in market_data_provider_priority_from_runtime() if provider != "mock"]
     return CommandCenterDataSourceConfirmation(
         market_data_primary=primary,
-        market_data_fallback_chain=list(market_data_provider_priority_from_runtime()),
+        market_data_fallback_chain=fallback_chain,
         universe_selection_source=universe_source,
         universe_selection_horizon=universe_horizon,
         decision_workflow_source=decision_source,
@@ -382,7 +386,7 @@ def _build_decision_command_center() -> CommandCenterResponse:
             symbol=candidate.symbol,
             provider=candidate.provider,
             data_quality=candidate.data_quality,
-            is_mock=candidate.source == "mock",
+            is_mock=False,
             error="; ".join(candidate.blockers) if candidate.blockers else None,
             pipeline_source=candidate.source,
         )
@@ -452,7 +456,6 @@ def _run_command_center_workflow() -> CommandCenterResponse:
                 source="auto",
                 max_candidates=max_decision,
                 min_score=50,
-                include_mock=False,
             )
         )
         universe_run_id = univ.run_id
@@ -480,7 +483,6 @@ def _run_command_center_workflow() -> CommandCenterResponse:
             horizon="swing",
             source="auto",
             max_candidates=max_decision,
-            allow_mock=False,
         ),
         account_profile=effective_profile,
     )
@@ -490,7 +492,7 @@ def _run_command_center_workflow() -> CommandCenterResponse:
             symbol=candidate.symbol,
             provider=candidate.provider,
             data_quality=candidate.data_quality,
-            is_mock=candidate.source == "mock",
+            is_mock=False,
             error="; ".join(candidate.blockers) if candidate.blockers else None,
             pipeline_source=candidate.source,
         )
@@ -614,10 +616,11 @@ def _resolved_market_provider(provider: str | None) -> str:
     if provider and provider.strip():
         p = provider.strip().lower()
         if p != "auto":
-            if p == "mock" and not allow_mock_market_data():
-                return (effective_str("MARKET_DATA_PROVIDER") or "alpaca").lower().strip()
+            if p == "mock":
+                return "not_configured"
             return p
-    return (effective_str("MARKET_DATA_PROVIDER") or "alpaca").lower().strip()
+    primary = (effective_str("MARKET_DATA_PROVIDER") or "not_configured").lower().strip()
+    return "not_configured" if primary == "mock" else primary
 
 
 @app.get("/api/market/{symbol}/snapshot", response_model=MarketSnapshot)

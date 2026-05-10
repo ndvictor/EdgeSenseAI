@@ -234,7 +234,7 @@ export default function StrategyLabPage() {
       const activeLoop = cadence.active_loop;
 
       // Run regime detection
-      const regimeRes = await api.runMarketRegime({ horizon: "swing", allow_mock: false });
+      const regimeRes = await api.runMarketRegime({ horizon: "swing" });
       setRegime(regimeRes);
 
       // Run strategy ranking (includes debate)

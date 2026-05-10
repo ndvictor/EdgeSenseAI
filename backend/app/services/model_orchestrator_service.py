@@ -17,7 +17,7 @@ class ModelRegistryItem(BaseModel):
 
 
 class ModelRunPlanRequest(BaseModel):
-    symbols: list[str] = Field(default_factory=lambda: ["AMD"])
+    symbols: list[str] = Field(default_factory=list)
     asset_class: str = "stock"
     horizon: Literal["intraday", "day_trade", "swing", "one_month"] | str = "swing"
     source: str = "auto"

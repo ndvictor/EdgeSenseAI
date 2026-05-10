@@ -250,7 +250,7 @@ export function StockSearchChart({
                 if (event.key === "Enter") load(symbol);
               }}
               className="mt-2 w-full rounded-lg border border-emerald-400/20 bg-black/40 px-4 py-3 text-sm font-bold text-white"
-              placeholder="Search ticker, e.g. AAPL"
+              placeholder="Search ticker"
             />
           </label>
           <label>
@@ -263,7 +263,6 @@ export function StockSearchChart({
               <option value="auto">Auto</option>
               <option value="yfinance">YFinance</option>
               <option value="alpaca">Alpaca</option>
-              <option value="mock">Mock</option>
             </select>
           </label>
           <label>

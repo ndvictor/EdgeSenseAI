@@ -3,6 +3,7 @@
 import Link from "next/link";
 import { usePathname } from "next/navigation";
 import { useCallback, useEffect, useMemo, useState } from "react";
+import { PromotionCenterPanel } from "@/components/PromotionCenterPanel";
 import {
   api,
   approveApprovalQueueItem,
@@ -43,6 +44,7 @@ type TabId =
   | "watchlist"
   | "data"
   | "strategy"
+  | "promotion"
   | "evidence"
   | "execution"
   | "debug"
@@ -106,6 +108,7 @@ const PLATFORM_PAGES: Array<{ id: TabId; label: string; href: string; group: str
   { id: "watchlist", label: "Live Watchlist", href: "/daytrading-workflow/live-watchlist", group: "Autonomous Pipeline", eyebrow: "Market" },
   { id: "data", label: "Data Pipeline", href: "/daytrading-workflow/data-pipeline", group: "Autonomous Pipeline", eyebrow: "Data" },
   { id: "strategy", label: "Strategy & Models", href: "/daytrading-workflow/strategy-models", group: "Intelligence", eyebrow: "Selection" },
+  { id: "promotion", label: "Promotion Center", href: "/daytrading-workflow/promotion", group: "Intelligence", eyebrow: "Promotion" },
   { id: "evidence", label: "Qlib & Evidence", href: "/daytrading-workflow/qlib-evidence", group: "Intelligence", eyebrow: "Proof" },
   { id: "execution", label: "Execution & Approval", href: "/daytrading-workflow/execution-approval", group: "Risk & Approval", eyebrow: "Gates" },
   { id: "debug", label: "Issues / Debug", href: "/daytrading-workflow/issues-debug", group: "Risk & Approval", eyebrow: "Diagnostics" },
@@ -123,6 +126,7 @@ function sectionFromPath(pathname: string): TabId {
   if (pathname.endsWith("/live-watchlist")) return "watchlist";
   if (pathname.endsWith("/data-pipeline")) return "data";
   if (pathname.endsWith("/strategy-models")) return "strategy";
+  if (pathname.endsWith("/promotion")) return "promotion";
   if (pathname.endsWith("/qlib-evidence")) return "evidence";
   if (pathname.endsWith("/execution-approval")) return "execution";
   if (pathname.endsWith("/issues-debug")) return "debug";
@@ -243,7 +247,6 @@ function providerDisplayName(value: unknown): string {
     yahoo: "yfinance",
     alpaca: "Alpaca",
     polygon: "Polygon",
-    mock: "Mock",
     smoke: "Smoke check",
   };
   return labels[provider] ?? provider;
@@ -291,14 +294,14 @@ function summarizeProviderStatus(providerStatus: unknown, fallbackProvider: unkn
   const freshness = text(record.freshness_status, "checked per run");
   const rawStatus = text(record.status, "");
   const hasLiveAttempt = attempts.some((attempt) => attempt.status.includes("live")) || (!isMock && rawStatus === "usable");
-  const status = isMock ? "Mock fallback" : hasLiveAttempt ? "Configured and live" : rawStatus || "Not configured";
+  const status = isMock ? "Blocked non-real data" : hasLiveAttempt ? "Configured and live" : rawStatus || "Not configured";
   const warnings = asList(record.warnings).map((warning) => text(warning)).filter(Boolean);
 
   return {
     symbol,
     provider,
     status,
-    detail: isMock ? "Using mock/fallback data." : hasLiveAttempt ? "Real market data is being used for workflow readiness." : "No live provider is currently usable.",
+    detail: isMock ? "Non-real market data was detected and must not be used." : hasLiveAttempt ? "Real market data is being used for workflow readiness." : "No live provider is currently usable.",
     quality,
     freshness,
     isMock,
@@ -1246,6 +1249,17 @@ export default function DayTradingWorkflowPage() {
             </div>
           </Card>
           </div>
+        </div>
+      ) : null}
+
+      {activeTab === "promotion" ? (
+        <div className="space-y-4">
+          <SectionHeader
+            eyebrow="Promotion"
+            title="Promotion Center"
+            description="Evidence and readiness only. Does not submit orders, enable live trading, or activate strategies. Metrics come from stored evidence records only."
+          />
+          <PromotionCenterPanel />
         </div>
       ) : null}
 

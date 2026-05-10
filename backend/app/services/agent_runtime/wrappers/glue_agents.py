@@ -60,7 +60,6 @@ def run_glue_agent(*, agent_key: str, inputs: dict[str, Any], context: dict[str,
     if agent_key == "watchlist_builder_agent":
         orch = context.get("source") == "workflow_orchestrator"
         data_source = str(s.get("source", "auto"))
-        include_mock = data_source == "mock"
         # Manual seeds = workflow HTTP body only (workflow_request_symbols). Never use state.symbols here:
         # data_readiness carryforward sets state.symbols from usable_symbols and would wrongly trigger universe_selection.
         req_syms = s.get("workflow_request_symbols")
@@ -76,7 +75,6 @@ def run_glue_agent(*, agent_key: str, inputs: dict[str, Any], context: dict[str,
             discovery_symbols=discovery_symbols if orch else None,
             orchestrator_mode=orch,
             data_source=data_source,
-            include_mock=include_mock,
         )
         used_univ = bool(manual_seeds) and orch and out.get("candidate_source") == "universe_selection"
         tool = "universe_selection.run_universe_selection" if used_univ else ("watchlist_builder.discovery" if orch else "candidate_universe.list")

@@ -47,7 +47,7 @@ export default function DataQualityPage() {
   const [error, setError] = useState<string | null>(null);
   const [rollupLoading, setRollupLoading] = useState(false);
 
-  const [manualSymbol, setManualSymbol] = useState("AMD");
+  const [manualSymbol, setManualSymbol] = useState("");
   const [manualAssetClass, setManualAssetClass] = useState("stock");
   const [manualSource, setManualSource] = useState<string>("auto");
   const [manualReport, setManualReport] = useState<DataQualityReport | null>(null);

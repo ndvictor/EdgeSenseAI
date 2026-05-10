@@ -9,7 +9,7 @@ class YFinanceProvider:
     yfinance is suitable for prototype research workflows and UI validation. It should not be treated as an institutional low-latency market data source.
     """
 
-    default_symbols = ["AMD", "NVDA", "BTC-USD"]
+    default_symbols: list[str] = []
 
     def get_snapshot(self, symbol: str, asset_class: str = "stock") -> MarketSnapshot:
         import yfinance as yf

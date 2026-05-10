@@ -28,7 +28,7 @@ class QlibSignalScoreCreate(BaseModel):
     model_config = ConfigDict(protected_namespaces=())
 
     artifact_id: str | None = None
-    symbol: str = "AMD"
+    symbol: str = ""
     symbols: list[str] = Field(default_factory=list)
     asset_class: str = "stock"
     horizon: str = "day_trading"

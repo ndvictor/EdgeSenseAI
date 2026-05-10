@@ -35,7 +35,7 @@ class FeatureStoreRow(BaseModel):
 
 
 class FeatureStoreRunRequest(BaseModel):
-    symbol: str = "AMD"
+    symbol: str = ""
     asset_class: str = "stock"
     horizon: Literal["intraday", "day_trade", "swing", "one_month"] | str = "swing"
     source: str = "auto"

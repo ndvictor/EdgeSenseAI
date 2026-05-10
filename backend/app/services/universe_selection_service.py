@@ -45,14 +45,13 @@ class UniverseSelectionRequest(BaseModel):
     symbols: list[str] = Field(default_factory=list, description="Explicit symbols to evaluate. NO defaults.")
     asset_class: Literal["stock", "option", "crypto"] = "stock"
     horizon: Literal["day_trade", "swing", "one_month"] = "swing"
-    source: Literal["auto", "yfinance", "alpaca", "polygon", "mock"] = "auto"
+    source: Literal["auto", "yfinance", "alpaca", "polygon"] = "auto"
     strategy_key: str | None = None
     max_candidates: int = Field(default=25, ge=1, le=100)
     min_score: int = Field(default=50, ge=0, le=100)
     account_equity: float | None = None
     buying_power: float | None = None
     max_risk_per_trade_percent: float | None = None
-    include_mock: bool = False  # Explicit opt-in for mock data
     promote_to_candidate_universe: bool = False  # Auto-promote selected to candidate universe
 
 
@@ -146,7 +145,6 @@ def _weighted_universe_ranker_v1(
     asset_class: str,
     horizon: str,
     source: str,
-    include_mock: bool,
     account_equity: float | None,
     buying_power: float | None,
 ) -> UniverseSelectionCandidate | None:
@@ -158,18 +156,14 @@ def _weighted_universe_ranker_v1(
     blockers: list[str] = []
     reasons: list[str] = []
 
-    if source == "mock" and not include_mock:
-        blockers.append("Mock source selected but include_mock=false")
-        return None
-
     try:
         snapshot = _MARKET_DATA.get_market_snapshot(symbol, source=source)
     except Exception as exc:
         blockers.append(f"Market snapshot failed: {exc}"[:200])
         return None
 
-    if snapshot.get("is_mock") and not include_mock:
-        blockers.append("Mock snapshot but include_mock=false")
+    if snapshot.get("is_mock"):
+        blockers.append("Non-real market data detected")
         return None
 
     report = check_market_data_quality(symbol, asset_class=asset_class, source=source, snapshot=snapshot)
@@ -370,7 +364,6 @@ def run_universe_selection(request: UniverseSelectionRequest) -> UniverseSelecti
         asset_class=request.asset_class,
         source=request.source,
         horizon=request.horizon,
-        allow_mock=request.include_mock,
     ))
 
     # Build data freshness summary for response
@@ -457,7 +450,6 @@ def run_universe_selection(request: UniverseSelectionRequest) -> UniverseSelecti
             asset_class=request.asset_class,
             horizon=request.horizon,
             source=request.source,
-            include_mock=request.include_mock,
             account_equity=request.account_equity,
             buying_power=request.buying_power,
         )

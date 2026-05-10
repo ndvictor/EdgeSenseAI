@@ -14,8 +14,6 @@ from app.services.worker_output_store import (
 
 def _provider_source_for(source_mode: str) -> str:
     source = (source_mode or "auto").lower().strip()
-    if source == "mock":
-        return "mock"
     if source in {"runtime", "manual", "candidate", "auto"}:
         return "auto"
     return source
@@ -175,7 +173,7 @@ def _worker_feed_readiness_payload(
     if not usable_symbols:
         blockers.append("no_usable_symbols")
 
-    if source_mode != "mock" and any(v.get("is_mock") for v in provider_status.values()):
+    if any(v.get("is_mock") for v in provider_status.values()):
         blockers.append("unexpected_mock_data_for_non_mock_source")
 
     if blockers:
@@ -241,7 +239,7 @@ def _provider_warnings(symbol: str, statuses: list[dict[str, Any]]) -> list[str]
 def evaluate_data_readiness(*, symbols: list[str], asset_class: str, horizon: str, source: str = "auto") -> dict[str, Any]:
     """Best-effort deterministic data readiness check.
 
-    Uses existing feature-store pipeline (which itself is source-backed or mock-backed).
+    Uses existing feature-store pipeline.
     Never triggers execution/broker calls; safe for v1.
     """
     source_mode = (source or "auto").lower().strip()
@@ -289,9 +287,7 @@ def evaluate_data_readiness(*, symbols: list[str], asset_class: str, horizon: st
         }
 
     clean_symbols = [str(sym).strip().upper() for sym in symbols[:5] if str(sym).strip()]
-    if source_mode == "mock":
-        warnings.append("mock_source_enabled_for_dry_run")
-    elif source_mode != provider_source:
+    if source_mode != provider_source:
         warnings.append(f"source_mode_preserved:{source_mode}; provider_source={provider_source}")
 
     for sym in clean_symbols:
@@ -347,7 +343,7 @@ def evaluate_data_readiness(*, symbols: list[str], asset_class: str, horizon: st
 
     if not usable_symbols:
         blockers.append("no_usable_symbols")
-    if source_mode != "mock" and any(v.get("is_mock") for v in provider_status.values()):
+    if any(v.get("is_mock") for v in provider_status.values()):
         blockers.append("unexpected_mock_data_for_non_mock_source")
 
     if blockers:
@@ -372,7 +368,7 @@ def evaluate_data_readiness(*, symbols: list[str], asset_class: str, horizon: st
         "provider_status": provider_status,
         "provider_name": provider_name,
         "source_mode": source_mode,
-        "using_mock_data": source_mode == "mock" or any(bool(v.get("is_mock")) for v in provider_status.values()),
+        "using_mock_data": any(bool(v.get("is_mock")) for v in provider_status.values()),
         "symbols": clean_symbols,
         "usable_symbols": usable_symbols,
         "rejected_symbols": rejected_symbols,

@@ -112,12 +112,11 @@ class UpperWorkflowRequest(BaseModel):
 
     symbols: list[str] = Field(default_factory=list, description="Explicit symbols. NO defaults.")
     horizon: Literal["day_trade", "swing", "one_month"] = "swing"
-    source: Literal["auto", "yfinance", "alpaca", "polygon", "mock"] = "auto"
+    source: Literal["auto", "yfinance", "alpaca", "polygon"] = "auto"
     asset_class: Literal["stock", "option", "crypto"] = "stock"
     account_equity: float | None = None
     buying_power: float | None = None
     max_risk_per_trade_percent: float | None = None
-    allow_mock: bool = False
     promote_to_candidate_universe: bool = False
     min_data_freshness_score: int = 50  # Min score to proceed
 
@@ -299,7 +298,6 @@ def run_upper_workflow(request: UpperWorkflowRequest) -> UpperWorkflowResponse:
             asset_class=request.asset_class,
             source=request.source,
             horizon=request.horizon,
-            allow_mock=request.allow_mock,
         ))
 
         if freshness.status == "fail":
@@ -390,7 +388,6 @@ def run_upper_workflow(request: UpperWorkflowRequest) -> UpperWorkflowResponse:
         regime = run_market_regime_model(MarketRegimeRequest(
             source=request.source,
             horizon=request.horizon,
-            allow_mock=request.allow_mock,
         ))
 
         if regime.status == "fail":
@@ -535,7 +532,6 @@ def run_upper_workflow(request: UpperWorkflowRequest) -> UpperWorkflowResponse:
                 account_equity=request.account_equity,
                 buying_power=request.buying_power,
                 max_risk_per_trade_percent=request.max_risk_per_trade_percent,
-                include_mock=request.allow_mock,
                 promote_to_candidate_universe=False,  # We handle promotion separately
             ))
 
@@ -609,7 +605,6 @@ def run_upper_workflow(request: UpperWorkflowRequest) -> UpperWorkflowResponse:
                 use_active_trigger_rules=True,
                 source=request.source,
                 horizon=request.horizon,
-                allow_mock=request.allow_mock,
             ))
 
             stages.append(UpperWorkflowStage(
@@ -643,7 +638,6 @@ def run_upper_workflow(request: UpperWorkflowRequest) -> UpperWorkflowResponse:
                 source=request.source,
                 horizon=request.horizon,
                 strategy_key=top_strategy,
-                allow_mock=request.allow_mock,
             ))
 
             stages.append(UpperWorkflowStage(

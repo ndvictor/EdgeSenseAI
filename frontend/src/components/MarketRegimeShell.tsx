@@ -83,8 +83,8 @@ export function MarketRegimeShell({
             <section className="rounded-2xl border border-emerald-400/15 bg-black/35 p-4 shadow-[0_0_40px_rgba(0,0,0,0.25)] backdrop-blur">
               <h2 className="mb-3 text-lg font-semibold text-emerald-300">Source Truth</h2>
               <div className="grid grid-cols-1 gap-3 md:grid-cols-4 xl:grid-cols-8">
-                <SourceBadge label="Data Source" value={provenance?.data_source ?? "hardcoded_prototype"} danger />
-                <SourceBadge label="Source Type" value={provenance?.source_type ?? "static_placeholder"} danger />
+                <SourceBadge label="Data Source" value={provenance?.data_source ?? "source_unavailable"} danger />
+                <SourceBadge label="Source Type" value={provenance?.source_type ?? "not_configured"} danger />
                 <SourceBadge label="Real Data Used" value={provenance?.real_data_used ?? false} danger />
                 <SourceBadge label="Provider" value={provenance?.provider ?? "none"} />
                 <SourceBadge label="Model" value={provenance?.model_used ?? "none"} />
@@ -142,7 +142,7 @@ export function MarketRegimeShell({
                     <p className="mt-2 text-sm text-emerald-300">Signal: {factor.signal}</p>
                     <p className="mt-2 text-sm leading-relaxed text-slate-400">{factor.impact}</p>
                     <div className="mt-3 rounded-lg border border-amber-500/30 bg-amber-500/10 px-3 py-2 text-xs text-amber-200">
-                      Source: {factorSource.data_source ?? "hardcoded_prototype"}
+                      Source: {factorSource.data_source ?? "source_unavailable"}
                     </div>
                   </div>
                 );

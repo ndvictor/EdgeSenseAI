@@ -284,7 +284,7 @@ function calcStockReport(selection: StockChartSelection | null) {
   const hasUsableSourceData = Boolean(snapshot?.price && !isMock && sourceQuality === "real");
 
   let featureStatus = "waiting_for_source_data";
-  if (isMock) featureStatus = "mock_selected_for_testing";
+  if (isMock) featureStatus = "non_real_data_blocked";
   else if (hasUsableSourceData) featureStatus = "source_data_ready";
   else if (selection) featureStatus = "source_unavailable";
 

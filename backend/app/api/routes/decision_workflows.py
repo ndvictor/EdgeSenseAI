@@ -57,7 +57,6 @@ def post_run_candidate_universe_workflow():
             horizon="swing",
             source="auto",
             max_candidates=5,
-            allow_mock=False,
         )
         return run_decision_workflow(request, account_profile=AccountRiskProfile())
 
@@ -68,6 +67,5 @@ def post_run_candidate_universe_workflow():
         horizon="swing",
         source="auto",
         max_candidates=5,
-        allow_mock=False,
     )
     return run_decision_workflow(request, account_profile=AccountRiskProfile())

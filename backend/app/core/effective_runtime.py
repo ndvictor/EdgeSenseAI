@@ -19,7 +19,6 @@ _PRODUCTION_ENV_FIRST_KEYS = {
     "MARKET_DATA_MODE",
     "MARKET_DATA_PROVIDER",
     "MARKET_DATA_PROVIDER_PRIORITY",
-    "ALLOW_MOCK_MARKET_DATA",
     "ALLOW_SYNTHETIC_MARKET_DATA",
     "QLIB_REQUIRED",
 }
@@ -43,7 +42,6 @@ _BOOL_ENV_TO_SETTINGS: dict[str, str] = {
     "LLM_GATEWAY_ENABLE_PAID_TESTS": "llm_gateway_enable_paid_tests",
     "EMBEDDINGS_ENABLE_PAID_CALLS": "embeddings_enable_paid_calls",
     "ALPACA_MARKET_DATA_ENABLED": "alpaca_market_data_enabled",
-    "ALLOW_MOCK_MARKET_DATA": "allow_mock_market_data",
     "ALLOW_SYNTHETIC_MARKET_DATA": "allow_synthetic_market_data",
     "NEWS_PROVIDER_ENABLED": "news_provider_enabled",
 }

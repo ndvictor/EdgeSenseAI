@@ -3,16 +3,15 @@ from __future__ import annotations
 from typing import Literal
 from pydantic import BaseModel, Field
 
-from app.data_providers.mock_provider import MockMarketDataProvider
 from app.data_providers.provider_factory import get_market_data_provider
 from app.services.feature_engineering_service import build_features
 from app.services.xgboost_ranker_service import RankerInputRow, RankerRunResult, run_xgboost_ranker
 
 
 class ModelLabRunRequest(BaseModel):
-    data_source: Literal["mock", "yfinance", "polygon", "alpaca", "auto"] = "mock"
+    data_source: Literal["yfinance", "polygon", "alpaca", "auto"] = "auto"
     model: Literal["xgboost_ranker", "weighted_ranker"] = "xgboost_ranker"
-    symbols: list[str] = Field(default_factory=lambda: ["AMD", "NVDA", "BTC-USD"])
+    symbols: list[str] = Field(default_factory=list)
     train_split_percent: int = 70
     test_split_percent: int = 30
     feature_set: Literal["prototype_v1"] = "prototype_v1"
@@ -51,22 +50,20 @@ class ModelLabRunResponse(BaseModel):
 
 def run_model_lab_workflow(request: ModelLabRunRequest) -> ModelLabRunResponse:
     provider = get_market_data_provider(request.data_source)
-    mock_provider = MockMarketDataProvider()
     feature_rows: list[FeatureRow] = []
     ranker_rows: list[RankerInputRow] = []
-    fallback_notes: list[str] = []
+    notes: list[str] = []
 
     for symbol in request.symbols:
         asset_class = "crypto" if "-USD" in symbol else "stock"
         try:
             snapshot = provider.get_snapshot(symbol, asset_class=asset_class)
         except Exception as exc:
-            if request.data_source == "mock":
-                raise
-            snapshot = mock_provider.get_snapshot(symbol, asset_class=asset_class)
-            fallback_notes.append(
-                f"{symbol}: {request.data_source} snapshot failed ({exc}); used mock prototype row so the lab run can finish."
-            )
+            notes.append(f"{symbol}: {request.data_source} snapshot failed ({exc}); skipped.")
+            continue
+        if snapshot.data_mode == "source_unavailable" or snapshot.current_price <= 0:
+            notes.append(f"{symbol}: {request.data_source} snapshot unavailable; skipped.")
+            continue
         features = build_features(snapshot)
         feature_rows.append(
             FeatureRow(
@@ -98,9 +95,9 @@ def run_model_lab_workflow(request: ModelLabRunRequest) -> ModelLabRunResponse:
     test_rows = total_rows - train_rows
     ranker_result = run_xgboost_ranker(ranker_rows)
 
-    status = "completed_with_fallback" if fallback_notes else "completed"
+    status = "completed" if feature_rows else "source_unavailable"
     next_steps = (
-        fallback_notes
+        notes
         + [
             "Persist feature rows and labels for repeatable training runs.",
             "Replace weak prototype labels with target-before-stop outcomes.",

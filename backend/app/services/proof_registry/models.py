@@ -18,7 +18,7 @@ class ProofRegistryRecordCreate(BaseModel):
     model_config = ConfigDict(protected_namespaces=())
 
     proof_id: str | None = None
-    symbol: str = "AMD"
+    symbol: str = ""
     asset_class: str = "stock"
     horizon: str = "day_trading"
     strategy_key: str = "stock_day_trading"

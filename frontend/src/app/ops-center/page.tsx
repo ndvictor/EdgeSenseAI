@@ -80,7 +80,7 @@ export default function OpsCenterPage() {
   );
 
   const toggle = (k: TabKey) => setActive((prev) => (prev === k ? null : k));
-  const defaultSymbol = (process.env.NEXT_PUBLIC_EDGESENSE_DEFAULT_STOCK_SYMBOL ?? "AAPL").trim();
+  const defaultSymbol = (process.env.NEXT_PUBLIC_EDGESENSE_DEFAULT_STOCK_SYMBOL ?? "").trim();
 
   return (
     <div className="w-full min-h-full p-4 lg:p-8">

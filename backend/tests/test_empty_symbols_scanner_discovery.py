@@ -42,7 +42,7 @@ def _post_empty_symbols(stop_at_stage: int = 6):
             "dry_run": True,
             "allow_submit": False,
             "require_human_approval": True,
-            "metadata": {"allow_mock_market_data": False, "allow_synthetic_market_data": False},
+            "metadata": {"allow_synthetic_market_data": False},
         },
     )
 

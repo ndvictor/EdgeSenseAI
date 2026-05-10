@@ -59,10 +59,9 @@ export default function UniversePage() {
   const [symbolsInput, setSymbolsInput] = useState("");
   const [assetClass, setAssetClass] = useState<"stock" | "option" | "crypto">("stock");
   const [horizon, setHorizon] = useState<"day_trade" | "swing" | "one_month">("swing");
-  const [source, setSource] = useState<"auto" | "yfinance" | "alpaca" | "polygon" | "mock">("auto");
+  const [source, setSource] = useState<"auto" | "yfinance" | "alpaca" | "polygon">("auto");
   const [minScore, setMinScore] = useState(50);
   const [maxCandidates, setMaxCandidates] = useState(25);
-  const [includeMock, setIncludeMock] = useState(false);
   const [promoteToCandidates, setPromoteToCandidates] = useState(false);
 
   // Extended workflow options
@@ -117,7 +116,6 @@ export default function UniversePage() {
         asset_class: assetClass,
         horizon,
         source,
-        allow_mock: includeMock,
         promote_to_candidate_universe: promoteToCandidates,
         build_trigger_rules: buildTriggerRules,
         run_event_scanner: runEventScanner,
@@ -180,7 +178,6 @@ export default function UniversePage() {
         market_phase: "auto",
         scanner_groups: groups,
         source,
-        allow_mock: includeMock,
         small_account_mode: true,
         promote_to_candidate_universe: false,
       });
@@ -321,7 +318,6 @@ export default function UniversePage() {
                   <option value="yfinance">YFinance</option>
                   <option value="alpaca">Alpaca</option>
                   <option value="polygon">Polygon</option>
-                  <option value="mock">Mock (Explicit)</option>
                 </select>
               </div>
 
@@ -351,16 +347,6 @@ export default function UniversePage() {
             </div>
 
             <div className="mb-4 flex flex-wrap gap-4">
-              <label className="flex items-center gap-2 text-sm text-slate-300">
-                <input
-                  type="checkbox"
-                  checked={includeMock}
-                  onChange={(e) => setIncludeMock(e.target.checked)}
-                  className="rounded border-slate-600 bg-slate-700 text-emerald-500"
-                />
-                Include Mock Data (Explicit Opt-in)
-              </label>
-
               <label className="flex items-center gap-2 text-sm text-slate-300">
                 <input
                   type="checkbox"

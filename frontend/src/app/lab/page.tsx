@@ -1,5 +1,6 @@
 "use client";
 
+import Link from "next/link";
 import React, { useEffect, useMemo, useState } from "react";
 import {
   getLabInventory,
@@ -297,6 +298,18 @@ export default function LabPlatformPage() {
       <div className="mb-4 rounded-xl border border-amber-400/20 bg-amber-500/5 px-4 py-3 text-sm text-amber-100/90">
         <span className="font-semibold text-amber-200">Next action · </span>
         {summary.next_action}
+      </div>
+
+      <div className="mb-6">
+        <Link
+          href="/daytrading-workflow/promotion"
+          className="block rounded-xl border border-emerald-500/25 bg-emerald-500/5 px-4 py-3 text-sm text-emerald-100 transition hover:border-emerald-400/45"
+        >
+          <span className="font-semibold text-emerald-300">Promotion Center</span>
+          <span className="mt-1 block text-xs text-slate-400">
+            Strategy and model readiness from stored evidence only. Read-only; does not activate strategies or submit orders.
+          </span>
+        </Link>
       </div>
 
       <div className="mb-6 flex flex-wrap gap-2">

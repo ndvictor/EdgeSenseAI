@@ -63,9 +63,7 @@ class PlatformIntegrationChecksRequest(BaseModel):
     model_config = ConfigDict(protected_namespaces=())
 
     symbols: list[str] = Field(default_factory=lambda: ["SPY", "AAPL"])
-    source: Literal["auto", "yfinance", "alpaca", "polygon", "mock"] = "auto"
-    allow_mock: bool = False
-    """When True, market/regime paths may use mock provider (for CI)."""
+    source: Literal["auto", "yfinance", "alpaca", "polygon"] = "auto"
 
     checks: list[str] | None = Field(
         default=None,
@@ -342,7 +340,6 @@ def run_platform_integration_checks(request: PlatformIntegrationChecksRequest) -
                 DataFreshnessCheckRequest(
                     symbols=symbols[:3],
                     source=request.source,
-                    allow_mock=request.allow_mock,
                     require_bid_ask=False,
                 )
             )
@@ -380,7 +377,6 @@ def run_platform_integration_checks(request: PlatformIntegrationChecksRequest) -
                 UniverseDiscoverRequest(
                     symbols=symbols[:5],
                     source=request.source,
-                    allow_mock=request.allow_mock,
                     promote_to_candidate_universe=False,
                 )
             )
@@ -532,7 +528,7 @@ def run_platform_integration_checks(request: PlatformIntegrationChecksRequest) -
 
     if want_run("regime_classifier"):
         def _reg():
-            return run_market_regime_model(MarketRegimeRequest(source=request.source, allow_mock=request.allow_mock))
+            return run_market_regime_model(MarketRegimeRequest(source=request.source))
 
         rg, ms, err = _run_timed("regime", _reg)
         if err:

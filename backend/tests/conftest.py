@@ -2,9 +2,6 @@ from pathlib import Path
 import os
 import sys
 
-# Default tests to real-provider behavior; cases that need fixtures must opt in locally.
-os.environ.setdefault("ALLOW_MOCK_MARKET_DATA", "false")
-
 # Ensure `import app` works when running `cd backend && pytest -q`.
 _BACKEND_ROOT = Path(__file__).resolve().parents[1]
 if str(_BACKEND_ROOT) not in sys.path:

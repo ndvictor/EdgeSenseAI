@@ -70,9 +70,8 @@ class EventScannerRequest(BaseModel):
     symbols: list[str] = Field(default_factory=list)
     use_latest_watchlist: bool = True
     use_active_trigger_rules: bool = True
-    source: Literal["auto", "yfinance", "alpaca", "polygon", "mock"] = "auto"
+    source: Literal["auto", "yfinance", "alpaca", "polygon"] = "auto"
     horizon: Literal["day_trade", "swing", "one_month"] = "swing"
-    allow_mock: bool = False
     max_symbols: int = Field(default=50, ge=1, le=100)
 
 
@@ -173,7 +172,6 @@ def _cheap_event_check(
     rule: TriggerRule | None,
     *,
     source: str,
-    allow_mock: bool,
 ) -> EventScannerMatchedEvent | None:
     """Run cheap deterministic event check for a symbol."""
     if rule:
@@ -206,7 +204,7 @@ def _cheap_event_check(
     except Exception:
         return None
 
-    if snap.get("is_mock") and not allow_mock:
+    if snap.get("is_mock"):
         return None
     dq = snap.get("data_quality")
     if dq in ("unavailable", "not_configured"):
@@ -299,7 +297,6 @@ def run_event_scanner(request: EventScannerRequest) -> EventScannerResponse:
                 symbols=symbols_to_scan,
                 source=request.source,
                 horizon=request.horizon,
-                allow_mock=request.allow_mock,
             )
         )
         data_freshness_run_id = freshness_result.run_id
@@ -333,7 +330,7 @@ def run_event_scanner(request: EventScannerRequest) -> EventScannerResponse:
     for symbol in symbols_to_scan:
         try:
             rule = active_rules.get(symbol)
-            event = _cheap_event_check(symbol, rule, source=request.source, allow_mock=request.allow_mock)
+            event = _cheap_event_check(symbol, rule, source=request.source)
 
             if event:
                 matched_events.append(event)

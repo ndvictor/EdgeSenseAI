@@ -10,7 +10,7 @@ export default function WorkflowGovernancePage() {
   const [error, setError] = useState<string | null>(null);
   const [loading, setLoading] = useState(true);
   const [busy, setBusy] = useState(false);
-  const [symbols, setSymbols] = useState("AMD");
+  const [symbols, setSymbols] = useState("");
 
   async function load() {
     setError(null);
@@ -40,7 +40,7 @@ export default function WorkflowGovernancePage() {
         asset_class: "stock",
         horizon: "day_trading",
         mode: "paper_first",
-        symbols: syms.length ? syms : ["AMD"],
+        symbols: syms,
         allow_submit: false,
         dry_run: true,
         require_human_approval: true,

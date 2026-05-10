@@ -112,7 +112,7 @@ class EdgeSignalsResponse(BaseModel):
     signals: List[EdgeSignal]
     signal_source_status: str = Field(
         default="no_real_signal_source",
-        description="prototype_demo when mock stub signals are returned; otherwise no_real_signal_source.",
+        description="no_real_signal_source until source-backed edge signals are available.",
     )
 
 
@@ -159,7 +159,7 @@ class TradeRecommendation(BaseModel):
     final_reason: str
     invalidation_rules: List[str]
     risk_factors: List[str]
-    data_mode: Literal["synthetic_prototype", "paper", "live", "source_unavailable"] = "synthetic_prototype"
+    data_mode: Literal["paper", "live", "source_unavailable"] = "source_unavailable"
     execution_enabled: bool = False
     research_only: bool = True
 
@@ -193,7 +193,7 @@ class SourceDataStatus(BaseModel):
 class CommandCenterDataSourceConfirmation(BaseModel):
     """Runtime-effective feeds and workflow routing for this Command Center response."""
 
-    market_data_primary: str = "mock"
+    market_data_primary: str = "not_configured"
     market_data_fallback_chain: List[str] = Field(default_factory=list)
     universe_selection_source: str = "auto"
     universe_selection_horizon: str = "swing"

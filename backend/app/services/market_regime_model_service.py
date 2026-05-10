@@ -20,13 +20,12 @@ class MarketRegimeRequest(BaseModel):
 
     model_config = ConfigDict(protected_namespaces=())
 
-    source: Literal["auto", "yfinance", "alpaca", "polygon", "mock"] = "auto"
+    source: Literal["auto", "yfinance", "alpaca", "polygon"] = "auto"
     symbols: list[str] = Field(default_factory=list, description="Optional symbols to use for regime detection")
     spy_symbol: str = "SPY"
     qqq_symbol: str = "QQQ"
     vix_symbol: str = "^VIX"
     horizon: Literal["day_trade", "swing", "one_month"] = "swing"
-    allow_mock: bool = False
 
 
 class MarketRegimeResponse(BaseModel):
@@ -220,13 +219,13 @@ def run_market_regime_model(request: MarketRegimeRequest) -> MarketRegimeRespons
     qqq_data = _get_price_history_safe(request.qqq_symbol, request.source)
     qqq_available = qqq_data is not None and bool(qqq_data.get("data"))
 
-    if spy_available and spy_data and spy_data.get("is_mock") and not request.allow_mock:
-        blockers.append("SPY data is mock but allow_mock=false")
+    if spy_available and spy_data and spy_data.get("is_mock"):
+        blockers.append("SPY data is non-real")
         spy_available = False
         spy_data = None
 
-    if qqq_available and qqq_data and qqq_data.get("is_mock") and not request.allow_mock:
-        blockers.append("QQQ data is mock but allow_mock=false")
+    if qqq_available and qqq_data and qqq_data.get("is_mock"):
+        blockers.append("QQQ data is non-real")
         qqq_available = False
         qqq_data = None
 

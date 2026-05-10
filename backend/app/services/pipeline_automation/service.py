@@ -46,20 +46,20 @@ def run_pipeline(body: PipelineAutomationRunRequest) -> PipelineAutomationRunRes
     }
 
     # Step 1: pull feed snapshots + data quality for seed symbols (best-effort)
-    src = "mock" if body.dry_run else (body.source or "auto")
+    src = body.source or "auto"
     market = MarketDataService()
     seed_symbols: list[str] = []
+    warnings: list[str] = []
+    blockers: list[str] = []
     for s in body.seed_symbols:
         sym = str(s).strip().upper()
         if sym and sym not in seed_symbols:
             seed_symbols.append(sym)
     if not seed_symbols:
-        seed_symbols = ["AMD"]
+        warnings.append("no_seed_symbols_provided")
 
     feed_samples: list[dict[str, Any]] = []
     quality_samples: list[dict[str, Any]] = []
-    warnings: list[str] = []
-    blockers: list[str] = []
 
     for sym in seed_symbols[: max(3, min(25, body.max_candidates * 3))]:
         snap = market.get_market_snapshot(sym, source=src)
@@ -107,7 +107,6 @@ def run_pipeline(body: PipelineAutomationRunRequest) -> PipelineAutomationRunRes
         source=src,  # type: ignore[arg-type]
         max_candidates=max(1, min(100, int(body.max_candidates))),
         min_score=40,
-        include_mock=bool(body.dry_run or src == "mock"),
     )
     universe = run_universe_selection(universe_req)
     artifacts["universe_selection"] = universe.model_dump(mode="json")

@@ -28,7 +28,6 @@ class DecisionWorkflowRunRequest(BaseModel):
     source: str = "auto"
     strategy_key: str | None = None
     max_candidates: int = 5
-    allow_mock: bool = False
 
 
 class DecisionCandidate(BaseModel):
@@ -175,8 +174,8 @@ def _build_candidate(symbol: str, request: DecisionWorkflowRunRequest) -> tuple[
 
     if quality == "fail":
         blockers.extend(feature_run.quality_report.blockers or ["Data quality failed."])
-    if normalized.is_mock and not request.allow_mock:
-        blockers.append("Mock data is blocked for decision workflow unless allow_mock=true.")
+    if normalized.is_mock:
+        blockers.append("Non-real market data is blocked for decision workflow.")
     if price is None:
         blockers.append("No current price returned from selected source.")
 
@@ -288,7 +287,7 @@ def _candidate_to_trade_recommendation(candidate: DecisionCandidate, account_pro
             "Block if spread/liquidity/risk gate fails.",
         ],
         risk_factors=candidate.blockers + candidate.warnings,
-        data_mode="live" if candidate.source != "mock" else "synthetic_prototype",
+        data_mode="live",
         execution_enabled=False,
         research_only=True,
     )
@@ -323,9 +322,6 @@ def run_decision_workflow(request: DecisionWorkflowRunRequest, account_profile: 
         _DECISION_RUNS.insert(0, response)
         del _DECISION_RUNS[100:]
         return response
-    if request.source == "mock" and not request.allow_mock:
-        blockers.append("source=mock requested but allow_mock=false. Candidates will be blocked from actionable status.")
-
     candidates: list[DecisionCandidate] = []
     feature_runs: list[dict[str, Any]] = []
     model_runs: list[dict[str, Any]] = []
@@ -455,7 +451,6 @@ def build_default_decision_workflow(account_profile: AccountRiskProfile | None =
             source="auto",
             horizon="swing",
             max_candidates=5,
-            allow_mock=False,
         ),
         account_profile=account_profile,
     )

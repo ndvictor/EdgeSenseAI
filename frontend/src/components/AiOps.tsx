@@ -398,7 +398,7 @@ function EdgeRadarPanel() {
         <label>
           <span className="text-xs uppercase tracking-wide text-slate-400">Data Source</span>
           <select value={dataSource} onChange={(event) => setDataSource(event.target.value)} className="mt-1 w-full rounded-lg border border-slate-700 bg-slate-900 px-3 py-2 text-sm text-white">
-            {["auto", "yfinance", "mock"].map((value) => <option key={value}>{value}</option>)}
+            {["auto", "yfinance", "alpaca", "polygon"].map((value) => <option key={value}>{value}</option>)}
           </select>
         </label>
         <label>

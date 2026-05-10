@@ -64,13 +64,7 @@ GET /api/journal/summary
 
 ## Current Data Mode
 
-```text
-synthetic_prototype
-```
-
-All numeric market outputs are deterministic prototype values from `MockMarketDataProvider`.
-
-The UI must not present these as live trading recommendations.
+Unavailable market data is reported as source unavailable. The platform must not fabricate numeric market outputs.
 
 ## Current Execution Mode
 

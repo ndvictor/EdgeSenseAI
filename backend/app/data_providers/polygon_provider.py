@@ -11,7 +11,7 @@ from app.data_providers.base import MarketCandle, MarketCandlesResponse, MarketS
 class PolygonProvider:
     """Market data via Polygon.io snapshot + aggregates (aligned with YFinanceProvider interface)."""
 
-    default_symbols = ["AMD", "NVDA", "BTC-USD"]
+    default_symbols: list[str] = []
     BASE = "https://api.polygon.io"
 
     def __init__(self, timeout_seconds: int | None = None) -> None:

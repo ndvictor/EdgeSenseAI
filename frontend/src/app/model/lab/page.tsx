@@ -32,7 +32,6 @@ type ModelLabSectionId = (typeof MODEL_LAB_SECTIONS)[number]["id"];
 
 const MODEL_LAB_DATA_SOURCES: { value: ModelLabRunRequest["data_source"]; label: string }[] = [
   { value: "auto", label: "Auto (runtime default)" },
-  { value: "mock", label: "Mock prototype" },
   { value: "yfinance", label: "Yahoo Finance (research)" },
   { value: "polygon", label: "Polygon.io" },
   { value: "alpaca", label: "Alpaca market data" },
@@ -374,7 +373,7 @@ function BlockedModelsPanel({ run, plan }: { run: ModelRunResponse | null; plan:
 }
 
 export default function ModelLabPage() {
-  const [dataSource, setDataSource] = useState<ModelLabRunRequest["data_source"]>("mock");
+  const [dataSource, setDataSource] = useState<ModelLabRunRequest["data_source"]>("auto");
   const [model, setModel] = useState<ModelLabRunRequest["model"]>("xgboost_ranker");
   const [symbols, setSymbols] = useState("");
   const [trainSplit, setTrainSplit] = useState(70);
@@ -831,7 +830,7 @@ export default function ModelLabPage() {
                     label="Test Signal Detection"
                     loading={gateAction === "signal"}
                     disabled={!pipelineSymbol}
-                    onClick={() => runExecutionGate("signal", () => api.runSignalScoring({ use_latest_events: true, allow_mock: dataSource === "mock", horizon }))}
+                    onClick={() => runExecutionGate("signal", () => api.runSignalScoring({ use_latest_events: true, horizon }))}
                   />
                   <PipelineButton
                     label="Test Model Score"

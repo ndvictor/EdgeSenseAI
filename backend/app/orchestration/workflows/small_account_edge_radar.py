@@ -215,7 +215,7 @@ def run_small_account_edge_radar(request: SmallAccountEdgeRadarInput) -> SmallAc
 
     completed_at = datetime.utcnow()
     approval_required = bool(portfolio_decision.get("approval_required"))
-    paper_trade_allowed = bool(portfolio_decision.get("paper_trade_allowed")) and request.data_source in {"auto", "yfinance", "mock"}
+    paper_trade_allowed = bool(portfolio_decision.get("paper_trade_allowed")) and request.data_source in {"auto", "yfinance", "alpaca", "polygon"}
     return SmallAccountEdgeRadarOutput(
         run_id=run_id,
         workflow_name=WORKFLOW_NAME,

@@ -246,7 +246,7 @@ export type CandidatesStatusResponse = {
   candidate_sources?: CandidateSourceStatus[];
 };
 
-export type MarketDataSource = "auto" | "yfinance" | "alpaca" | "polygon" | "mock";
+export type MarketDataSource = "auto" | "yfinance" | "alpaca" | "polygon";
 
 export type AccountRiskProfile = {
   account_mode: "manual" | "paper";
@@ -797,7 +797,7 @@ export type RankerScore = {
 };
 
 export type ModelLabRunRequest = {
-  data_source: "mock" | "yfinance" | "polygon" | "alpaca" | "auto";
+  data_source: "yfinance" | "polygon" | "alpaca" | "auto";
   model: "xgboost_ranker" | "weighted_ranker";
   symbols: string[];
   train_split_percent: number;
@@ -871,7 +871,7 @@ export type TradeRecommendation = {
   final_reason: string;
   invalidation_rules: string[];
   risk_factors: string[];
-  data_mode: "synthetic_prototype" | "paper" | "live" | "source_unavailable";
+  data_mode: "paper" | "live" | "source_unavailable";
   execution_enabled: boolean;
   research_only: boolean;
 };
@@ -1111,7 +1111,7 @@ export type EdgeRadarRunRequest = {
   account_size?: number | null;
   max_risk_per_trade?: number | null;
   strategy_preference?: string | null;
-  data_source: "auto" | "yfinance" | "mock" | string;
+  data_source: "auto" | "yfinance" | "alpaca" | "polygon" | string;
 };
 
 export type EdgeRadarTraceEvent = {
@@ -1220,7 +1220,7 @@ export type FeatureStoreRunRequest = {
   symbol: string;
   asset_class: string;
   horizon: "intraday" | "day_trade" | "swing" | "one_month" | string;
-  source: "auto" | "yfinance" | "mock" | string;
+  source: "auto" | "yfinance" | "alpaca" | "polygon" | string;
 };
 
 export type FeatureStoreRunResponse = {
@@ -1298,7 +1298,7 @@ export type ModelRunPlanRequest = {
   symbols: string[];
   asset_class: string;
   horizon: "intraday" | "day_trade" | "swing" | "one_month" | string;
-  source: "auto" | "yfinance" | "mock" | string;
+  source: "auto" | "yfinance" | "alpaca" | "polygon" | string;
   strategy_key?: string | null;
   feature_row_id?: string | null;
   selected_models?: string[] | null;
@@ -2996,6 +2996,59 @@ export type PlatformReadinessStatusResponse = {
   next_action?: string;
 } & Record<string, unknown>;
 
+/** GET /api/promotion/strategies/status — read-only promotion readiness */
+export type PromotionStrategyRow = {
+  strategy_key: string;
+  display_name: string;
+  setup_type: string;
+  status: string;
+  sample_size: number | null;
+  avg_r: number | null;
+  profit_factor: number | null;
+  max_drawdown_r: number | null;
+  rule_violations: number | null;
+  spread_slippage_acceptable: boolean | null;
+  small_account_feasible: boolean | null;
+  promotion_readiness: "not_ready" | "eligible_for_review";
+  blockers: string[];
+  next_action: string;
+};
+
+export type PromotionStrategiesStatusResponse = {
+  status: string;
+  data_source?: string;
+  strategies: PromotionStrategyRow[];
+};
+
+/** GET /api/promotion/models/status — read-only promotion readiness */
+export type PromotionModelRow = {
+  model_key: string;
+  model_role: string;
+  status: string;
+  allowed_strategy_keys: string[];
+  sample_size: number | null;
+  validation_score: number | null;
+  calibration_status: string | null;
+  prediction_error_r: number | null;
+  promotion_readiness: "not_ready" | "eligible_for_review";
+  blockers: string[];
+  next_action: string;
+};
+
+export type PromotionModelsStatusResponse = {
+  status: string;
+  data_source?: string;
+  models: PromotionModelRow[];
+};
+
+export async function getPromotionStrategiesStatus(): Promise<PromotionStrategiesStatusResponse> {
+  return request<PromotionStrategiesStatusResponse>("/api/promotion/strategies/status");
+}
+
+export async function getPromotionModelsStatus(): Promise<PromotionModelsStatusResponse> {
+  return request<PromotionModelsStatusResponse>("/api/promotion/models/status");
+}
+
 export type IntegrationCheckCatalogEntry = {
   key: string;
   label: string;
@@ -3032,8 +3085,7 @@ export type PlatformIntegrationChecksResponse = {
 
 export type IntegrationChecksRunRequest = {
   symbols?: string[];
-  source?: "auto" | "yfinance" | "alpaca" | "polygon" | "mock";
-  allow_mock?: boolean;
+  source?: "auto" | "yfinance" | "alpaca" | "polygon";
   checks?: string[] | null;
   submit_real_paper_order?: boolean;
 };
@@ -3104,7 +3156,7 @@ export type MarketScannerSignal = {
 export type MarketScannerRequest = {
   strategy_key: string;
   symbols: string[];
-  data_source: "auto" | "yfinance" | "mock" | string;
+  data_source: "auto" | "yfinance" | "alpaca" | "polygon" | string;
   auto_run: boolean;
   trigger_type?: "manual" | "scheduled";
   trigger_workflow?: boolean;
@@ -3260,14 +3312,13 @@ export type UniverseSelectionRequest = {
   symbols: string[];
   asset_class?: "stock" | "option" | "crypto";
   horizon?: "day_trade" | "swing" | "one_month";
-  source?: "auto" | "yfinance" | "alpaca" | "polygon" | "mock";
+  source?: "auto" | "yfinance" | "alpaca" | "polygon";
   strategy_key?: string;
   max_candidates?: number;
   min_score?: number;
   account_equity?: number;
   buying_power?: number;
   max_risk_per_trade_percent?: number;
-  include_mock?: boolean;
   promote_to_candidate_universe?: boolean;
 };
 
@@ -4784,7 +4835,7 @@ export const api = {
   // Decision Workflow APIs
   getLatestDecisionWorkflowRun: () => request<DecisionWorkflowRunResponse | null>("/api/decision-workflows/runs/latest"),
   listDecisionWorkflowRuns: (limit = 20) => request<DecisionWorkflowRunResponse[]>(`/api/decision-workflows/runs?limit=${limit}`),
-  runDecisionWorkflow: (payload: { symbols: string[]; asset_class?: string; horizon?: string; source?: string; max_candidates?: number; allow_mock?: boolean }) =>
+  runDecisionWorkflow: (payload: { symbols: string[]; asset_class?: string; horizon?: string; source?: string; max_candidates?: number }) =>
     request<DecisionWorkflowRunResponse>("/api/decision-workflows/run", { method: "POST", body: JSON.stringify(payload) }),
   runDecisionWorkflowDefault: () => request<DecisionWorkflowRunResponse>("/api/decision-workflows/run-default", { method: "POST" }),
   runCandidateUniverseWorkflow: () => request<DecisionWorkflowRunResponse>("/api/decision-workflows/run-candidate-universe", { method: "POST" }),
@@ -4825,7 +4876,7 @@ export const api = {
     request<{ success: boolean; message: string; promoted_count: number; promoted_symbols: string[]; source_run_id?: string }>("/api/universe-selection/promote-latest-to-candidates", { method: "POST" }),
 
   // Universe Discovery APIs
-  runUniverseDiscovery: (payload: { symbols: string[]; asset_class?: string; horizon?: string; market_phase?: string; scanner_groups?: string[]; source?: string; allow_mock?: boolean; small_account_mode?: boolean; promote_to_candidate_universe?: boolean }) =>
+  runUniverseDiscovery: (payload: { symbols: string[]; asset_class?: string; horizon?: string; market_phase?: string; scanner_groups?: string[]; source?: string; small_account_mode?: boolean; promote_to_candidate_universe?: boolean }) =>
     request<UniverseDiscoverResponse>("/api/universe/discover", { method: "POST", body: JSON.stringify(payload) }),
 
   // Runtime/Timing APIs
@@ -4833,12 +4884,12 @@ export const api = {
   getRuntimeCadence: () => request<{ market_phase: string; active_loop: string; cadence_plan: CadencePlan; live_trading_allowed: boolean; human_approval_required: boolean; timestamp: string }>("/api/runtime/cadence"),
 
   // Data Freshness APIs
-  runDataFreshnessCheck: (payload: { symbols: string[]; asset_class?: string; source?: string; horizon?: string; allow_mock?: boolean }) =>
+  runDataFreshnessCheck: (payload: { symbols: string[]; asset_class?: string; source?: string; horizon?: string }) =>
     request<DataFreshnessCheckResponse>("/api/data-freshness/check", { method: "POST", body: JSON.stringify(payload) }),
   getLatestDataFreshness: () => request<DataFreshnessCheckResponse | { message: string; status: string }>("/api/data-freshness/latest"),
 
   // Market Regime APIs
-  runMarketRegime: (payload: { source?: string; horizon?: string; allow_mock?: boolean }) =>
+  runMarketRegime: (payload: { source?: string; horizon?: string }) =>
     request<MarketRegimeModelResponse>("/api/market-regime/model/run", { method: "POST", body: JSON.stringify(payload) }),
   getLatestMarketRegime: () => request<MarketRegimeModelResponse | { message: string; status: string }>("/api/market-regime/model/latest"),
 
@@ -4860,7 +4911,7 @@ export const api = {
   getModelRegistry: () => request<Record<string, unknown>>("/api/model-selection/registry"),
 
   // Upper Workflow API
-  runUpperWorkflow: (payload: { symbols: string[]; horizon?: string; source?: string; asset_class?: string; account_equity?: number; buying_power?: number; allow_mock?: boolean; promote_to_candidate_universe?: boolean; build_trigger_rules?: boolean; run_event_scanner?: boolean; run_signal_scoring?: boolean; run_meta_model?: boolean; run_recommendation_pipeline?: boolean }) =>
+  runUpperWorkflow: (payload: { symbols: string[]; horizon?: string; source?: string; asset_class?: string; account_equity?: number; buying_power?: number; promote_to_candidate_universe?: boolean; build_trigger_rules?: boolean; run_event_scanner?: boolean; run_signal_scoring?: boolean; run_meta_model?: boolean; run_recommendation_pipeline?: boolean }) =>
     request<UpperWorkflowResponse>("/api/upper-workflow/run", { method: "POST", body: JSON.stringify(payload) }),
   getLatestUpperWorkflow: () => request<UpperWorkflowResponse | { message: string; status: string }>("/api/upper-workflow/latest"),
 
@@ -4878,13 +4929,13 @@ export const api = {
     request<{ expired_count: number; status: string; message: string }>("/api/trigger-rules/expire", { method: "POST", body: JSON.stringify({ all_rules: allRules, rule_id: ruleId }) }),
 
   // Event Scanner APIs
-  runEventScanner: (payload: { symbols?: string[]; use_latest_watchlist?: boolean; use_active_trigger_rules?: boolean; source?: string; horizon?: string; allow_mock?: boolean; max_symbols?: number }) =>
+  runEventScanner: (payload: { symbols?: string[]; use_latest_watchlist?: boolean; use_active_trigger_rules?: boolean; source?: string; horizon?: string; max_symbols?: number }) =>
     request<EventScannerResponse>("/api/event-scanner/run", { method: "POST", body: JSON.stringify(payload) }),
   getLatestEventScan: () => request<EventScannerResponse | { message: string; status: string }>("/api/event-scanner/runs/latest"),
   getEventScanRuns: (limit = 20) => request<{ runs: EventScannerResponse[]; count: number }>(`/api/event-scanner/runs?limit=${limit}`),
 
   // Signal Scoring APIs
-  runSignalScoring: (payload: { events?: unknown[]; use_latest_events?: boolean; source?: string; horizon?: string; strategy_key?: string; allow_mock?: boolean }) =>
+  runSignalScoring: (payload: { events?: unknown[]; use_latest_events?: boolean; source?: string; horizon?: string; strategy_key?: string }) =>
     request<SignalScoringResponse>("/api/signal-scoring/run", { method: "POST", body: JSON.stringify(payload) }),
   getLatestSignalScoring: () => request<SignalScoringResponse | { message: string; status: string }>("/api/signal-scoring/runs/latest"),
   getSignalScoringRuns: (limit = 20) => request<{ runs: SignalScoringResponse[]; count: number }>(`/api/signal-scoring/runs?limit=${limit}`),
@@ -5024,6 +5075,10 @@ export const api = {
   getWorkflowRunbookStatus,
   getWorkflowRunbookStages,
   getWorkflowRunbookLatest,
+
+  /** Promotion Center — read-only readiness from registry + evidence (no activation). */
+  getPromotionStrategiesStatus,
+  getPromotionModelsStatus,
 
   /** Phase 5 — orchestrator, runtime, approvals, audit, scheduler, governance, readiness v2, Qlib, evidence. */
   runWorkflowOrchestrator,

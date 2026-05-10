@@ -41,7 +41,7 @@ def get_integration_checks_catalog():
 
 @router.post("/integration-checks/run", response_model=PlatformIntegrationChecksResponse)
 def post_integration_checks_run(request: PlatformIntegrationChecksRequest):
-    """Execute integration checks. Uses live providers when configured; use allow_mock=true in CI.
+    """Execute integration checks using configured real providers.
 
     Default paper order is dry-run only. Set submit_real_paper_order=true only when all TradeNow
     gates are intentionally enabled for a real paper probe.

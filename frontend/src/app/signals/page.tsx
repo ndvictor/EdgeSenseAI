@@ -72,7 +72,6 @@ export default function SignalsPage() {
         use_active_trigger_rules: true,
         source: "auto",
         horizon: "swing",
-        allow_mock: false,
       });
       setEventScanner(eventRes);
 
@@ -89,7 +88,6 @@ export default function SignalsPage() {
         use_latest_events: false,
         source: "auto",
         horizon: "swing",
-        allow_mock: false,
       });
       setSignalScoring(scoringRes);
 
