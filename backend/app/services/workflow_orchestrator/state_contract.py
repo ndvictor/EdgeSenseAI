@@ -68,6 +68,16 @@ class WorkflowCarryForwardState(BaseModel):
     small_account_rejected_symbols: list[str] = Field(default_factory=list)
     small_account_blockers: list[str] = Field(default_factory=list)
     small_account_warnings: list[str] = Field(default_factory=list)
+    account_feasibility_decision: str | None = None
+    account_feasibility_blockers: list[str] = Field(default_factory=list)
+    account_feasibility_warnings: list[str] = Field(default_factory=list)
+    buying_power: float | None = None
+    fractional_trading_enabled: bool = True
+    execution_mode: str = "plan_only"
+    paper_trading_enabled: bool | None = None
+    live_trading_enabled: bool | None = None
+    broker_execution_enabled: bool | None = None
+    account_owner_gates: dict[str, Any] = Field(default_factory=dict)
     alpha_recommendation: dict[str, Any] = Field(default_factory=dict)
     alpha_status: str | None = None
     alpha_selected_symbol: str | None = None

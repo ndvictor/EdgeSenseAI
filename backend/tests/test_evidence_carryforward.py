@@ -118,7 +118,7 @@ def test_orchestrator_carry_forward_includes_qlib_proof_model_strategy_evidence_
                 "feasible_symbols": ["TEST_STOCK_A"],
                 "rejected_symbols": [],
                 "blockers": [],
-                "warnings": ["proof_not_ready_for_small_account"],
+                "warnings": ["proof_not_ready_for_promotion"],
             },
         ),
         state=state,
@@ -137,4 +137,4 @@ def test_orchestrator_carry_forward_includes_qlib_proof_model_strategy_evidence_
     assert state.max_risk_dollars == 5.0
     assert state.max_daily_loss_dollars == 15.0
     assert state.feasible_symbols == ["TEST_STOCK_A"]
-    assert "proof_not_ready_for_small_account" in state.small_account_warnings
+    assert "proof_not_ready_for_promotion" in state.small_account_warnings

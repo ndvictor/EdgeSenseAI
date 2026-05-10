@@ -202,7 +202,7 @@ def test_orchestrator_snapshots_include_small_account_fields():
     timeline = _timeline_by_agent(run)
     snapshot = timeline["strategy_eligibility_agent"]["pipeline_inputs_snapshot"]
 
-    assert snapshot["small_account_decision"] == "pass"
+    assert snapshot["small_account_decision"] == "feasible"
     assert snapshot["max_risk_dollars"] == 5.0
     assert snapshot["max_daily_loss_dollars"] == 15.0
     assert snapshot["feasible_symbols"] == ["TEST_STOCK_A"]

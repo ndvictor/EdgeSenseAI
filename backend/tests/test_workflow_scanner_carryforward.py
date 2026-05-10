@@ -81,6 +81,10 @@ def test_workflow_carryforward_from_scanner(monkeypatch):
         return dict(dx)
 
     monkeypatch.setattr(orchestrator_service, "build_scanner_diagnostics", _fake_build_scanner_diagnostics)
+    monkeypatch.setattr(
+        "app.services.account_owner_policy.service.effective_bool",
+        lambda key: key in {"WORKFLOW_ENABLED", "PAPER_TRADING_ENABLED"},
+    )
 
     run = orchestrator_service.run_workflow(
         OrchestratorRunRequest(

@@ -8,7 +8,10 @@ from app.services.agent_runtime.wrappers.data_readiness_adapter import evaluate_
 from app.services.agent_runtime.wrappers.market_condition_adapter import scan_market_condition
 from app.services.agent_runtime.wrappers.model_selection_adapter import select_models
 from app.services.agent_runtime.wrappers.qlib_adapter import qlib_research_snapshot
-from app.services.agent_runtime.wrappers.small_account_feasibility_adapter import evaluate_small_account_inputs
+from app.services.agent_runtime.wrappers.small_account_feasibility_adapter import (
+    evaluate_small_account_inputs,
+    merge_small_account_feasibility_context,
+)
 from app.services.agent_runtime.wrappers.strategy_selection_adapter import select_strategy
 from app.services.agent_runtime.wrappers.watchlist_adapter import build_watchlist, watchlist_from_workflow_scanner_rows
 from app.services.agent_runtime.wrappers.safety import SafetyResult
@@ -247,36 +250,29 @@ def run_glue_agent(*, agent_key: str, inputs: dict[str, Any], context: dict[str,
         return {"tool_name": "qlib.status_and_artifacts", "tool_request": {"limit": s.get("limit", 10)}, "tool_response": out, "next_agent": out.get("next_agent") or "small_account_feasibility_agent", "safety": safety}
 
     if agent_key == "small_account_feasibility_agent":
-        merged_inputs: dict[str, Any] = dict(s)
-        if merged_inputs.get("latest_price") is None:
-            ar = merged_inputs.get("alpha_recommendation")
-            if isinstance(ar, dict):
-                ep = ar.get("entry_plan")
-                if isinstance(ep, dict) and ep.get("entry") is not None:
-                    merged_inputs["latest_price"] = ep.get("entry")
-        if merged_inputs.get("avg_dollar_volume") is None:
-            sc = merged_inputs.get("scanner_candidates")
-            sel = str(merged_inputs.get("selected_symbol") or merged_inputs.get("symbol") or "").strip().upper()
-            if isinstance(sc, list) and sel:
-                for row in sc:
-                    if not isinstance(row, dict):
-                        continue
-                    sym = str(row.get("symbol") or "").strip().upper()
-                    if sym == sel and row.get("dollar_volume") is not None:
-                        merged_inputs["avg_dollar_volume"] = row.get("dollar_volume")
-                        break
+        merged_inputs = merge_small_account_feasibility_context(dict(s))
+        if merged_inputs.get("account_owner_gates") is None and isinstance(s.get("account_owner_gates"), dict):
+            merged_inputs["account_owner_gates"] = s.get("account_owner_gates")
         out = evaluate_small_account_inputs(merged_inputs)
         return {
             "tool_name": "small_account_feasibility.evaluate",
             "tool_request": {
-                "account_equity": s.get("account_equity"),
-                "selected_symbol": s.get("selected_symbol") or s.get("symbol"),
-                "latest_price": s.get("latest_price"),
-                "spread_bps": s.get("spread_bps"),
-                "avg_dollar_volume": s.get("avg_dollar_volume"),
-                "planned_risk_dollars": s.get("planned_risk_dollars"),
-                "open_positions": s.get("open_positions", 0),
-                "day_trades_used": s.get("day_trades_used", 0),
+                "account_equity": merged_inputs.get("account_equity"),
+                "selected_symbol": merged_inputs.get("selected_symbol") or merged_inputs.get("symbol"),
+                "entry": merged_inputs.get("entry"),
+                "stop": merged_inputs.get("stop"),
+                "latest_price": merged_inputs.get("latest_price"),
+                "spread_bps": merged_inputs.get("spread_bps"),
+                "volume": merged_inputs.get("volume"),
+                "dollar_volume": merged_inputs.get("dollar_volume"),
+                "avg_dollar_volume": merged_inputs.get("avg_dollar_volume"),
+                "planned_risk_dollars": merged_inputs.get("planned_risk_dollars"),
+                "open_positions": merged_inputs.get("open_positions", 0),
+                "day_trades_used": merged_inputs.get("day_trades_used", 0),
+                "execution_mode": merged_inputs.get("execution_mode"),
+                "alpha_recommendation_keys": sorted(list((merged_inputs.get("alpha_recommendation") or {}).keys()))
+                if isinstance(merged_inputs.get("alpha_recommendation"), dict)
+                else [],
             },
             "tool_response": out,
             "next_agent": out.get("next_agent"),

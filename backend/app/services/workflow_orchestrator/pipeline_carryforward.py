@@ -126,6 +126,40 @@ def _reconcile_scanner_seeded_fields_after_data_readiness(state: WorkflowCarryFo
         state.freshness_status = prior["freshness_status"]
 
 
+def _enrich_alpha_recommendation_with_row(state: WorkflowCarryForwardState) -> None:
+    if not isinstance(state.alpha_recommendation, dict) or not state.alpha_recommendation:
+        return
+    sym = state.alpha_selected_symbol or state.alpha_recommendation.get("symbol")
+    if not sym:
+        return
+    sym_u = str(sym).strip().upper()
+    row = _first_dict(state.feature_rows, sym_u) or _first_dict(state.scanner_candidates, sym_u)
+    rec = dict(state.alpha_recommendation)
+    ep = rec.get("entry_plan")
+    ep_dict = ep if isinstance(ep, dict) else {}
+    entry_val = _float_or_none(ep_dict.get("entry")) if ep_dict else None
+    last_px = _float_or_none(row.get("last_price") or row.get("price")) if row else None
+    if rec.get("latest_price") is None:
+        rec["latest_price"] = last_px or entry_val
+    if rec.get("spread_bps") is None and row:
+        rec["spread_bps"] = _float_or_none(row.get("spread_bps"))
+    for key in ("volume", "avg_volume", "relative_volume", "dollar_volume", "data_quality"):
+        if row and rec.get(key) is None and row.get(key) is not None:
+            rec[key] = row.get(key)
+    if rec.get("dollar_volume") is None and row:
+        lp = last_px or _float_or_none(row.get("last_price") or row.get("price"))
+        vol = _float_or_none(row.get("volume"))
+        if lp is not None and vol is not None:
+            rec["dollar_volume"] = round(lp * vol, 2)
+    if rec.get("market_session") is None and row:
+        rec["market_session"] = row.get("session_state") or row.get("market_session")
+    if rec.get("candidate_source") is None and state.candidate_source:
+        rec["candidate_source"] = state.candidate_source
+    if rec.get("provider_name") is None:
+        rec["provider_name"] = (row or {}).get("provider_name") or state.provider_name
+    state.alpha_recommendation = rec
+
+
 def apply_stage_carryforward(*, agent_key: str, agent_result: AgentRunResult, state: WorkflowCarryForwardState) -> list[str]:
     """Carry typed workflow state forward for downstream agents. Returns advisory warnings."""
     warnings: list[str] = []
@@ -133,9 +167,18 @@ def apply_stage_carryforward(*, agent_key: str, agent_result: AgentRunResult, st
     state.broker_called = False
     state.llm_used = False
 
+    tr = _tool_result(agent_result)
+    if agent_key == "account_owner_policy_agent" and isinstance(tr.get("gates"), dict):
+        state.account_owner_gates = dict(tr["gates"])
+        if "paper_trading_enabled" in tr["gates"]:
+            state.paper_trading_enabled = bool(tr["gates"]["paper_trading_enabled"])
+        if "live_trading_enabled" in tr["gates"]:
+            state.live_trading_enabled = bool(tr["gates"]["live_trading_enabled"])
+        if "broker_execution_enabled" in tr["gates"]:
+            state.broker_execution_enabled = bool(tr["gates"]["broker_execution_enabled"])
+
     if agent_key not in GLUE_AGENT_KEYS:
         return warnings
-    tr = _tool_result(agent_result)
     if not tr:
         return warnings
 
@@ -266,6 +309,7 @@ def apply_stage_carryforward(*, agent_key: str, agent_result: AgentRunResult, st
         state.alpha_blockers = [str(x) for x in (tr.get("alpha_blockers") or []) if x]
         state.alpha_warnings = [str(x) for x in (tr.get("alpha_warnings") or []) if x]
         _append_strings(state.warnings, tr.get("alpha_warnings"))
+        _enrich_alpha_recommendation_with_row(state)
     elif agent_key == "strategy_selection_agent":
         sk = tr.get("selected_strategy_key")
         if sk:
@@ -317,10 +361,23 @@ def apply_stage_carryforward(*, agent_key: str, agent_result: AgentRunResult, st
         _append_strings(state.evidence_blockers, tr.get("blockers"))
         _append_strings(state.evidence_warnings, tr.get("warnings"))
     elif agent_key == "small_account_feasibility_agent":
-        if tr.get("decision") is not None:
-            state.small_account_decision = str(tr["decision"])
+        if tr.get("small_account_decision") is not None:
+            state.small_account_decision = str(tr["small_account_decision"])
+        elif tr.get("account_feasibility_decision") is not None:
+            state.small_account_decision = str(tr["account_feasibility_decision"])
+        elif tr.get("decision") is not None:
+            leg = str(tr["decision"]).strip().lower()
+            state.small_account_decision = {"pass": "feasible", "blocked": "blocked", "degraded": "degraded"}.get(leg, leg)
+        if tr.get("account_feasibility_decision") is not None:
+            state.account_feasibility_decision = str(tr["account_feasibility_decision"])
+        elif state.small_account_decision is not None:
+            state.account_feasibility_decision = state.small_account_decision
         if tr.get("account_equity") is not None:
             state.account_equity = float(tr["account_equity"])
+        if tr.get("buying_power") is not None:
+            state.buying_power = float(tr["buying_power"])
+        if tr.get("fractional_trading_enabled") is not None:
+            state.fractional_trading_enabled = bool(tr["fractional_trading_enabled"])
         if tr.get("max_risk_dollars") is not None:
             state.max_risk_dollars = float(tr["max_risk_dollars"])
         if tr.get("max_daily_loss_dollars") is not None:
@@ -329,6 +386,8 @@ def apply_stage_carryforward(*, agent_key: str, agent_result: AgentRunResult, st
         state.small_account_rejected_symbols = _clean_symbols(tr.get("rejected_symbols"))
         state.small_account_blockers = [str(x) for x in (tr.get("blockers") or []) if x]
         state.small_account_warnings = [str(x) for x in (tr.get("warnings") or []) if x]
+        state.account_feasibility_blockers = [str(x) for x in (tr.get("account_feasibility_blockers") or tr.get("blockers") or []) if x]
+        state.account_feasibility_warnings = [str(x) for x in (tr.get("account_feasibility_warnings") or tr.get("warnings") or []) if x]
         _append_strings(state.blockers, tr.get("blockers"))
         _append_strings(state.warnings, tr.get("warnings"))
 
