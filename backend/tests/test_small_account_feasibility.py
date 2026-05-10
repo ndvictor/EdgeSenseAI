@@ -33,10 +33,14 @@ def _request(**overrides):
     return SmallAccountFeasibilityRequest(**payload)
 
 
-def test_small_account_limits_are_five_and_fifteen_dollars():
+def test_owner_policy_default_risk_caps_scale_with_equity():
     out = evaluate_small_account_feasibility(_request())
 
     assert out.account_equity == 1000.0
+    # Owner-policy defaults: 0.5% per-trade risk, 1.5% daily loss on $1,000 = $5 / $15.
+    # The deterministic service converts the percent value to a decimal fraction
+    # exactly once, so 0.5 must produce $5 (not $500) and 1.5 must produce $15
+    # (not $1,500).
     assert out.max_risk_dollars == 5.0
     assert out.max_daily_loss_dollars == 15.0
 
@@ -70,6 +74,7 @@ def test_low_avg_dollar_volume_alone_does_not_block():
 
 
 def test_risk_too_high_blocks():
+    # Default policy is 0.5% per trade -> $5 cap on a $1,000 account.
     out = evaluate_small_account_feasibility(_request(planned_risk_dollars=5.01))
 
     assert out.decision == "blocked"
@@ -142,7 +147,10 @@ def test_account_portfolio_feasibility_payload_fields():
 
 
 def test_high_priced_stock_fractional_example_matches_product_math():
-    """entry=400, stop=396, equity=1000, max risk 1% => 10 risk dollars, 2.5 shares, 1000 notional."""
+    """entry=400, stop=396, equity=1000, max risk 1% => $10 risk, 2.5 shares, $1000 notional.
+
+    Owner-policy convention is human percent values: ``1.0`` means 1%, not 100%.
+    """
     out = evaluate_small_account_feasibility(
         _request(
             entry=400.0,
@@ -185,6 +193,7 @@ def test_position_notional_exceeds_buying_power_blocks():
         _request(
             buying_power=100.0,
             planned_risk_dollars=5.0,
+            max_position_notional=10_000.0,
             entry=25.0,
             stop=24.0,
             avg_dollar_volume=500_000_000.0,

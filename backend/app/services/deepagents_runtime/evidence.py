@@ -236,6 +236,49 @@ def _model_registry_from_state(workflow_state: dict[str, Any]) -> dict[str, Any]
     return registry
 
 
+_FEASIBILITY_TOOL_KEYS = (
+    "account_feasibility_decision",
+    "small_account_decision",
+    "fractional_feasible",
+    "fractional_trading_enabled",
+    "position_size_shares",
+    "position_size_notional",
+    "risk_dollars",
+    "risk_per_share",
+    "max_loss_if_stopped",
+    "expected_profit_dollars",
+    "expected_value_dollars",
+    "notional_usage_pct",
+    "buying_power_usage_pct",
+    "liquidity_participation_pct",
+    "spread_cost_estimate",
+    "slippage_cost_estimate",
+    "expected_r_after_costs",
+    "feasible_symbols",
+    "rejected_symbols",
+    "small_account_rejected_symbols",
+    "account_feasibility_blockers",
+    "account_feasibility_warnings",
+    "small_account_blockers",
+    "small_account_warnings",
+    "blockers",
+    "warnings",
+    "account_equity",
+    "buying_power",
+    "max_risk_dollars",
+    "max_daily_loss_dollars",
+    "max_position_notional",
+    "next_agent",
+)
+
+
+def _feasibility_tool_result_from_state(workflow_state: dict[str, Any]) -> dict[str, Any]:
+    explicit = workflow_state.get("tool_result")
+    if isinstance(explicit, dict):
+        return dict(explicit)
+    return {key: workflow_state.get(key) for key in _FEASIBILITY_TOOL_KEYS if key in workflow_state}
+
+
 class EvidencePackBuilder:
     """Build a closed-world evidence pack without fetching data or symbols."""
 
@@ -266,7 +309,7 @@ class EvidencePackBuilder:
 
         alpha = workflow_state.get("alpha_recommendation") if isinstance(workflow_state.get("alpha_recommendation"), dict) else {}
         alpha_symbol = str(alpha.get("symbol") or workflow_state.get("alpha_selected_symbol") or "").strip().upper()
-        if alpha_symbol and alpha_symbol in allowed_symbols:
+        if alpha_symbol and (alpha_symbol in allowed_symbols or agent_key == "small_account_feasibility_agent"):
             allowed_symbols = sorted(set(allowed_symbols) | {alpha_symbol})
 
         all_rows = scanner_rows + candidate_features
@@ -295,12 +338,18 @@ class EvidencePackBuilder:
                 "buying_power": workflow_state.get("buying_power"),
                 "fractional_trading_enabled": workflow_state.get("fractional_trading_enabled"),
                 "max_risk_per_trade_percent": workflow_state.get("max_risk_per_trade_percent"),
+                "max_risk_pct": workflow_state.get("max_risk_pct"),
+                "max_risk_dollars": workflow_state.get("max_risk_dollars"),
                 "max_daily_loss_percent": workflow_state.get("max_daily_loss_percent"),
+                "max_daily_loss_dollars": workflow_state.get("max_daily_loss_dollars"),
+                "max_position_notional_pct": workflow_state.get("max_position_notional_pct"),
+                "max_position_notional": workflow_state.get("max_position_notional"),
+                "min_order_notional": workflow_state.get("min_order_notional"),
                 "max_open_positions": workflow_state.get("max_open_positions"),
                 "max_trades_per_day": workflow_state.get("max_trades_per_day"),
-                "paper_trading_enabled": True,
-                "live_trading_enabled": False,
-                "broker_execution_enabled": False,
+                "paper_trading_enabled": workflow_state.get("paper_trading_enabled", True),
+                "live_trading_enabled": workflow_state.get("live_trading_enabled", False),
+                "broker_execution_enabled": workflow_state.get("broker_execution_enabled", False),
                 "require_human_approval": True,
             },
             alpha_recommendation=alpha,
@@ -309,14 +358,25 @@ class EvidencePackBuilder:
             risk_sizing_context={
                 "latest_price": workflow_state.get("latest_price"),
                 "spread_bps": workflow_state.get("spread_bps"),
+                "volume": workflow_state.get("volume"),
+                "avg_volume": workflow_state.get("avg_volume"),
+                "dollar_volume": workflow_state.get("dollar_volume"),
+                "relative_volume": workflow_state.get("relative_volume"),
                 "avg_dollar_volume": workflow_state.get("avg_dollar_volume"),
                 "planned_risk_dollars": workflow_state.get("planned_risk_dollars"),
                 "max_risk_dollars": workflow_state.get("max_risk_dollars"),
                 "max_daily_loss_dollars": workflow_state.get("max_daily_loss_dollars"),
+                "max_position_notional": workflow_state.get("max_position_notional"),
+                "entry": workflow_state.get("entry"),
+                "stop": workflow_state.get("stop"),
+                "target": workflow_state.get("target"),
+                "expected_r": workflow_state.get("expected_r"),
+                "predicted_expected_value_r": workflow_state.get("predicted_expected_value_r"),
                 "small_account_decision": workflow_state.get("small_account_decision"),
                 "small_account_blockers": workflow_state.get("small_account_blockers") or [],
                 "small_account_warnings": workflow_state.get("small_account_warnings") or [],
             },
+            tool_result=_feasibility_tool_result_from_state(workflow_state),
             execution_plan=workflow_state.get("execution_plan") if isinstance(workflow_state.get("execution_plan"), dict) else {},
             proof_evidence_status={
                 "proof_status": workflow_state.get("proof_status"),

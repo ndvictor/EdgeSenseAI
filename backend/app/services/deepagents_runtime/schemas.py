@@ -17,6 +17,9 @@ ReasoningDecision = Literal[
     "blocked",
     "needs_more_evidence",
     "plan_only",
+    "feasible",
+    "infeasible",
+    "degraded",
 ]
 OwnerAuthorityLevel = Literal["read_only", "advise", "paper_plan", "paper_submit", "live_submit"]
 
@@ -105,6 +108,7 @@ class EvidencePack(BaseModel):
     strategy_registry: dict[str, Any] = Field(default_factory=dict)
     model_registry: dict[str, Any] = Field(default_factory=dict)
     risk_sizing_context: dict[str, Any] = Field(default_factory=dict)
+    tool_result: dict[str, Any] = Field(default_factory=dict)
     execution_plan: dict[str, Any] = Field(default_factory=dict)
     proof_evidence_status: dict[str, Any] = Field(default_factory=dict)
     known_prices: dict[str, list[float]] = Field(default_factory=dict)
@@ -164,6 +168,30 @@ class DeepAgentDecision(BaseModel):
     prediction_horizon_minutes: int | None = None
     prediction_model_key: str | None = None
     prediction_reason: str | None = None
+    # Account / portfolio feasibility agent fields (optional; populated for
+    # ``small_account_feasibility_agent`` only). The deterministic
+    # ``evaluate_account_feasibility`` tool result is the source of truth for
+    # the numeric sizing fields; the DeepAgent may explain feasibility but
+    # cannot override the math (auditor enforces consistency within tolerance).
+    account_feasibility_decision: str | None = None
+    small_account_decision: str | None = None
+    fractional_feasible: bool | None = None
+    fractional_trading_enabled: bool | None = None
+    position_size_shares: float | None = None
+    position_size_notional: float | None = None
+    risk_dollars: float | None = None
+    risk_per_share: float | None = None
+    max_loss_if_stopped: float | None = None
+    expected_profit_dollars: float | None = None
+    expected_value_dollars: float | None = None
+    notional_usage_pct: float | None = None
+    buying_power_usage_pct: float | None = None
+    liquidity_participation_pct: float | None = None
+    spread_cost_estimate: float | None = None
+    slippage_cost_estimate: float | None = None
+    expected_r_after_costs: float | None = None
+    feasible_symbols: list[str] = Field(default_factory=list)
+    infeasible_symbols: list[str] = Field(default_factory=list)
     submitted_order: bool = False
     broker_called: bool = False
     llm_used_for_trade_decision: bool = False

@@ -73,11 +73,16 @@ class EvidenceTools:
         return dict(self.evidence.alpha_recommendation)
 
     def risk_evaluate_fractional_feasibility(self, symbol: str | None = None) -> dict[str, Any]:
-        """Return fractional feasibility context for an allowed symbol."""
+        """Return verified deterministic fractional/account feasibility output."""
         sym = str(symbol or "").strip().upper()
         if sym and sym not in set(self.evidence.allowed_symbols):
             return {"status": "blocked", "blockers": [f"symbol_not_in_evidence:{sym}"]}
-        return {"status": "ok", "symbol": sym or None, "risk_sizing_context": dict(self.evidence.risk_sizing_context)}
+        return {
+            "status": "ok",
+            "symbol": sym or None,
+            "risk_sizing_context": dict(self.evidence.risk_sizing_context),
+            "tool_result": dict(self.evidence.tool_result),
+        }
 
     def execution_planner_plan_execution(self, symbol: str | None = None) -> dict[str, Any]:
         """Return plan-only execution context. This never submits or calls a broker."""

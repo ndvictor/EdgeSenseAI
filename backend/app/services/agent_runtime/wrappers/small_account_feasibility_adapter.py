@@ -2,7 +2,29 @@ from __future__ import annotations
 
 from typing import Any
 
+from app.services.fractional_sizing_service import (
+    MAX_DAILY_LOSS_PCT,
+    MAX_POSITION_NOTIONAL_PCT,
+    MAX_RISK_PER_TRADE_PCT,
+)
 from app.services.small_account_feasibility.service import SmallAccountFeasibilityRequest, evaluate_small_account_feasibility
+
+
+def _percent_or_none(value: Any) -> float | None:
+    """Pass through a human percent value (``0.5`` = 0.5%, ``100`` = 100%).
+
+    The deterministic fractional sizing service converts percent to a decimal
+    fraction exactly once. Adapters must not pre-divide by 100.
+    """
+    if value is None:
+        return None
+    try:
+        pct = float(value)
+    except (TypeError, ValueError):
+        return None
+    if pct <= 0:
+        return None
+    return pct
 
 
 def _float_or_none(value: Any) -> float | None:
@@ -34,7 +56,18 @@ def merge_small_account_feasibility_context(inputs: dict[str, Any]) -> dict[str,
     if not isinstance(ar, dict):
         ar = {}
 
-    sym = str(merged.get("selected_symbol") or merged.get("symbol") or ar.get("symbol") or "").strip().upper() or None
+    sym = (
+        str(
+            merged.get("alpha_selected_symbol")
+            or merged.get("selected_symbol")
+            or merged.get("symbol")
+            or ar.get("symbol")
+            or ""
+        )
+        .strip()
+        .upper()
+        or None
+    )
     if sym:
         merged["selected_symbol"] = sym
 
@@ -49,6 +82,10 @@ def merge_small_account_feasibility_context(inputs: dict[str, Any]) -> dict[str,
         merged["target"] = merged.get("target") if merged.get("target") is not None else _float_or_none(ep_dict.get("target"))
     if ep_dict.get("expected_r") is not None:
         merged["expected_r"] = merged.get("expected_r") if merged.get("expected_r") is not None else _float_or_none(ep_dict.get("expected_r"))
+    if merged.get("expected_r") is None and ar.get("predicted_return_r") is not None:
+        merged["expected_r"] = _float_or_none(ar.get("predicted_return_r"))
+    if ep_dict.get("risk_per_share") is not None and merged.get("risk_per_share") is None:
+        merged["risk_per_share"] = _float_or_none(ep_dict.get("risk_per_share"))
 
     if merged.get("latest_price") is None:
         merged["latest_price"] = _float_or_none(ar.get("latest_price")) or _float_or_none(ep_dict.get("entry"))
@@ -131,7 +168,10 @@ def evaluate_small_account_inputs(inputs: dict[str, Any]) -> dict[str, Any]:
         return bool(m[key])
 
     req = SmallAccountFeasibilityRequest(
-        account_equity=float(m.get("account_equity") or 1000.0),
+        # Real account state must come from the workflow input. We never
+        # default account_equity / buying_power: missing values surface as
+        # ``data_unavailable`` in the deterministic tool.
+        account_equity=_float_or_none(m.get("account_equity")),
         buying_power=_float_or_none(m.get("buying_power")),
         fractional_trading_enabled=_bool("fractional_trading_enabled", True),
         risk_budget=_float_or_none(m.get("risk_budget")),
@@ -158,13 +198,32 @@ def evaluate_small_account_inputs(inputs: dict[str, Any]) -> dict[str, Any]:
         planned_risk_dollars=_float_or_none(m.get("planned_risk_dollars")),
         open_positions=int(m.get("open_positions") or 0),
         day_trades_used=int(m.get("day_trades_used") or 0),
+        current_daily_loss=float(m.get("current_daily_loss") or 0.0),
         proof_status=str(m.get("proof_status")) if m.get("proof_status") is not None else None,
         source_mode=str(m.get("source_mode")) if m.get("source_mode") is not None else None,
         using_non_real_data=bool(m.get("using_non_real_data", False)),
         persistence_status=str(m.get("persistence_status")) if m.get("persistence_status") is not None else None,
-        max_risk_per_trade_pct=float(m.get("max_risk_per_trade_percent") or m.get("max_risk_per_trade_pct") or 0.5),
-        max_daily_loss_pct=float(m.get("max_daily_loss_percent") or m.get("max_daily_loss_pct") or 1.5),
-        max_position_notional_pct=float(m.get("max_position_notional_percent") or m.get("max_position_notional_pct") or 100.0),
+        # Owner risk policy uses **human percent values** end-to-end at the
+        # boundary (``0.5`` = 0.5%, ``100`` = 100%). The deterministic sizing
+        # service converts percent to a decimal fraction exactly once. Both
+        # ``_pct`` and ``_percent`` keys are passed through unchanged.
+        max_risk_per_trade_pct=(
+            _percent_or_none(m.get("max_risk_per_trade_pct"))
+            or _percent_or_none(m.get("max_risk_per_trade_percent"))
+            or MAX_RISK_PER_TRADE_PCT
+        ),
+        max_risk_dollars=_float_or_none(m.get("max_risk_dollars")),
+        max_daily_loss_pct=(
+            _percent_or_none(m.get("max_daily_loss_pct"))
+            or _percent_or_none(m.get("max_daily_loss_percent"))
+            or MAX_DAILY_LOSS_PCT
+        ),
+        max_position_notional_pct=(
+            _percent_or_none(m.get("max_position_notional_pct"))
+            or _percent_or_none(m.get("max_position_notional_percent"))
+            or MAX_POSITION_NOTIONAL_PCT
+        ),
+        max_position_notional=_float_or_none(m.get("max_position_notional")),
         max_open_positions=int(m.get("max_open_positions") or 1),
         max_trades_per_day=int(m.get("max_trades_per_day") or 3),
         min_order_notional=float(m.get("min_order_notional") or 1.0),
@@ -177,4 +236,13 @@ def evaluate_small_account_inputs(inputs: dict[str, Any]) -> dict[str, Any]:
         provider_name=str(m.get("provider_name")) if m.get("provider_name") is not None else None,
         data_quality=str(m.get("data_quality")) if m.get("data_quality") is not None else None,
     )
-    return evaluate_small_account_feasibility(req).model_dump()
+    result = evaluate_small_account_feasibility(req).model_dump()
+    if isinstance(m.get("alpha_recommendation"), dict):
+        result["alpha_recommendation"] = dict(m["alpha_recommendation"])
+    if m.get("alpha_selected_symbol") is not None:
+        result["alpha_selected_symbol"] = str(m.get("alpha_selected_symbol")).upper()
+    if m.get("alpha_strategy_key") is not None:
+        result["alpha_strategy_key"] = m.get("alpha_strategy_key")
+    result["selected_symbol"] = req.selected_symbol
+    result["symbol"] = req.selected_symbol
+    return result

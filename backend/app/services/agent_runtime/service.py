@@ -248,7 +248,7 @@ def _attach_advisory_reasoning(
     warnings: list[str] = []
     if not isinstance(tool_response, dict):
         return tool_response, None, warnings
-    if agent_key not in {"watchlist_builder_agent", "alpha_engine_agent"}:
+    if agent_key not in {"watchlist_builder_agent", "alpha_engine_agent", "small_account_feasibility_agent"}:
         return tool_response, None, warnings
     try:
         from app.services.deepagents_runtime import DeepAgentRunContext, DeepAgentSupervisor, EvidencePackBuilder
@@ -256,6 +256,7 @@ def _attach_advisory_reasoning(
         workflow_state: dict[str, Any] = {
             **(inputs or {}),
             **(tool_response or {}),
+            "tool_result": dict(tool_response or {}),
             "workflow_run_id": workflow_run_id,
             "orchestrator_run_id": context.get("orchestrator_run_id"),
             "agent_key": agent_key,
@@ -288,6 +289,9 @@ def _attach_advisory_reasoning(
             merged["watchlist_agent_decision"] = reasoning_payload
         elif agent_key == "alpha_engine_agent":
             merged["alpha_agent_decision"] = reasoning_payload
+        elif agent_key == "small_account_feasibility_agent":
+            merged["account_feasibility_agent_decision"] = reasoning_payload
+            merged["small_account_feasibility_agent_decision"] = reasoning_payload
 
         agentic_applied = False
         if agent_key == "watchlist_builder_agent" and reasoning.reasoning_status in {"completed", "blocked"}:
@@ -370,6 +374,69 @@ def _attach_advisory_reasoning(
                 merged["next_action"] = reasoning.recommended_next_action or "No audited Alpha Engine candidate selected."
                 agentic_applied = True
 
+        if agent_key == "small_account_feasibility_agent" and reasoning.reasoning_status == "completed":
+            if reasoning.decision in {"feasible", "infeasible", "blocked", "data_unavailable"}:
+                tool_decision = str(tool_response.get("account_feasibility_decision") or "").lower()
+                accepted_account_decision = reasoning.account_feasibility_decision or tool_response.get("account_feasibility_decision")
+                accepted_small_decision = reasoning.small_account_decision or tool_response.get("small_account_decision")
+                merged["account_feasibility_decision"] = accepted_account_decision
+                merged["small_account_decision"] = accepted_small_decision
+                merged["decision"] = (
+                    "pass"
+                    if reasoning.decision == "feasible" and tool_decision in {"feasible", "degraded"}
+                    else "blocked"
+                    if reasoning.decision in {"infeasible", "blocked", "data_unavailable"}
+                    else tool_response.get("decision")
+                )
+                merged["account_feasibility_status"] = reasoning.decision
+                merged["selected_symbol"] = reasoning.symbol or tool_response.get("selected_symbol") or inputs.get("alpha_selected_symbol") or inputs.get("selected_symbol")
+                merged["symbol"] = merged.get("selected_symbol")
+                for key in (
+                    "fractional_feasible",
+                    "fractional_trading_enabled",
+                    "position_size_shares",
+                    "position_size_notional",
+                    "risk_dollars",
+                    "risk_per_share",
+                    "max_loss_if_stopped",
+                    "expected_profit_dollars",
+                    "expected_value_dollars",
+                    "notional_usage_pct",
+                    "buying_power_usage_pct",
+                    "liquidity_participation_pct",
+                    "spread_cost_estimate",
+                    "slippage_cost_estimate",
+                    "expected_r_after_costs",
+                ):
+                    value = reasoning_payload.get(key)
+                    if value is not None:
+                        merged[key] = value
+                if reasoning.feasible_symbols:
+                    merged["feasible_symbols"] = list(reasoning.feasible_symbols)
+                if reasoning.infeasible_symbols:
+                    merged["rejected_symbols"] = list(reasoning.infeasible_symbols)
+                    merged["small_account_rejected_symbols"] = list(reasoning.infeasible_symbols)
+                elif reasoning.rejected_symbols:
+                    rejected = [
+                        str(item.get("symbol")).upper()
+                        for item in reasoning.rejected_symbols
+                        if isinstance(item, dict) and item.get("symbol")
+                    ]
+                    if rejected:
+                        merged["rejected_symbols"] = rejected
+                        merged["small_account_rejected_symbols"] = rejected
+                merged["account_feasibility_blockers"] = list(reasoning.hard_blockers or [])
+                merged["account_feasibility_warnings"] = list(reasoning.soft_warnings or [])
+                merged["small_account_blockers"] = list(reasoning.hard_blockers or [])
+                merged["small_account_warnings"] = list(reasoning.soft_warnings or [])
+                merged["blockers"] = list(reasoning.hard_blockers or [])
+                merged["warnings"] = list(reasoning.soft_warnings or [])
+                merged["next_action"] = reasoning.recommended_next_action or (
+                    "Proceed to execution planner." if reasoning.decision == "feasible" else "No trade; account feasibility rejected the setup."
+                )
+                merged["next_agent"] = "execution_planner_agent" if reasoning.decision == "feasible" else None
+                agentic_applied = True
+
         merged["agentic_decision_applied"] = agentic_applied
         merged["llm_used"] = reasoning.reasoning_status == "completed" and bool(reasoning.llm_used)
         merged["submitted_order"] = False
@@ -436,6 +503,8 @@ def create_agent_run(req: AgentRunRequest) -> AgentRunResult:
                 tool_request={"tool_name": tool_name, **(tool_req if isinstance(tool_req, dict) else {})},
                 tool_response=tool_resp if isinstance(tool_resp, dict) else {"raw_tool_response": tool_resp},
             )
+            if isinstance(tool_resp, dict) and "next_agent" in tool_resp:
+                next_agent = tool_resp.get("next_agent")
 
             decision_payload, blockers, warnings, next_action, next_agent, artifacts = wrapper_outcome_to_result(
                 agent_key=req.agent_key,

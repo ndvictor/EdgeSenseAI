@@ -215,6 +215,8 @@ class DecisionAuditor:
 
         if audited.agent_key == "alpha_engine_agent":
             DecisionAuditor._audit_alpha_decision(audited, evidence, allowed, known_prices, text_upper)
+        if audited.agent_key == "small_account_feasibility_agent":
+            DecisionAuditor._audit_account_feasibility_decision(audited, evidence, allowed, text_upper)
 
         audited.submitted_order = False
         audited.broker_called = False
@@ -241,6 +243,25 @@ class DecisionAuditor:
             audited.prediction_horizon_minutes = None
             audited.prediction_model_key = None
             audited.prediction_reason = None
+            audited.account_feasibility_decision = None
+            audited.small_account_decision = None
+            audited.fractional_feasible = None
+            audited.fractional_trading_enabled = None
+            audited.position_size_shares = None
+            audited.position_size_notional = None
+            audited.risk_dollars = None
+            audited.risk_per_share = None
+            audited.max_loss_if_stopped = None
+            audited.expected_profit_dollars = None
+            audited.expected_value_dollars = None
+            audited.notional_usage_pct = None
+            audited.buying_power_usage_pct = None
+            audited.liquidity_participation_pct = None
+            audited.spread_cost_estimate = None
+            audited.slippage_cost_estimate = None
+            audited.expected_r_after_costs = None
+            audited.feasible_symbols = []
+            audited.infeasible_symbols = []
         return audited
 
     @staticmethod
@@ -342,3 +363,108 @@ class DecisionAuditor:
         if claims_trained_model and not DecisionAuditor._has_trained_model_evidence(evidence, symbol or None, strategy_key or None):
             audited.hard_blockers.append("trained_model_claim_without_evidence")
             audited.reasoning_status = "audit_rejected"
+
+    @staticmethod
+    def _float_or_none(value: Any) -> float | None:
+        try:
+            return float(value)
+        except (TypeError, ValueError):
+            return None
+
+    @staticmethod
+    def _numbers_close(left: Any, right: Any, *, rel_tol: float = 0.002, abs_tol: float = 0.01) -> bool:
+        lval = DecisionAuditor._float_or_none(left)
+        rval = DecisionAuditor._float_or_none(right)
+        if lval is None and rval is None:
+            return True
+        if lval is None or rval is None:
+            return False
+        return abs(lval - rval) <= max(abs_tol, abs(rval) * rel_tol)
+
+    @staticmethod
+    def _audit_account_feasibility_decision(
+        audited: DeepAgentDecision,
+        evidence: EvidencePack,
+        allowed: set[str],
+        text_upper: str,
+    ) -> None:
+        tool = evidence.tool_result or {}
+        if not tool:
+            audited.hard_blockers.append("missing_fractional_sizing_tool_result")
+            audited.reasoning_status = "audit_rejected"
+            return
+
+        symbol = str(audited.symbol or "").upper().strip()
+        alpha = evidence.alpha_recommendation or {}
+        alpha_symbol = str(alpha.get("symbol") or "").upper().strip()
+        if not symbol:
+            symbol = alpha_symbol
+        if symbol:
+            if symbol not in allowed:
+                audited.hard_blockers.append(f"hallucinated_symbol:{symbol}")
+                audited.reasoning_status = "audit_rejected"
+            elif alpha_symbol and symbol != alpha_symbol:
+                audited.hard_blockers.append(f"feasibility_symbol_changed_from_alpha:{symbol}")
+                audited.reasoning_status = "audit_rejected"
+
+        tool_decision = str(tool.get("account_feasibility_decision") or "").strip().lower()
+        agent_account_decision = str(audited.account_feasibility_decision or "").strip().lower()
+        if agent_account_decision and tool_decision and agent_account_decision != tool_decision:
+            audited.hard_blockers.append("account_feasibility_decision_contradicts_tool_result")
+            audited.reasoning_status = "audit_rejected"
+
+        if audited.decision == "feasible" and tool_decision == "blocked":
+            audited.hard_blockers.append("feasible_decision_contradicts_blocked_tool_result")
+            audited.reasoning_status = "audit_rejected"
+        if audited.decision in {"infeasible", "blocked"} and tool_decision in {"feasible", "degraded"}:
+            audited.hard_blockers.append("infeasible_decision_contradicts_feasible_tool_result")
+            audited.reasoning_status = "audit_rejected"
+
+        if audited.decision in {"infeasible", "blocked"} and (
+            "PRICE TOO HIGH" in text_upper
+            or "SHARE PRICE TOO HIGH" in text_upper
+            or any("price" in str(item).lower() and "high" in str(item).lower() for item in audited.hard_blockers)
+        ) and tool_decision in {"feasible", "degraded"}:
+            audited.hard_blockers.append("blocked_solely_because_share_price_high")
+            audited.reasoning_status = "audit_rejected"
+
+        for field in (
+            "position_size_shares",
+            "position_size_notional",
+            "risk_dollars",
+            "risk_per_share",
+            "max_loss_if_stopped",
+            "expected_profit_dollars",
+            "expected_value_dollars",
+            "notional_usage_pct",
+            "buying_power_usage_pct",
+            "liquidity_participation_pct",
+            "spread_cost_estimate",
+            "slippage_cost_estimate",
+            "expected_r_after_costs",
+        ):
+            actual = getattr(audited, field)
+            if actual is None or field not in tool:
+                continue
+            if not DecisionAuditor._numbers_close(actual, tool.get(field)):
+                audited.hard_blockers.append(f"{field}_contradicts_fractional_sizing_tool")
+                audited.reasoning_status = "audit_rejected"
+
+        for field in ("fractional_feasible", "fractional_trading_enabled"):
+            actual = getattr(audited, field)
+            if actual is not None and field in tool and bool(actual) != bool(tool.get(field)):
+                audited.hard_blockers.append(f"{field}_contradicts_fractional_sizing_tool")
+                audited.reasoning_status = "audit_rejected"
+
+        alpha_entry_plan = alpha.get("entry_plan") if isinstance(alpha.get("entry_plan"), dict) else {}
+        entry_plan = audited.entry_plan if isinstance(audited.entry_plan, dict) else {}
+        for price_key in ("entry", "stop", "target"):
+            if price_key not in entry_plan or entry_plan.get(price_key) is None:
+                continue
+            if price_key not in alpha_entry_plan or alpha_entry_plan.get(price_key) is None:
+                audited.hard_blockers.append(f"feasibility_{price_key}_not_in_alpha_evidence")
+                audited.reasoning_status = "audit_rejected"
+                continue
+            if not DecisionAuditor._numbers_close(entry_plan.get(price_key), alpha_entry_plan.get(price_key)):
+                audited.hard_blockers.append(f"feasibility_{price_key}_changed_from_alpha_evidence")
+                audited.reasoning_status = "audit_rejected"

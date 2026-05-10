@@ -5,15 +5,22 @@ from typing import Any, Literal
 from pydantic import BaseModel, Field
 
 from app.services.fractional_sizing_service import (
-    DEFAULT_ACCOUNT_EQUITY,
     DEFAULT_EXPECTED_R,
+    MAX_DAILY_LOSS_PCT,
+    MAX_POSITION_NOTIONAL_PCT,
+    MAX_RISK_PER_TRADE_PCT,
     AccountFeasibilityInput,
     evaluate_account_feasibility,
 )
 
 
 class SmallAccountFeasibilityRequest(BaseModel):
-    account_equity: float = DEFAULT_ACCOUNT_EQUITY
+    # ``account_equity`` and ``buying_power`` are intentionally optional with no
+    # defaults: real account state must come from the workflow input (Alpaca
+    # snapshot, paper account, or owner policy). Missing values surface as
+    # ``data_unavailable`` with explicit blockers in the deterministic tool;
+    # the runtime never invents a $1,000 account.
+    account_equity: float | None = None
     buying_power: float | None = None
     fractional_trading_enabled: bool = True
     risk_budget: float | None = None
@@ -40,13 +47,19 @@ class SmallAccountFeasibilityRequest(BaseModel):
     planned_risk_dollars: float | None = None
     open_positions: int = 0
     day_trades_used: int = 0
+    current_daily_loss: float = 0.0
     proof_status: str | None = None
     source_mode: str | None = None
     using_non_real_data: bool = False
     persistence_status: str | None = None
-    max_risk_per_trade_pct: float = 0.5
-    max_daily_loss_pct: float = 1.5
-    max_position_notional_pct: float = 100.0
+    # Owner risk policy uses **human percent values** at the boundary:
+    # ``0.5`` means 0.5%, ``100`` means 100%. The deterministic sizing service
+    # converts percent to a decimal fraction exactly once.
+    max_risk_per_trade_pct: float = MAX_RISK_PER_TRADE_PCT
+    max_risk_dollars: float | None = None
+    max_daily_loss_pct: float = MAX_DAILY_LOSS_PCT
+    max_position_notional_pct: float = MAX_POSITION_NOTIONAL_PCT
+    max_position_notional: float | None = None
     max_open_positions: int = 1
     max_trades_per_day: int = 3
     min_order_notional: float = 1.0
@@ -61,11 +74,11 @@ class SmallAccountFeasibilityRequest(BaseModel):
 
 
 class SmallAccountFeasibilityResponse(BaseModel):
-    decision: Literal["pass", "degraded", "blocked"]
-    account_feasibility_decision: Literal["feasible", "degraded", "blocked"]
-    small_account_decision: Literal["feasible", "degraded", "blocked"]
-    account_equity: float
-    buying_power: float
+    decision: Literal["pass", "degraded", "blocked", "data_unavailable"]
+    account_feasibility_decision: Literal["feasible", "degraded", "blocked", "data_unavailable"]
+    small_account_decision: Literal["feasible", "degraded", "blocked", "data_unavailable"]
+    account_equity: float | None = None
+    buying_power: float | None = None
     fractional_trading_enabled: bool
     fractional_feasible: bool
     position_size_shares: float | None = None
@@ -117,8 +130,10 @@ def evaluate_small_account_feasibility(request: SmallAccountFeasibilityRequest) 
         fractional_trading_enabled=request.fractional_trading_enabled,
         risk_budget=request.risk_budget,
         max_risk_pct=request.max_risk_per_trade_pct,
+        max_risk_dollars=request.max_risk_dollars,
         max_daily_loss_pct=request.max_daily_loss_pct,
         max_position_notional_pct=request.max_position_notional_pct,
+        max_position_notional=request.max_position_notional,
         symbols=list(request.symbols),
         usable_symbols=list(request.usable_symbols),
         selected_symbol=request.selected_symbol,
@@ -142,6 +157,7 @@ def evaluate_small_account_feasibility(request: SmallAccountFeasibilityRequest) 
         planned_risk_dollars=request.planned_risk_dollars,
         open_positions=request.open_positions,
         day_trades_used=request.day_trades_used,
+        current_daily_loss=request.current_daily_loss,
         max_open_positions=request.max_open_positions,
         max_trades_per_day=request.max_trades_per_day,
         proof_status=request.proof_status,
@@ -157,9 +173,14 @@ def evaluate_small_account_feasibility(request: SmallAccountFeasibilityRequest) 
 
     out = evaluate_account_feasibility(inp)
 
-    decision: Literal["pass", "degraded", "blocked"] = (
-        "blocked" if out.account_feasibility_decision == "blocked" else "degraded" if out.account_feasibility_decision == "degraded" else "pass"
-    )
+    if out.account_feasibility_decision == "data_unavailable":
+        decision: Literal["pass", "degraded", "blocked", "data_unavailable"] = "data_unavailable"
+    elif out.account_feasibility_decision == "blocked":
+        decision = "blocked"
+    elif out.account_feasibility_decision == "degraded":
+        decision = "degraded"
+    else:
+        decision = "pass"
 
     sizing_notes = [
         "Account feasibility is risk/notional/participation based, not share-price based.",
@@ -216,11 +237,15 @@ def evaluate_small_account_feasibility(request: SmallAccountFeasibilityRequest) 
 def readiness_summary() -> dict[str, Any]:
     return {
         "enabled": True,
-        "account_equity_default": int(DEFAULT_ACCOUNT_EQUITY),
-        "max_risk_per_trade_pct": 0.5,
-        "max_daily_loss_pct": 1.5,
+        "account_equity_source": "owner_account_state",
+        "buying_power_source": "owner_account_state",
+        "owner_policy_defaults": {
+            "max_risk_per_trade_pct": MAX_RISK_PER_TRADE_PCT,
+            "max_daily_loss_pct": MAX_DAILY_LOSS_PCT,
+            "max_position_notional_pct": MAX_POSITION_NOTIONAL_PCT,
+        },
         "fractional_trading_enabled": True,
         "status": "ready",
         "blockers": [],
-        "warnings": [],
+        "warnings": ["account_equity_and_buying_power_must_be_supplied_by_owner_account_state"],
     }
