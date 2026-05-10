@@ -43,6 +43,11 @@ create_or_update_job() {
 
   echo "Creating/updating job: $name image=$IMAGE location=$LOCATION"
   if az containerapp job show --name "$name" --resource-group "$RESOURCE_GROUP" >/dev/null 2>&1; then
+    az containerapp job registry set \
+      --name "$name" \
+      --resource-group "$RESOURCE_GROUP" \
+      --server "$ACR_LOGIN_SERVER" \
+      --output none
     az containerapp job update \
       --name "$name" \
       --resource-group "$RESOURCE_GROUP" \
@@ -53,7 +58,7 @@ create_or_update_job() {
       --replica-retry-limit 1 \
       --set-env-vars "${env_args[@]}" \
       --command python \
-      --args -m "$module" >/dev/null
+      --args "-m $module" >/dev/null
   else
     az containerapp job create \
       --name "$name" \
@@ -61,6 +66,7 @@ create_or_update_job() {
       --environment "$ENV_ID" \
       --trigger-type Schedule \
       --cron-expression "$schedule" \
+      --registry-server "$ACR_LOGIN_SERVER" \
       --replica-timeout 600 \
       --replica-retry-limit 1 \
       --image "$IMAGE" \
@@ -68,12 +74,12 @@ create_or_update_job() {
       --memory 2Gi \
       --env-vars "${env_args[@]}" \
       --command python \
-      --args -m "$module" >/dev/null
+      --args "-m $module" >/dev/null
   fi
 }
 
-create_or_update_job "edgesenseai-market-scanner-worker" "app.workers.market_scanner_worker" "*/5 * * * *"
-create_or_update_job "edgesenseai-data-ingestion-worker" "app.workers.data_ingestion_worker" "*/5 * * * *"
-create_or_update_job "edgesenseai-feature-pipeline-worker" "app.workers.feature_pipeline_worker" "*/5 * * * *"
+create_or_update_job "edgesenseai-market-scan-job" "app.workers.market_scanner_worker" "*/5 * * * *"
+create_or_update_job "edgesenseai-data-ingest-job" "app.workers.data_ingestion_worker" "*/5 * * * *"
+create_or_update_job "edgesenseai-feature-pipe-job" "app.workers.feature_pipeline_worker" "*/5 * * * *"
 
 echo "Worker jobs configured with existing image: $IMAGE"
