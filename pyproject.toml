@@ -1,0 +1,10 @@
+[project]
+name = "edgesense-ai"
+version = "0.0.0"
+description = "EdgeSenseAI monorepo (FastAPI backend lives under backend/)"
+requires-python = ">=3.10"
+dependencies = []
+
+[build-system]
+requires = ["setuptools>=61"]
+build-backend = "setuptools.build_meta"
