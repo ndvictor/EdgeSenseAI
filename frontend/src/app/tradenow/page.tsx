@@ -19,7 +19,14 @@ import {
   type SettingsResponse,
 } from "@/lib/api";
 
-const API_BASE_URL = process.env.NEXT_PUBLIC_API_URL || "http://localhost:8900";
+const API_BASE_URL = process.env.NEXT_PUBLIC_API_URL;
+
+function apiUrl(path: string): string {
+  if (!API_BASE_URL) {
+    throw new Error("NEXT_PUBLIC_API_URL is not configured. Set it in frontend/.env.local.");
+  }
+  return `${API_BASE_URL}${path}`;
+}
 
 type TradeTab = "stocks" | "options" | "etf" | "crypto" | "execution" | "portfolio";
 
@@ -189,7 +196,7 @@ type TradeNowOrderResponse = {
 };
 
 async function apiFetch<T>(path: string, options?: RequestInit): Promise<T> {
-  const response = await fetch(`${API_BASE_URL}${path}`, {
+  const response = await fetch(apiUrl(path), {
     ...options,
     headers: { "Content-Type": "application/json", ...(options?.headers || {}) },
   });

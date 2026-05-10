@@ -4,7 +4,14 @@ import { useEffect, useMemo, useState } from "react";
 import { AlertTriangle, BrainCircuit, CheckCircle2, Cpu, DatabaseZap, FlaskConical, ShieldCheck, XCircle } from "lucide-react";
 import { MetricCard, PageHeader } from "@/components/Cards";
 
-const API_BASE_URL = process.env.NEXT_PUBLIC_API_URL || "http://localhost:8900";
+const API_BASE_URL = process.env.NEXT_PUBLIC_API_URL;
+
+function apiUrl(path: string): string {
+  if (!API_BASE_URL) {
+    throw new Error("NEXT_PUBLIC_API_URL is not configured. Set it in frontend/.env.local.");
+  }
+  return `${API_BASE_URL}${path}`;
+}
 
 type ModelRegistryEntry = {
   model_key: string;
@@ -61,7 +68,7 @@ type ModelEligibilityResponse = {
 };
 
 async function fetchJson<T>(path: string): Promise<T> {
-  const response = await fetch(`${API_BASE_URL}${path}`, { headers: { "Content-Type": "application/json" }, cache: "no-store" });
+  const response = await fetch(apiUrl(path), { headers: { "Content-Type": "application/json" }, cache: "no-store" });
   if (!response.ok) throw new Error(`${path} failed with ${response.status}`);
   return response.json();
 }

@@ -1,4 +1,11 @@
-const API_BASE_URL = process.env.NEXT_PUBLIC_API_URL || "http://localhost:8900";
+const API_BASE_URL = process.env.NEXT_PUBLIC_API_URL;
+
+function apiUrl(path: string): string {
+  if (!API_BASE_URL) {
+    throw new Error("NEXT_PUBLIC_API_URL is not configured. Set it in frontend/.env.local.");
+  }
+  return `${API_BASE_URL}${path}`;
+}
 
 async function parseJsonResponse<T>(response: Response, path: string): Promise<T> {
   const text = await response.text();
@@ -13,7 +20,7 @@ async function parseJsonResponse<T>(response: Response, path: string): Promise<T
 }
 
 async function request<T>(path: string, options?: RequestInit): Promise<T> {
-  const response = await fetch(`${API_BASE_URL}${path}`, {
+  const response = await fetch(apiUrl(path), {
     ...options,
     headers: {
       "Content-Type": "application/json",
@@ -46,7 +53,7 @@ async function postJsonWithTimeout<T>(path: string, body: unknown, timeoutMs: nu
   const controller = new AbortController();
   const timer = setTimeout(() => controller.abort(), timeoutMs);
   try {
-    const response = await fetch(`${API_BASE_URL}${path}`, {
+    const response = await fetch(apiUrl(path), {
       method: "POST",
       headers: { "Content-Type": "application/json" },
       body: JSON.stringify(body),
