@@ -3,11 +3,9 @@ from __future__ import annotations
 import os
 from typing import Any
 
-from app.services.candidate_universe_service import list_candidates
 from app.services.feature_store_service import FeatureStoreRunRequest, get_feature_row_persistence_status, run_feature_store_pipeline
 from app.services.market_data_service import MarketDataService
-from app.services.universe_selection_service import get_latest_universe_selection
-from app.services.worker_output_store import get_latest_market_snapshots, get_latest_scanner_candidates, record_worker_status, save_feature_rows
+from app.services.worker_output_store import get_latest_market_snapshots, record_worker_status, save_feature_rows
 from app.workers.common import clean_symbols, get_worker_run_id, print_summary, require_production_data_policy, setup_worker_logging
 
 
@@ -15,19 +13,7 @@ def _symbols(limit: int) -> list[str]:
     env_symbols = clean_symbols((os.environ.get("WORKER_SYMBOLS") or "").split(","))
     if env_symbols:
         return env_symbols[:limit]
-    snapshot_symbols = clean_symbols([row.get("symbol") for row in get_latest_market_snapshots(limit)])
-    if snapshot_symbols:
-        return snapshot_symbols
-    scanner_symbols = clean_symbols([row.get("symbol") for row in get_latest_scanner_candidates(limit)])
-    if scanner_symbols:
-        return scanner_symbols
-    candidate_symbols = clean_symbols([c.symbol for c in list_candidates(status="active")[:limit]])
-    if candidate_symbols:
-        return candidate_symbols
-    latest = get_latest_universe_selection()
-    if latest is None:
-        return []
-    return clean_symbols([c.symbol for c in (latest.selected_watchlist or latest.ranked_candidates or [])[:limit]])
+    return clean_symbols([row.get("symbol") for row in get_latest_market_snapshots(limit, production_scanner_chain_only=True)])[:limit]
 
 
 def _spread_bps(snapshot: dict[str, Any]) -> float | None:
@@ -94,6 +80,36 @@ def _alpha_feature_row(symbol: str, snapshot: dict[str, Any], response_row: Any 
     }
 
 
+def _missing_features_summary(worker_run_id: str, provider: str) -> dict[str, Any]:
+    summary = {
+        "worker": "feature-pipeline-worker",
+        "worker_run_id": worker_run_id,
+        "recommendation_status": "missing_features",
+        "status": "missing_features",
+        "symbols": [],
+        "feature_rows": [],
+        "feature_row_count": 0,
+        "missing_features": ["no_ingested_scanner_snapshots"],
+        "persistence_status": "postgres_or_memory_worker_output_store",
+        "blockers": ["no_ingested_scanner_snapshots"],
+        "warnings": [],
+    }
+    record_worker_status(
+        worker="feature-pipeline-worker",
+        status="missing_features",
+        worker_run_id=worker_run_id,
+        provider=provider,
+        symbols=[],
+        feature_rows=[],
+        feature_row_count=0,
+        missing_features=["no_ingested_scanner_snapshots"],
+        warnings=[],
+        blockers=["no_ingested_scanner_snapshots"],
+    )
+    print_summary(summary)
+    return summary
+
+
 def run() -> dict[str, Any]:
     setup_worker_logging()
     require_production_data_policy()
@@ -102,31 +118,10 @@ def run() -> dict[str, Any]:
     provider = os.environ.get("MARKET_DATA_PROVIDER", "yfinance")
     symbols = _symbols(limit)
     if not symbols:
-        summary = {
-            "worker": "feature-pipeline-worker",
-            "worker_run_id": worker_run_id,
-            "recommendation_status": "missing_features",
-            "feature_row_count": 0,
-            "missing_features": ["no_symbols_available"],
-            "persistence_status": "unavailable",
-            "blockers": [],
-            "warnings": [],
-        }
-        record_worker_status(
-            worker="feature-pipeline-worker",
-            status="missing_features",
-            worker_run_id=worker_run_id,
-            provider=provider,
-            feature_row_count=0,
-            missing_features=["no_symbols_available"],
-            warnings=[],
-            blockers=[],
-        )
-        print_summary(summary)
-        return summary
+        return _missing_features_summary(worker_run_id, provider)
 
     market_data = MarketDataService()
-    latest_snapshots = {str(row.get("symbol", "")).upper(): row for row in get_latest_market_snapshots(limit)}
+    latest_snapshots = {str(row.get("symbol", "")).upper(): row for row in get_latest_market_snapshots(limit, production_scanner_chain_only=True)}
     feature_row_count = 0
     missing_features: list[str] = []
     persistence_statuses: list[str] = []
@@ -157,24 +152,28 @@ def run() -> dict[str, Any]:
             blockers.extend(response.quality_report.blockers or [])
             warnings.extend(response.quality_report.warnings or [])
 
+    status = "features_available" if feature_row_count else "missing_features"
+    save_feature_rows(
+        worker_run_id=worker_run_id,
+        provider_name=provider,
+        feature_rows=alpha_feature_rows,
+        status=status,
+        warnings=sorted(set(warnings)),
+        blockers=sorted(set(blockers)),
+    )
     summary = {
         "worker": "feature-pipeline-worker",
         "worker_run_id": worker_run_id,
-        "recommendation_status": "features_available" if feature_row_count else "missing_features",
+        "recommendation_status": status,
+        "status": status,
+        "symbols": symbols,
+        "feature_rows": alpha_feature_rows,
         "feature_row_count": feature_row_count,
         "missing_features": missing_features,
         "persistence_status": "persisted" if "persisted" in persistence_statuses else (persistence_statuses[0] if persistence_statuses else "unavailable"),
         "blockers": sorted(set(blockers)),
         "warnings": sorted(set(warnings)),
     }
-    save_feature_rows(
-        worker_run_id=worker_run_id,
-        provider_name=provider,
-        feature_rows=alpha_feature_rows,
-        status="features_available" if feature_row_count else "missing_features",
-        warnings=sorted(set(warnings)),
-        blockers=sorted(set(blockers)),
-    )
     print_summary(summary)
     return summary
 
