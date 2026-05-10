@@ -10,7 +10,7 @@ from app.services.agent_runtime.wrappers.model_selection_adapter import select_m
 from app.services.agent_runtime.wrappers.qlib_adapter import qlib_research_snapshot
 from app.services.agent_runtime.wrappers.small_account_feasibility_adapter import evaluate_small_account_inputs
 from app.services.agent_runtime.wrappers.strategy_selection_adapter import select_strategy
-from app.services.agent_runtime.wrappers.watchlist_adapter import build_watchlist
+from app.services.agent_runtime.wrappers.watchlist_adapter import build_watchlist, watchlist_from_workflow_scanner_rows
 from app.services.agent_runtime.wrappers.safety import SafetyResult
 
 
@@ -38,7 +38,15 @@ def run_glue_agent(*, agent_key: str, inputs: dict[str, Any], context: dict[str,
     symbols = [str(x).upper() for x in symbols if x]
 
     if agent_key == "data_readiness_agent":
-        out = evaluate_data_readiness(symbols=symbols, asset_class=asset_class, horizon=horizon, source=str(s.get("source", "auto")))
+        sc = s.get("scanner_candidates")
+        scanner_for_readiness = sc if isinstance(sc, list) else None
+        out = evaluate_data_readiness(
+            symbols=symbols,
+            asset_class=asset_class,
+            horizon=horizon,
+            source=str(s.get("source", "auto")),
+            scanner_candidates=scanner_for_readiness,
+        )
         return {"tool_name": "feature_store.run", "tool_request": {"symbols": symbols, "asset_class": asset_class, "horizon": horizon}, "tool_response": out, "next_agent": out.get("next_agent"), "safety": safety}
 
     if agent_key == "market_condition_agent":
@@ -67,6 +75,41 @@ def run_glue_agent(*, agent_key: str, inputs: dict[str, Any], context: dict[str,
             req_syms = []
         manual_seeds = [str(x).upper() for x in req_syms if x]
         discovery_symbols = [str(x).upper() for x in (s.get("usable_symbols") or []) if x]
+        scanner_payload = s.get("scanner_candidates") if isinstance(s.get("scanner_candidates"), list) else []
+        if orch and manual_seeds and scanner_payload:
+            row_by = {
+                str(r.get("symbol") or "").strip().upper(): r
+                for r in scanner_payload
+                if isinstance(r, dict) and r.get("symbol")
+            }
+            ordered_rows: list[dict[str, Any]] = []
+            for m in manual_seeds:
+                hit = row_by.get(m)
+                if hit is None:
+                    ordered_rows = []
+                    break
+                ordered_rows.append(hit)
+            if ordered_rows and len(ordered_rows) == len(manual_seeds):
+                cand_src = str(s.get("candidate_source") or "manual_request")
+                out = watchlist_from_workflow_scanner_rows(
+                    ordered_rows,
+                    max_symbols=int(s.get("max_symbols", 10)),
+                    candidate_source=cand_src,
+                )
+                tool = "watchlist_builder.scanner_runtime_prefill"
+                return {
+                    "tool_name": tool,
+                    "tool_request": {
+                        "asset_class": asset_class,
+                        "horizon": horizon,
+                        "source": data_source,
+                        "manual_seeds": manual_seeds,
+                        "prefill_rows": len(ordered_rows),
+                    },
+                    "tool_response": out,
+                    "next_agent": "alpha_engine_agent" if out.get("symbols") or out.get("recommendation") else None,
+                    "safety": safety,
+                }
         out = build_watchlist(
             asset_class=asset_class,
             horizon=horizon,
@@ -110,22 +153,24 @@ def run_glue_agent(*, agent_key: str, inputs: dict[str, Any], context: dict[str,
 
     if agent_key == "strategy_selection_agent":
         alpha_status = str(s.get("alpha_status") or "")
-        if alpha_status == "candidate_selected":
+        if alpha_status in {"candidate_selected", "watchlist_only", "needs_more_evidence"}:
+            strat = s.get("alpha_strategy_key") or s.get("strategy_key") or s.get("selected_strategy_key")
+            sym = s.get("alpha_selected_symbol") or s.get("selected_symbol") or s.get("symbol")
             out = {
-                "selected_strategy_key": s.get("alpha_strategy_key"),
-                "selected_symbol": s.get("alpha_selected_symbol"),
+                "selected_strategy_key": strat,
+                "selected_symbol": sym,
                 "proof_status": "unknown",
                 "blockers": [],
                 "warnings": list(s.get("alpha_warnings") or []),
-                "next_agent": "model_selection_agent" if s.get("alpha_strategy_key") and s.get("alpha_selected_symbol") else None,
+                "next_agent": "model_selection_agent" if sym and strat else ("model_selection_agent" if sym else None),
                 "next_action": "Use Alpha Engine selected strategy and symbol.",
             }
             return {
                 "tool_name": "alpha_engine.strategy_selection",
                 "tool_request": {
                     "alpha_status": alpha_status,
-                    "alpha_selected_symbol": s.get("alpha_selected_symbol"),
-                    "alpha_strategy_key": s.get("alpha_strategy_key"),
+                    "alpha_selected_symbol": sym,
+                    "alpha_strategy_key": strat,
                     "workflow_run_id": context.get("workflow_run_id"),
                     "orchestrator_run_id": context.get("orchestrator_run_id"),
                 },
@@ -202,7 +247,25 @@ def run_glue_agent(*, agent_key: str, inputs: dict[str, Any], context: dict[str,
         return {"tool_name": "qlib.status_and_artifacts", "tool_request": {"limit": s.get("limit", 10)}, "tool_response": out, "next_agent": out.get("next_agent") or "small_account_feasibility_agent", "safety": safety}
 
     if agent_key == "small_account_feasibility_agent":
-        out = evaluate_small_account_inputs(s)
+        merged_inputs: dict[str, Any] = dict(s)
+        if merged_inputs.get("latest_price") is None:
+            ar = merged_inputs.get("alpha_recommendation")
+            if isinstance(ar, dict):
+                ep = ar.get("entry_plan")
+                if isinstance(ep, dict) and ep.get("entry") is not None:
+                    merged_inputs["latest_price"] = ep.get("entry")
+        if merged_inputs.get("avg_dollar_volume") is None:
+            sc = merged_inputs.get("scanner_candidates")
+            sel = str(merged_inputs.get("selected_symbol") or merged_inputs.get("symbol") or "").strip().upper()
+            if isinstance(sc, list) and sel:
+                for row in sc:
+                    if not isinstance(row, dict):
+                        continue
+                    sym = str(row.get("symbol") or "").strip().upper()
+                    if sym == sel and row.get("dollar_volume") is not None:
+                        merged_inputs["avg_dollar_volume"] = row.get("dollar_volume")
+                        break
+        out = evaluate_small_account_inputs(merged_inputs)
         return {
             "tool_name": "small_account_feasibility.evaluate",
             "tool_request": {

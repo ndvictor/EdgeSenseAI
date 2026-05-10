@@ -99,6 +99,65 @@ def _worker_output_candidates(*, max_pick: int) -> tuple[list[str], list[dict[st
     return symbols, scanner_candidates, feature_rows
 
 
+def watchlist_from_workflow_scanner_rows(
+    rows: list[dict[str, Any]],
+    *,
+    max_symbols: int,
+    candidate_source: str,
+) -> dict[str, Any]:
+    """Use pre-resolved scanner rows (same symbols as workflow request); never universe_selection."""
+    cap = max(1, min(100, max_symbols))
+    trimmed = [dict(r) for r in rows[:cap] if isinstance(r, dict)]
+    symbols = [str(r.get("symbol") or "").strip().upper() for r in trimmed if r.get("symbol")]
+    if not symbols:
+        return {
+            "decision": "no_trade",
+            "recommendation": {
+                "status": "no_qualified_setup",
+                "symbol": None,
+                "non_real_data_used": False,
+                "synthetic_data_used": False,
+                "reason": "no_scanner_candidates_passed_filters",
+            },
+            "symbols": [],
+            "usable_symbols": [],
+            "ranked_candidates": [],
+            "scanner_candidates": [],
+            "feature_rows": [],
+            "source_breakdown": {},
+            "selected_candidate": None,
+            "candidate_source": candidate_source,
+            "raw_candidate_count": 0,
+            "filtered_candidate_count": 0,
+            "blockers": ["no_scanner_candidates_passed_filters"],
+            "warnings": [],
+            "next_action": "No scanner rows for workflow symbols.",
+        }
+    return {
+        "decision": "candidate_selected",
+        "recommendation": {
+            "status": "candidate_selected",
+            "symbol": symbols[0],
+            "non_real_data_used": False,
+            "synthetic_data_used": False,
+            "reason": None,
+        },
+        "symbols": symbols,
+        "usable_symbols": symbols,
+        "ranked_candidates": trimmed,
+        "scanner_candidates": trimmed,
+        "feature_rows": trimmed,
+        "source_breakdown": {"scanner_runtime": len(trimmed)},
+        "selected_candidate": symbols[0],
+        "candidate_source": candidate_source,
+        "raw_candidate_count": len(trimmed),
+        "filtered_candidate_count": len(symbols),
+        "blockers": [],
+        "warnings": [],
+        "next_action": "Proceed to Alpha Engine selection.",
+    }
+
+
 def build_watchlist(
     *,
     asset_class: str,

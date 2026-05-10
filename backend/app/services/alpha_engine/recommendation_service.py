@@ -155,20 +155,11 @@ def _reject_reasons(row: CandidateFeatureRow) -> list[str]:
         reasons.append("unsupported_candidate_source")
     if row.last_price is None:
         reasons.append("last_price_missing")
-    elif row.last_price < 2:
-        reasons.append("price_below_minimum")
     if row.spread_bps is None:
         reasons.append("spread_bps_missing")
-    elif row.spread_bps > 20:
-        reasons.append("spread_too_wide")
     if row.volume is None:
         reasons.append("volume_missing")
-    if row.avg_volume is None:
-        reasons.append("avg_volume_missing")
-    if row.relative_volume is None:
-        reasons.append("relative_volume_missing")
-    elif row.relative_volume < 1.2:
-        reasons.append("relative_volume_too_low")
+    # avg_volume / relative_volume / wide spread: handled in playbook scoring and downstream gates, not hard-rejected here.
     return reasons
 
 
@@ -314,6 +305,31 @@ def generate_alpha_recommendation(request: AlphaEngineRequest) -> AlphaRecommend
                 scored.append(candidate_score)
 
     if not scored:
+        if valid:
+            row0 = valid[0]
+            sym0 = str(row0.symbol or "").strip().upper()
+            return AlphaRecommendation(
+                status="needs_more_evidence",
+                symbol=sym0 or None,
+                strategy_key=None,
+                reason="Real scanner/provider candidate present but no active playbook match under current spread/liquidity/RV gates.",
+                blockers=[],
+                warnings=sorted(
+                    {
+                        "alpha_no_playbook_match_partial_candidate",
+                        *(
+                            ["proof_missing_or_backtest_required"]
+                            if not request.evidence_score_by_strategy
+                            else []
+                        ),
+                    }
+                ),
+                non_real_data_used=False,
+                synthetic_data_used=False,
+                submitted_order=False,
+                broker_called=False,
+                llm_used_for_trade_decision=False,
+            )
         return _no_qualified(
             "No valid candidate matched an active Alpha Engine playbook.",
             blockers=["no_active_playbook_match"],

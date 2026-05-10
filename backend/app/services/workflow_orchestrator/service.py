@@ -19,6 +19,7 @@ from app.services.workflow_governance.service import check_governance
 from app.services.workflow_orchestrator.models import OrchestratorRunRequest, OrchestratorRunResponse, OrchestratorStatusResponse, iso_utc_now, new_orchestrator_id
 from app.services.workflow_orchestrator.pipeline_carryforward import advisory_glue_next_agent_mismatch, apply_stage_carryforward
 from app.services.workflow_orchestrator.safety import enforce_orchestrator_safety
+from app.services.workflow_orchestrator.scanner_carryforward import seed_workflow_state_from_scanner_diagnostics
 from app.services.workflow_orchestrator.stage_plan import default_stage_plan, orchestrator_pipeline_agent_count
 from app.services.workflow_orchestrator.state_contract import WorkflowCarryForwardState
 
@@ -337,6 +338,12 @@ def run_workflow(body: OrchestratorRunRequest) -> OrchestratorRunResponse:
         state.strategy_key = body.strategy_key
         state.selected_strategy_key = body.strategy_key
     scanner_diagnostics, latest_scanner_status = _workflow_scanner_context(body)
+    seed_workflow_state_from_scanner_diagnostics(
+        state,
+        scanner_diagnostics,
+        latest_scanner_status,
+        body.source,
+    )
 
     approval_required = bool(body.require_human_approval)
     approval_id: str | None = None
