@@ -14,6 +14,7 @@ WRAPPED_AGENT_KEYS = frozenset(
         "data_readiness_agent",
         "market_condition_agent",
         "watchlist_builder_agent",
+        "alpha_engine_agent",
         "strategy_selection_agent",
         "model_selection_agent",
         "backtest_validation_agent",

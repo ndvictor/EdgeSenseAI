@@ -11,6 +11,7 @@ _ORCHESTRATOR_PIPELINE_AGENT_KEYS: tuple[str, ...] = (
     "market_condition_agent",
     "workflow_router_agent",
     "watchlist_builder_agent",
+    "alpha_engine_agent",
     "strategy_selection_agent",
     "model_selection_agent",
     "backtest_validation_agent",

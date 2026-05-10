@@ -348,6 +348,13 @@ def run_workflow(body: OrchestratorRunRequest) -> OrchestratorRunResponse:
                     "filtered_candidate_count",
                     "symbol",
                     "selected_symbol",
+                    "alpha_status",
+                    "alpha_selected_symbol",
+                    "alpha_strategy_key",
+                    "alpha_score",
+                    "alpha_reason",
+                    "alpha_blockers",
+                    "alpha_warnings",
                     "strategy_key",
                     "selected_strategy_key",
                     "selected_model_key",
@@ -440,7 +447,12 @@ def run_workflow(body: OrchestratorRunRequest) -> OrchestratorRunResponse:
         status = "completed_preview"
         next_action = "Preview completed."
 
-    if blockers:
+    if state.alpha_recommendation:
+        recommendation = dict(state.alpha_recommendation)
+        recommendation["submitted_order"] = False
+        recommendation["broker_called"] = False
+        recommendation["llm_used_for_trade_decision"] = False
+    elif blockers:
         if "scanner_or_provider_unavailable" in blockers:
             recommendation_status = "data_unavailable"
         elif "no_scanner_candidates_passed_filters" in blockers:
@@ -523,6 +535,12 @@ def run_workflow(body: OrchestratorRunRequest) -> OrchestratorRunResponse:
         small_account_blockers=list(state.small_account_blockers),
         small_account_warnings=list(state.small_account_warnings),
         recommendation=recommendation,
+        alpha_recommendation=dict(state.alpha_recommendation),
+        alpha_status=state.alpha_status,
+        alpha_selected_symbol=state.alpha_selected_symbol,
+        alpha_strategy_key=state.alpha_strategy_key,
+        alpha_score=state.alpha_score,
+        alpha_reason=state.alpha_reason,
         allow_submit=False,
         submitted_order=False,
         broker_called=False,

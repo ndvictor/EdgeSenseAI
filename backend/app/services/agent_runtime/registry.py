@@ -92,6 +92,14 @@ _AGENTS: dict[str, AgentDescriptor] = {
         agent_type="deterministic_agent",
         status="ready",
     ),
+    "alpha_engine_agent": _d(
+        agent_key="alpha_engine_agent",
+        display_name="Alpha Engine Agent",
+        role="Stage 7 deterministic intraday recommendation",
+        stage_number=7,
+        agent_type="deterministic_agent",
+        status="ready",
+    ),
     "strategy_selection_agent": _d(
         agent_key="strategy_selection_agent",
         display_name="Strategy Selection Agent",

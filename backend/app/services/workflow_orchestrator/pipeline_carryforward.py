@@ -50,6 +50,12 @@ def _float_or_none(value: Any) -> float | None:
         return None
 
 
+def _dict_list(values: Any) -> list[dict[str, Any]]:
+    if not isinstance(values, list):
+        return []
+    return [dict(value) for value in values if isinstance(value, dict)]
+
+
 def apply_stage_carryforward(*, agent_key: str, agent_result: AgentRunResult, state: WorkflowCarryForwardState) -> list[str]:
     """Carry typed workflow state forward for downstream agents. Returns advisory warnings."""
     warnings: list[str] = []
@@ -95,6 +101,9 @@ def apply_stage_carryforward(*, agent_key: str, agent_result: AgentRunResult, st
         if tr.get("feature_row_count") is not None:
             state.feature_row_count = int(tr.get("feature_row_count") or 0)
         artifacts = tr.get("artifacts") if isinstance(tr.get("artifacts"), dict) else {}
+        feature_rows = _dict_list(artifacts.get("feature_rows"))
+        if feature_rows:
+            state.feature_rows = feature_rows
         feature_row = _first_dict(artifacts.get("feature_rows"), state.selected_symbol or state.symbol)
         snapshot = _first_dict(artifacts.get("latest_snapshots"), state.selected_symbol or state.symbol)
         state.latest_price = _float_or_none(feature_row.get("last_price") or snapshot.get("price") or snapshot.get("last") or snapshot.get("close"))
@@ -122,6 +131,18 @@ def apply_stage_carryforward(*, agent_key: str, agent_result: AgentRunResult, st
             state.filtered_candidate_count = int(tr.get("filtered_candidate_count") or 0)
         _append_strings(state.blockers, tr.get("blockers"))
         _append_strings(state.warnings, tr.get("warnings"))
+        for key in ("feature_rows", "scanner_candidates", "watchlist", "candidates", "ranked_candidates"):
+            values = tr.get(key)
+            if key == "feature_rows":
+                rows = _dict_list(values)
+                if rows:
+                    state.feature_rows = rows
+            elif key in {"scanner_candidates", "candidates", "ranked_candidates"}:
+                rows = _dict_list(values)
+                if rows:
+                    state.scanner_candidates = rows
+            elif isinstance(values, list) and values:
+                state.watchlist = list(values)
         cand = tr.get("selected_candidate") or tr.get("selected_symbol") or tr.get("symbol")
         if cand:
             state.symbol = str(cand).strip().upper()
@@ -129,11 +150,32 @@ def apply_stage_carryforward(*, agent_key: str, agent_result: AgentRunResult, st
         elif state.symbols:
             state.symbol = str(state.symbols[0]).strip().upper()
             state.selected_symbol = state.symbol
+    elif agent_key == "alpha_engine_agent":
+        if isinstance(tr.get("alpha_recommendation"), dict):
+            state.alpha_recommendation = dict(tr["alpha_recommendation"])
+        if tr.get("alpha_status") is not None:
+            state.alpha_status = str(tr["alpha_status"])
+        if tr.get("alpha_selected_symbol"):
+            state.alpha_selected_symbol = str(tr["alpha_selected_symbol"]).strip().upper()
+            state.selected_symbol = state.alpha_selected_symbol
+            state.symbol = state.alpha_selected_symbol
+        if tr.get("alpha_strategy_key") is not None:
+            state.alpha_strategy_key = str(tr["alpha_strategy_key"])
+        if tr.get("alpha_score") is not None:
+            state.alpha_score = _float_or_none(tr.get("alpha_score"))
+        if tr.get("alpha_reason") is not None:
+            state.alpha_reason = str(tr["alpha_reason"])
+        state.alpha_blockers = [str(x) for x in (tr.get("alpha_blockers") or []) if x]
+        state.alpha_warnings = [str(x) for x in (tr.get("alpha_warnings") or []) if x]
+        _append_strings(state.warnings, tr.get("alpha_warnings"))
     elif agent_key == "strategy_selection_agent":
         sk = tr.get("selected_strategy_key")
         if sk:
             state.strategy_key = str(sk)
             state.selected_strategy_key = str(sk)
+        if tr.get("selected_symbol"):
+            state.selected_symbol = str(tr["selected_symbol"]).strip().upper()
+            state.symbol = state.selected_symbol
         ps = tr.get("proof_status")
         if ps:
             state.proof_status = str(ps)

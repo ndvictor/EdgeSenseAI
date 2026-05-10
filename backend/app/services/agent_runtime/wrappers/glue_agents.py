@@ -2,6 +2,7 @@ from __future__ import annotations
 
 from typing import Any
 
+from app.services.agent_runtime.wrappers.alpha_engine_adapter import run_alpha_engine_selection
 from app.services.agent_runtime.wrappers.backtest_validation_adapter import validate_backtest_or_proof
 from app.services.agent_runtime.wrappers.data_readiness_adapter import evaluate_data_readiness
 from app.services.agent_runtime.wrappers.market_condition_adapter import scan_market_condition
@@ -18,6 +19,7 @@ GLUE_AGENT_KEYS = frozenset(
         "data_readiness_agent",
         "market_condition_agent",
         "watchlist_builder_agent",
+        "alpha_engine_agent",
         "strategy_selection_agent",
         "model_selection_agent",
         "backtest_validation_agent",
@@ -74,11 +76,75 @@ def run_glue_agent(*, agent_key: str, inputs: dict[str, Any], context: dict[str,
             "tool_name": tool,
             "tool_request": {"asset_class": asset_class, "horizon": horizon, "source": data_source, "seeds": seed_symbols if orch else None},
             "tool_response": out,
-            "next_agent": "strategy_selection_agent" if out.get("symbols") else None,
+            "next_agent": "alpha_engine_agent" if out.get("symbols") or out.get("recommendation") else None,
+            "safety": safety,
+        }
+
+    if agent_key == "alpha_engine_agent":
+        out = run_alpha_engine_selection(s, context)
+        return {
+            "tool_name": "alpha_engine.generate_alpha_recommendation",
+            "tool_request": {
+                "feature_rows": len(s.get("feature_rows") or []),
+                "scanner_candidates": len(s.get("scanner_candidates") or []),
+                "watchlist": len(s.get("watchlist") or []),
+                "usable_symbols": len(s.get("usable_symbols") or []),
+                "selected_symbol": s.get("selected_symbol") or s.get("symbol"),
+            },
+            "tool_response": out,
+            "next_agent": "strategy_selection_agent",
             "safety": safety,
         }
 
     if agent_key == "strategy_selection_agent":
+        alpha_status = str(s.get("alpha_status") or "")
+        if alpha_status == "candidate_selected":
+            out = {
+                "selected_strategy_key": s.get("alpha_strategy_key"),
+                "selected_symbol": s.get("alpha_selected_symbol"),
+                "proof_status": "unknown",
+                "blockers": [],
+                "warnings": list(s.get("alpha_warnings") or []),
+                "next_agent": "model_selection_agent" if s.get("alpha_strategy_key") and s.get("alpha_selected_symbol") else None,
+                "next_action": "Use Alpha Engine selected strategy and symbol.",
+            }
+            return {
+                "tool_name": "alpha_engine.strategy_selection",
+                "tool_request": {
+                    "alpha_status": alpha_status,
+                    "alpha_selected_symbol": s.get("alpha_selected_symbol"),
+                    "alpha_strategy_key": s.get("alpha_strategy_key"),
+                    "workflow_run_id": context.get("workflow_run_id"),
+                    "orchestrator_run_id": context.get("orchestrator_run_id"),
+                },
+                "tool_response": out,
+                "next_agent": out.get("next_agent"),
+                "safety": safety,
+            }
+        if alpha_status in {"no_qualified_setup", "data_unavailable", "blocked"}:
+            blockers = list(s.get("alpha_blockers") or [])
+            if not blockers:
+                blockers = [f"alpha_engine_{alpha_status}"]
+            out = {
+                "selected_strategy_key": None,
+                "selected_symbol": None,
+                "proof_status": "unknown",
+                "blockers": blockers,
+                "warnings": list(s.get("alpha_warnings") or []),
+                "next_agent": None,
+                "next_action": "No Alpha Engine candidate selected; strategy selection stopped.",
+            }
+            return {
+                "tool_name": "alpha_engine.strategy_selection",
+                "tool_request": {
+                    "alpha_status": alpha_status,
+                    "workflow_run_id": context.get("workflow_run_id"),
+                    "orchestrator_run_id": context.get("orchestrator_run_id"),
+                },
+                "tool_response": out,
+                "next_agent": None,
+                "safety": safety,
+            }
         out = select_strategy(
             market_phase=str(s.get("market_phase", "market_open")),
             active_loop=str(s.get("active_loop", "paper_first")),

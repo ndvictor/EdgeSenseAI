@@ -43,6 +43,9 @@ class WorkflowCarryForwardState(BaseModel):
     latest_snapshot_count: int = 0
     feature_store_status: str | None = None
     feature_row_count: int = 0
+    feature_rows: list[dict[str, Any]] = Field(default_factory=list)
+    scanner_candidates: list[dict[str, Any]] = Field(default_factory=list)
+    watchlist: list[dict[str, Any] | str] = Field(default_factory=list)
     persistence_status: str | None = None
     freshness_status: str | None = None
     kafka_status: str = "configured_optional_not_active"
@@ -64,6 +67,14 @@ class WorkflowCarryForwardState(BaseModel):
     small_account_rejected_symbols: list[str] = Field(default_factory=list)
     small_account_blockers: list[str] = Field(default_factory=list)
     small_account_warnings: list[str] = Field(default_factory=list)
+    alpha_recommendation: dict[str, Any] = Field(default_factory=dict)
+    alpha_status: str | None = None
+    alpha_selected_symbol: str | None = None
+    alpha_strategy_key: str | None = None
+    alpha_score: float | None = None
+    alpha_reason: str | None = None
+    alpha_blockers: list[str] = Field(default_factory=list)
+    alpha_warnings: list[str] = Field(default_factory=list)
     approval_id: str | None = None
     blockers: list[str] = Field(default_factory=list)
     warnings: list[str] = Field(default_factory=list)

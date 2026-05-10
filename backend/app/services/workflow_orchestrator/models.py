@@ -92,6 +92,12 @@ class OrchestratorRunResponse(BaseModel):
     small_account_blockers: list[str] = Field(default_factory=list)
     small_account_warnings: list[str] = Field(default_factory=list)
     recommendation: dict[str, Any] = Field(default_factory=dict)
+    alpha_recommendation: dict[str, Any] = Field(default_factory=dict)
+    alpha_status: str | None = None
+    alpha_selected_symbol: str | None = None
+    alpha_strategy_key: str | None = None
+    alpha_score: float | None = None
+    alpha_reason: str | None = None
     allow_submit: bool = False
     submitted_order: bool = False
     broker_called: bool = False
