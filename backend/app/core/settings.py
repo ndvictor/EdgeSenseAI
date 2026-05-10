@@ -56,6 +56,7 @@ class Settings(BaseSettings):
     agent_can_create_paper_plans: bool = Field(default=False, alias="AGENT_CAN_CREATE_PAPER_PLANS")
     agent_can_create_approval_requests: bool = Field(default=False, alias="AGENT_CAN_CREATE_APPROVAL_REQUESTS")
     agent_can_submit_paper_orders: bool = Field(default=False, alias="AGENT_CAN_SUBMIT_PAPER_ORDERS")
+    agent_can_auto_submit_paper_orders: bool = Field(default=False, alias="AGENT_CAN_AUTO_SUBMIT_PAPER_ORDERS")
     agent_can_submit_live_orders: bool = Field(default=False, alias="AGENT_CAN_SUBMIT_LIVE_ORDERS")
 
     @property
@@ -72,12 +73,14 @@ class Settings(BaseSettings):
             and self.broker_execution_enabled
         )
         paper_allowed = self.agent_can_submit_paper_orders and self.paper_trading_enabled
+        paper_auto_allowed = self.agent_can_auto_submit_paper_orders and paper_allowed
         return {
             "agent_reasoning_enabled": bool(self.agent_reasoning_enabled),
             "agent_can_recommend_trades": bool(self.agent_can_recommend_trades),
             "agent_can_create_paper_plans": bool(self.agent_can_create_paper_plans),
             "agent_can_create_approval_requests": bool(self.agent_can_create_approval_requests),
             "agent_can_submit_paper_orders": bool(paper_allowed),
+            "agent_can_auto_submit_paper_orders": bool(paper_auto_allowed),
             "agent_can_submit_live_orders": bool(live_allowed),
         }
 

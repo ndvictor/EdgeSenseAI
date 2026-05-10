@@ -42,10 +42,13 @@ def _resolve_owner_authority(workflow_state: dict[str, Any]) -> OwnerAuthority:
     can_paper_plan = bool(flags.get("agent_can_create_paper_plans"))
     can_approval = bool(flags.get("agent_can_create_approval_requests"))
     can_paper_submit = bool(flags.get("agent_can_submit_paper_orders"))
+    can_paper_auto_submit = bool(flags.get("agent_can_auto_submit_paper_orders"))
     can_live_submit = bool(flags.get("agent_can_submit_live_orders"))
 
     if can_live_submit:
         level = "live_submit"
+    elif can_paper_auto_submit:
+        level = "paper_auto"
     elif can_paper_submit:
         level = "paper_submit"
     elif can_paper_plan or can_approval:
@@ -61,6 +64,7 @@ def _resolve_owner_authority(workflow_state: dict[str, Any]) -> OwnerAuthority:
         can_create_paper_plans=can_paper_plan,
         can_create_approval_requests=can_approval,
         can_submit_paper_orders=can_paper_submit,
+        can_paper_auto_submit=can_paper_auto_submit,
         can_submit_live_orders=can_live_submit,
         require_human_approval=True,
     )
@@ -309,7 +313,7 @@ class EvidencePackBuilder:
 
         alpha = workflow_state.get("alpha_recommendation") if isinstance(workflow_state.get("alpha_recommendation"), dict) else {}
         alpha_symbol = str(alpha.get("symbol") or workflow_state.get("alpha_selected_symbol") or "").strip().upper()
-        if alpha_symbol and (alpha_symbol in allowed_symbols or agent_key == "small_account_feasibility_agent"):
+        if alpha_symbol and (alpha_symbol in allowed_symbols or agent_key in {"small_account_feasibility_agent", "execution_planner_agent"}):
             allowed_symbols = sorted(set(allowed_symbols) | {alpha_symbol})
 
         all_rows = scanner_rows + candidate_features

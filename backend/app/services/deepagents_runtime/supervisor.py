@@ -16,6 +16,7 @@ _SUPPORTED_AGENT_KEYS = {
     "watchlist_builder_agent",
     "alpha_engine_agent",
     "small_account_feasibility_agent",
+    "execution_planner_agent",
 }
 
 
@@ -50,6 +51,8 @@ def _sha256(value: str) -> str:
 
 def _fallback_decision_for_evidence(evidence: EvidencePack) -> str:
     if evidence.agent_key == "small_account_feasibility_agent":
+        return "data_unavailable" if not evidence.allowed_symbols else "needs_more_evidence"
+    if evidence.agent_key == "execution_planner_agent":
         return "data_unavailable" if not evidence.allowed_symbols else "needs_more_evidence"
     return "no_qualified_setup" if not evidence.allowed_symbols else "needs_more_evidence"
 
@@ -135,13 +138,23 @@ def _decision_from_raw(raw: Any, *, evidence: EvidencePack, prompt_hash: str, ou
     payload.setdefault("expected_r_after_costs", None)
     payload.setdefault("feasible_symbols", [])
     payload.setdefault("infeasible_symbols", [])
+    payload.setdefault("execution_plan_decision", None)
+    payload.setdefault("order_type", None)
+    payload.setdefault("time_in_force", None)
+    payload.setdefault("limit_price", None)
+    payload.setdefault("stop_price", None)
+    payload.setdefault("take_profit", None)
+    payload.setdefault("submit_route", None)
+    payload.setdefault("requires_human_approval", None)
+    payload.setdefault("auto_submit", None)
+    payload.setdefault("execution_plan", {})
     payload["llm_used"] = True
     payload["llm_model"] = payload.get("llm_model") or model
     payload["prompt_hash"] = payload.get("prompt_hash") or prompt_hash
     payload["output_hash"] = payload.get("output_hash") or output_hash
-    payload["submitted_order"] = False
-    payload["broker_called"] = False
-    payload["llm_used_for_trade_decision"] = False
+    payload.setdefault("submitted_order", False)
+    payload.setdefault("broker_called", False)
+    payload.setdefault("llm_used_for_trade_decision", False)
     return DeepAgentDecision.model_validate(payload)
 
 
@@ -170,7 +183,7 @@ class DeepAgentSupervisor:
                 agent_key=evidence.agent_key,
                 decision=_fallback_decision_for_evidence(evidence),  # type: ignore[arg-type]
                 reasoning_status="disabled",
-                thesis="DeepAgents reasoning is currently integrated only with watchlist_builder_agent, alpha_engine_agent, and small_account_feasibility_agent.",
+                thesis="DeepAgents reasoning is currently integrated with watchlist_builder_agent, alpha_engine_agent, small_account_feasibility_agent, and execution_planner_agent.",
                 soft_warnings=["deepagent_not_integrated_for_agent"],
             )
         if not _reasoning_enabled():
@@ -182,13 +195,13 @@ class DeepAgentSupervisor:
                 soft_warnings=["deepagent_reasoning_disabled"],
             )
         if not evidence.allowed_symbols:
-            if evidence.agent_key == "small_account_feasibility_agent":
+            if evidence.agent_key in {"small_account_feasibility_agent", "execution_planner_agent"}:
                 return DeepAgentDecision.safe_fallback(
                     agent_key=evidence.agent_key,
                     decision="data_unavailable",
                     reasoning_status="blocked",
-                    thesis="No Alpha-selected symbol is available for account feasibility reasoning.",
-                    hard_blockers=["no_alpha_selected_symbol_for_feasibility"],
+                    thesis="No Alpha-selected symbol is available for downstream agent reasoning.",
+                    hard_blockers=["no_alpha_selected_symbol_for_agent"],
                 )
             return DeepAgentDecision.safe_fallback(
                 agent_key=evidence.agent_key,
@@ -223,7 +236,7 @@ class DeepAgentSupervisor:
                 "required_output": {
                     "agent_key": evidence.agent_key,
                     "reasoning_status": "completed",
-                    "decision": "candidate_selected | candidates_selected | no_qualified_setup | data_unavailable | blocked | needs_more_evidence | plan_only | feasible | infeasible",
+                    "decision": "candidate_selected | candidates_selected | no_qualified_setup | data_unavailable | blocked | needs_more_evidence | plan_only | feasible | infeasible | paper_plan | live_plan | approval_required | no_plan",
                     "confidence": "number between 0 and 1",
                     "thesis": "short evidence-based thesis",
                     "bull_case": [],
@@ -292,6 +305,19 @@ class DeepAgentSupervisor:
                     "expected_r_after_costs": "number or null (must match deterministic tool)",
                     "feasible_symbols": "list[str], subset of allowed_symbols",
                     "infeasible_symbols": "list[str], subset of allowed_symbols",
+                    # Execution planning (only for execution_planner_agent).
+                    # Order prices, sizing, route, and approval fields MUST
+                    # mirror the deterministic execution_planner tool result.
+                    "execution_plan_decision": "paper_plan | live_plan | approval_required | blocked | no_plan",
+                    "execution_plan": "dict matching deterministic tool_result.execution_plan",
+                    "order_type": "limit | market | null",
+                    "time_in_force": "day | gtc | null",
+                    "limit_price": "number or null",
+                    "stop_price": "number or null",
+                    "take_profit": "number or null",
+                    "submit_route": "none | paper | live",
+                    "requires_human_approval": "bool or null",
+                    "auto_submit": "bool or null",
                     "llm_used": True,
                     "submitted_order": False,
                     "broker_called": False,

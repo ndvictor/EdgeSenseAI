@@ -47,6 +47,7 @@ def build_status() -> AgentRuntimeStatusResponse:
             "agent_can_create_paper_plans": False,
             "agent_can_create_approval_requests": False,
             "agent_can_submit_paper_orders": False,
+            "agent_can_auto_submit_paper_orders": False,
             "agent_can_submit_live_orders": False,
         }
     return AgentRuntimeStatusResponse(
@@ -248,7 +249,7 @@ def _attach_advisory_reasoning(
     warnings: list[str] = []
     if not isinstance(tool_response, dict):
         return tool_response, None, warnings
-    if agent_key not in {"watchlist_builder_agent", "alpha_engine_agent", "small_account_feasibility_agent"}:
+    if agent_key not in {"watchlist_builder_agent", "alpha_engine_agent", "small_account_feasibility_agent", "execution_planner_agent"}:
         return tool_response, None, warnings
     try:
         from app.services.deepagents_runtime import DeepAgentRunContext, DeepAgentSupervisor, EvidencePackBuilder
@@ -292,6 +293,8 @@ def _attach_advisory_reasoning(
         elif agent_key == "small_account_feasibility_agent":
             merged["account_feasibility_agent_decision"] = reasoning_payload
             merged["small_account_feasibility_agent_decision"] = reasoning_payload
+        elif agent_key == "execution_planner_agent":
+            merged["execution_planner_agent_decision"] = reasoning_payload
 
         agentic_applied = False
         if agent_key == "watchlist_builder_agent" and reasoning.reasoning_status in {"completed", "blocked"}:
@@ -437,9 +440,48 @@ def _attach_advisory_reasoning(
                 merged["next_agent"] = "execution_planner_agent" if reasoning.decision == "feasible" else None
                 agentic_applied = True
 
+        if agent_key == "execution_planner_agent" and reasoning.reasoning_status == "completed":
+            if reasoning.decision in {"paper_plan", "live_plan", "approval_required", "blocked", "no_plan"}:
+                merged["execution_plan_decision"] = reasoning.execution_plan_decision or reasoning.decision
+                if reasoning.execution_plan:
+                    merged["execution_plan"] = dict(reasoning.execution_plan)
+                for key in (
+                    "order_type",
+                    "time_in_force",
+                    "limit_price",
+                    "stop_price",
+                    "take_profit",
+                    "position_size_shares",
+                    "position_size_notional",
+                    "risk_dollars",
+                    "expected_profit_dollars",
+                    "expected_r_after_costs",
+                    "submit_route",
+                    "requires_human_approval",
+                ):
+                    value = reasoning_payload.get(key)
+                    if value is not None:
+                        merged[key] = value
+                merged["selected_symbol"] = reasoning.symbol or tool_response.get("symbol") or inputs.get("alpha_selected_symbol") or inputs.get("selected_symbol")
+                merged["symbol"] = merged.get("selected_symbol")
+                merged["execution_plan_blockers"] = list(reasoning.hard_blockers or [])
+                merged["execution_plan_warnings"] = list(reasoning.soft_warnings or [])
+                merged["blockers"] = list(reasoning.hard_blockers or [])
+                merged["warnings"] = list(reasoning.soft_warnings or [])
+                merged["decision"] = reasoning.decision
+                merged["next_action"] = reasoning.recommended_next_action or (
+                    "Proceed to execution approval/precheck." if reasoning.decision in {"paper_plan", "live_plan", "approval_required"} else "No execution plan created."
+                )
+                merged["next_agent"] = "execution_approval_agent" if reasoning.decision in {"paper_plan", "live_plan", "approval_required"} else None
+                agentic_applied = True
+
         merged["agentic_decision_applied"] = agentic_applied
         merged["llm_used"] = reasoning.reasoning_status == "completed" and bool(reasoning.llm_used)
-        merged["submitted_order"] = False
+        merged["submitted_order"] = bool(
+            agent_key == "execution_planner_agent"
+            and merged.get("submit_route") == "paper"
+            and bool(tool_response.get("submitted_order"))
+        )
         merged["broker_called"] = False
         merged["llm_used_for_trade_decision"] = False
         return merged, reasoning_payload, warnings

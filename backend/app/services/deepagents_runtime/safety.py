@@ -153,7 +153,13 @@ class DecisionAuditor:
                 audited.hard_blockers.append(f"forbidden_action:{phrase}")
                 audited.reasoning_status = "audit_rejected"
 
-        if audited.submitted_order or audited.broker_called:
+        paper_sim_submit_allowed = (
+            audited.agent_key == "execution_planner_agent"
+            and evidence.tool_result.get("submit_route") == "paper"
+            and evidence.tool_result.get("submitted_order") is True
+            and evidence.owner_authority.can_paper_auto_submit
+        )
+        if audited.broker_called or (audited.submitted_order and not paper_sim_submit_allowed):
             audited.hard_blockers.append("forbidden_broker_or_submit_claim")
             audited.reasoning_status = "audit_rejected"
 
@@ -217,11 +223,22 @@ class DecisionAuditor:
             DecisionAuditor._audit_alpha_decision(audited, evidence, allowed, known_prices, text_upper)
         if audited.agent_key == "small_account_feasibility_agent":
             DecisionAuditor._audit_account_feasibility_decision(audited, evidence, allowed, text_upper)
+        if audited.agent_key == "execution_planner_agent":
+            DecisionAuditor._audit_execution_plan_decision(audited, evidence, allowed, text_upper)
 
-        audited.submitted_order = False
+        if audited.agent_key == "execution_planner_agent":
+            audited.submitted_order = bool(
+                evidence.tool_result.get("submitted_order") is True
+                and evidence.tool_result.get("submit_route") == "paper"
+                and evidence.owner_authority.can_paper_auto_submit
+            )
+        else:
+            audited.submitted_order = False
         audited.broker_called = False
         audited.llm_used_for_trade_decision = False
         if audited.reasoning_status == "audit_rejected":
+            audited.submitted_order = False
+            audited.broker_called = False
             audited.decision = "no_qualified_setup" if not allowed else "blocked"
             audited.confidence = 0.0
             audited.hard_blockers = sorted(set(audited.hard_blockers))
@@ -262,6 +279,16 @@ class DecisionAuditor:
             audited.expected_r_after_costs = None
             audited.feasible_symbols = []
             audited.infeasible_symbols = []
+            audited.execution_plan_decision = None
+            audited.order_type = None
+            audited.time_in_force = None
+            audited.limit_price = None
+            audited.stop_price = None
+            audited.take_profit = None
+            audited.submit_route = None
+            audited.requires_human_approval = None
+            audited.auto_submit = None
+            audited.execution_plan = {}
         return audited
 
     @staticmethod
@@ -468,3 +495,125 @@ class DecisionAuditor:
             if not DecisionAuditor._numbers_close(entry_plan.get(price_key), alpha_entry_plan.get(price_key)):
                 audited.hard_blockers.append(f"feasibility_{price_key}_changed_from_alpha_evidence")
                 audited.reasoning_status = "audit_rejected"
+
+    @staticmethod
+    def _nested_value(value: Any, path: tuple[str, ...]) -> Any:
+        cur = value
+        for key in path:
+            if not isinstance(cur, dict):
+                return None
+            cur = cur.get(key)
+        return cur
+
+    @staticmethod
+    def _audit_execution_plan_decision(
+        audited: DeepAgentDecision,
+        evidence: EvidencePack,
+        allowed: set[str],
+        text_upper: str,
+    ) -> None:
+        tool = evidence.tool_result or {}
+        if not tool:
+            audited.hard_blockers.append("missing_execution_planner_tool_result")
+            audited.reasoning_status = "audit_rejected"
+            return
+
+        symbol = str(audited.symbol or "").upper().strip()
+        alpha = evidence.alpha_recommendation or {}
+        alpha_symbol = str(alpha.get("symbol") or "").upper().strip()
+        if not symbol:
+            symbol = alpha_symbol
+        if symbol:
+            if symbol not in allowed:
+                audited.hard_blockers.append(f"hallucinated_symbol:{symbol}")
+                audited.reasoning_status = "audit_rejected"
+            elif alpha_symbol and symbol != alpha_symbol:
+                audited.hard_blockers.append(f"execution_symbol_changed_from_alpha:{symbol}")
+                audited.reasoning_status = "audit_rejected"
+
+        tool_decision = str(tool.get("execution_plan_decision") or "").strip().lower()
+        agent_decision = str(audited.execution_plan_decision or audited.decision or "").strip().lower()
+        if agent_decision and tool_decision and agent_decision != tool_decision:
+            audited.hard_blockers.append("execution_plan_decision_contradicts_tool_result")
+            audited.reasoning_status = "audit_rejected"
+
+        tool_plan = tool.get("execution_plan") if isinstance(tool.get("execution_plan"), dict) else {}
+        agent_plan = audited.execution_plan if isinstance(audited.execution_plan, dict) else {}
+        alpha_entry_plan = alpha.get("entry_plan") if isinstance(alpha.get("entry_plan"), dict) else {}
+
+        price_checks = (
+            ("limit_price", audited.limit_price, tool.get("limit_price")),
+            ("stop_price", audited.stop_price, tool.get("stop_price")),
+            ("take_profit", audited.take_profit, tool.get("take_profit")),
+            ("execution_plan.entry", DecisionAuditor._nested_value(agent_plan, ("entry",)), DecisionAuditor._nested_value(tool_plan, ("entry",))),
+            ("execution_plan.stop_price", DecisionAuditor._nested_value(agent_plan, ("stop_price",)), DecisionAuditor._nested_value(tool_plan, ("stop_price",))),
+            ("execution_plan.take_profit", DecisionAuditor._nested_value(agent_plan, ("take_profit",)), DecisionAuditor._nested_value(tool_plan, ("take_profit",))),
+        )
+        for label, actual, expected in price_checks:
+            if actual is None or expected is None:
+                continue
+            if not DecisionAuditor._numbers_close(actual, expected):
+                audited.hard_blockers.append(f"{label}_contradicts_execution_planner_tool")
+                audited.reasoning_status = "audit_rejected"
+
+        alpha_price_checks = (
+            ("entry", DecisionAuditor._nested_value(tool_plan, ("entry",)), alpha_entry_plan.get("entry")),
+            ("stop", DecisionAuditor._nested_value(tool_plan, ("stop_price",)), alpha_entry_plan.get("stop")),
+            ("target", DecisionAuditor._nested_value(tool_plan, ("take_profit",)), alpha_entry_plan.get("target")),
+        )
+        for label, actual, expected in alpha_price_checks:
+            if actual is None or expected is None:
+                audited.hard_blockers.append(f"execution_{label}_not_in_alpha_evidence")
+                audited.reasoning_status = "audit_rejected"
+                continue
+            if not DecisionAuditor._numbers_close(actual, expected):
+                audited.hard_blockers.append(f"execution_{label}_changed_from_alpha_evidence")
+                audited.reasoning_status = "audit_rejected"
+
+        for field in ("position_size_shares", "position_size_notional", "risk_dollars", "expected_profit_dollars", "expected_r_after_costs"):
+            actual = getattr(audited, field)
+            if actual is None or field not in tool:
+                continue
+            if not DecisionAuditor._numbers_close(actual, tool.get(field)):
+                audited.hard_blockers.append(f"{field}_contradicts_execution_planner_tool")
+                audited.reasoning_status = "audit_rejected"
+
+        for field in ("order_type", "time_in_force", "submit_route"):
+            actual = getattr(audited, field)
+            expected = tool.get(field)
+            if actual is not None and expected is not None and str(actual).lower() != str(expected).lower():
+                audited.hard_blockers.append(f"{field}_contradicts_execution_planner_tool")
+                audited.reasoning_status = "audit_rejected"
+
+        route = str(audited.submit_route or tool.get("submit_route") or "none").lower()
+        if route == "live":
+            policy = evidence.account_policy or {}
+            if not evidence.owner_authority.can_submit_live_orders:
+                audited.hard_blockers.append("live_submit_route_without_owner_authority")
+                audited.reasoning_status = "audit_rejected"
+            if not bool(policy.get("live_trading_enabled")) or not bool(policy.get("broker_execution_enabled")):
+                audited.hard_blockers.append("live_submit_route_without_live_broker_flags")
+                audited.reasoning_status = "audit_rejected"
+            if evidence.owner_authority.require_human_approval and not bool(tool.get("human_approval_confirmed")):
+                audited.hard_blockers.append("live_submit_route_without_approval")
+                audited.reasoning_status = "audit_rejected"
+        if route == "paper" and not evidence.owner_authority.can_paper_auto_submit:
+            audited.hard_blockers.append("paper_submit_route_without_paper_auto_authority")
+            audited.reasoning_status = "audit_rejected"
+
+        if audited.auto_submit and route != "paper":
+            audited.hard_blockers.append("auto_submit_without_paper_route")
+            audited.reasoning_status = "audit_rejected"
+        if audited.auto_submit and evidence.owner_authority.require_human_approval and route != "paper":
+            audited.hard_blockers.append("auto_submit_bypasses_required_approval")
+            audited.reasoning_status = "audit_rejected"
+
+        if audited.broker_called:
+            audited.hard_blockers.append("forbidden_broker_or_submit_claim")
+            audited.reasoning_status = "audit_rejected"
+        if audited.submitted_order and route != "paper":
+            audited.hard_blockers.append("submitted_order_without_paper_auto_route")
+            audited.reasoning_status = "audit_rejected"
+        if "BYPASS APPROVAL" in text_upper or "SKIP APPROVAL" in text_upper:
+            audited.hard_blockers.append("approval_bypass_claim")
+            audited.reasoning_status = "audit_rejected"

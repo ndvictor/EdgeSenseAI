@@ -366,71 +366,15 @@ def run_wrapped_agent(*, agent_key: str, inputs: dict[str, Any], context: dict[s
         }
 
     if agent_key == "execution_planner_agent":
-        from app.services.execution_planner.models import ExecutionPlannerPlanRequest
-        from app.services.execution_planner.service import plan_execution
+        from app.services.agent_runtime.wrappers.execution_planner_adapter import evaluate_execution_planner_inputs
 
-        sym = _first_symbol(s)
-        account_equity = _orchestrator_account_equity(s) if orchestrator_context else 10000.0
-        if orchestrator_context and s.get("max_risk_dollars") is not None:
-            max_risk = round((float(s.get("max_risk_dollars") or 0.0) / account_equity) * 100.0, 4) if account_equity > 0 else 0.5
-        else:
-            max_risk = float(s.get("max_risk_per_trade_percent") or (0.5 if orchestrator_context else 1.0))
-        max_position = 5.0 if orchestrator_context else 20.0
-
-        default_req = {
-            "trigger_evaluation": {
-                "trigger_state": "fired",
-                "symbol": sym,
-                "asset_class": "stock",
-                "horizon": "day_trading",
-                "trigger_key": "rvol_vwap_breakout_confirm",
-            },
-            "market_snapshot": {
-                "current_price": 151.20,
-                "vwap": 150.5,
-                "atr": 2.3,
-                "bid": 151.15,
-                "ask": 151.25,
-                "spread_percent": 0.02,
-                "volume_confirms": True,
-            },
-            "account_state": {
-                "account_equity": account_equity,
-                "cash": account_equity,
-                "risk_budget_available": True,
-                "max_risk_per_trade_percent": max_risk,
-                "max_position_size_percent": max_position,
-                "paper_trading_enabled": True,
-                "live_trading_enabled": False,
-                "human_approval_required": True,
-                "execution_enabled": False if orchestrator_context else True,
-            },
-            "planning_preferences": {
-                "order_style": "limit",
-                "stop_method": "atr",
-                "target_reward_risk": 2.0,
-                "atr_stop_multiplier": 1.0,
-                "max_spread_percent": 0.15,
-                "allow_submit": False,
-            },
-        }
-        raw = s.get("request") if isinstance(s.get("request"), dict) else None
-        if raw:
-            merged = {**default_req, **raw}
-            for key in ("trigger_evaluation", "market_snapshot", "account_state", "planning_preferences"):
-                d = dict(default_req.get(key) or {})
-                r = raw.get(key) if isinstance(raw.get(key), dict) else {}
-                merged[key] = {**d, **r}
-            req_payload = merged
-        else:
-            req_payload = default_req
-        req = ExecutionPlannerPlanRequest.model_validate(req_payload)
-        resp = plan_execution(req)
+        req_payload = dict(s)
+        resp = evaluate_execution_planner_inputs(req_payload)
         return {
             "tool_name": "execution_planner.plan_execution",
-            "tool_request": req.model_dump(),
+            "tool_request": req_payload,
             "tool_response": resp,
-            "next_agent": "execution_approval_agent",
+            "next_agent": resp.get("next_agent"),
             "safety": safety,
         }
 

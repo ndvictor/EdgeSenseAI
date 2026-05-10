@@ -93,6 +93,7 @@ class EvidenceTools:
             "status": "plan_only",
             "symbol": sym or None,
             "execution_plan": dict(self.evidence.execution_plan),
+            "tool_result": dict(self.evidence.tool_result),
             "submitted_order": False,
             "broker_called": False,
             "allow_submit": False,

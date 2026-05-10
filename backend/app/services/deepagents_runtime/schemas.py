@@ -20,8 +20,12 @@ ReasoningDecision = Literal[
     "feasible",
     "infeasible",
     "degraded",
+    "paper_plan",
+    "live_plan",
+    "approval_required",
+    "no_plan",
 ]
-OwnerAuthorityLevel = Literal["read_only", "advise", "paper_plan", "paper_submit", "live_submit"]
+OwnerAuthorityLevel = Literal["read_only", "advise", "paper_plan", "paper_submit", "paper_auto", "live_submit"]
 
 
 class OwnerAuthority(BaseModel):
@@ -39,6 +43,7 @@ class OwnerAuthority(BaseModel):
     can_create_paper_plans: bool = False
     can_create_approval_requests: bool = False
     can_submit_paper_orders: bool = False
+    can_paper_auto_submit: bool = False
     can_submit_live_orders: bool = False
     require_human_approval: bool = True
 
@@ -50,6 +55,7 @@ class OwnerAuthority(BaseModel):
             can_create_paper_plans=False,
             can_create_approval_requests=False,
             can_submit_paper_orders=False,
+            can_paper_auto_submit=False,
             can_submit_live_orders=False,
             require_human_approval=True,
         )
@@ -192,6 +198,20 @@ class DeepAgentDecision(BaseModel):
     expected_r_after_costs: float | None = None
     feasible_symbols: list[str] = Field(default_factory=list)
     infeasible_symbols: list[str] = Field(default_factory=list)
+    # Execution planner fields (optional; populated for
+    # ``execution_planner_agent`` only). The deterministic execution-planner
+    # tool result is the source of truth for order prices, sizing, route, and
+    # approval state; DeepAgent output is audited against it before merge.
+    execution_plan_decision: str | None = None
+    order_type: str | None = None
+    time_in_force: str | None = None
+    limit_price: float | None = None
+    stop_price: float | None = None
+    take_profit: float | None = None
+    submit_route: str | None = None
+    requires_human_approval: bool | None = None
+    auto_submit: bool | None = None
+    execution_plan: dict[str, Any] = Field(default_factory=dict)
     submitted_order: bool = False
     broker_called: bool = False
     llm_used_for_trade_decision: bool = False
