@@ -6,6 +6,7 @@ from fastapi.testclient import TestClient
 
 from app.main import app
 import app.services.real_scanner_diagnostics_service as diagnostics_service
+from app.services.feature_enrichment_service import FeatureEnrichmentService
 import app.services.worker_output_store as worker_output_store
 import app.workers.market_scanner_worker as scanner_worker
 
@@ -69,6 +70,11 @@ def _passing_snapshot(symbol: str = "ROWX", provider: str = "alpaca") -> dict[st
 def _install_market_data(monkeypatch, snapshots: dict[str, dict[str, Any]], priority: list[str] | None = None) -> _MarketData:
     market_data = _MarketData(snapshots, priority=priority)
     monkeypatch.setattr(diagnostics_service, "_MARKET_DATA", market_data)
+    monkeypatch.setattr(
+        diagnostics_service,
+        "_ENRICH",
+        FeatureEnrichmentService(market_data=market_data, feature_row_source=lambda limit: [], http_get=lambda *a, **k: None),
+    )
     return market_data
 
 
@@ -117,13 +123,31 @@ def test_scanner_diagnostics_exist_and_report_alpaca_feed(monkeypatch):
 
 def test_worker_without_dynamic_universe_reports_no_real_discovery_universe(monkeypatch):
     monkeypatch.setattr(scanner_worker, "require_production_data_policy", lambda: None)
-    monkeypatch.setattr(scanner_worker, "list_candidates", lambda status=None: [])
-    monkeypatch.setattr(scanner_worker, "get_latest_universe_selection", lambda: None)
+    monkeypatch.setattr(scanner_worker, "_configured_scanner_symbols", lambda limit: [])
+    monkeypatch.setattr(
+        scanner_worker,
+        "_session_payload",
+        lambda: {
+            "market_session": "regular",
+            "market_date": "2026-01-01",
+            "current_time_et": "10:00",
+            "clock_source": "test",
+            "is_trading_day": True,
+            "is_market_open": True,
+            "is_pre_market": False,
+            "is_regular_market": True,
+            "is_post_market": False,
+            "next_open": None,
+            "next_close": None,
+            "scanner_mode": "open",
+            "session_warnings": [],
+        },
+    )
 
     result = scanner_worker.run()
 
     assert result["recommendation_status"] == "no_qualified_setup"
-    assert "no_real_discovery_universe_configured" in result["blockers"]
+    assert "no_configured_scanner_symbols" in result["blockers"]
     assert result["scanner_diagnostics"]["reason"] == "no_real_discovery_universe_configured"
     assert result["scanner_diagnostics"]["total_symbols_seen"] == 0
 
@@ -158,10 +182,16 @@ def test_missing_rvol_and_spread_are_rejected_with_reason_counts(monkeypatch):
     response = client.post("/api/scanner/run", json={"symbols": ["ROWX"], "max_candidates": 10})
 
     diagnostics = response.json()["scanner_diagnostics"]
-    assert diagnostics["status"] == "no_qualified_setup"
-    assert diagnostics["rejection_counts"]["missing_relative_volume"] == 1
-    assert diagnostics["rejection_counts"]["missing_spread"] == 1
-    assert diagnostics["total_symbols_rejected"] == 1
+    # Missing derived fields (avg_volume/relative_volume/spread) should not auto-hard-reject when
+    # price and volume exist and dollar volume is strong.
+    assert diagnostics["status"] == "candidate_selected"
+    assert diagnostics["total_symbols_passed"] == 1
+    row = diagnostics["selected_candidates"][0]
+    assert row["symbol"] == "ROWX"
+    assert "soft_warnings" in row
+    assert "relative_volume_unavailable" in row["soft_warnings"]
+    assert "spread_unavailable_closed_market" in row["soft_warnings"] or "spread_unavailable" in row["soft_warnings"]
+    assert row.get("hard_blockers") == []
 
 
 def test_passed_manual_candidate_persists_but_not_as_autonomous_scanner_candidate(monkeypatch):
@@ -180,7 +210,26 @@ def test_passed_manual_candidate_persists_but_not_as_autonomous_scanner_candidat
 def test_worker_passed_candidate_persists_as_scanner_source(monkeypatch):
     _install_market_data(monkeypatch, {"ROWX": _passing_snapshot("ROWX")})
     monkeypatch.setattr(scanner_worker, "require_production_data_policy", lambda: None)
-    monkeypatch.setattr(scanner_worker, "_candidate_symbols", lambda limit: ["ROWX"])
+    monkeypatch.setattr(scanner_worker, "_configured_scanner_symbols", lambda limit: ["ROWX"])
+    monkeypatch.setattr(
+        scanner_worker,
+        "_session_payload",
+        lambda: {
+            "market_session": "regular",
+            "market_date": "2026-01-01",
+            "current_time_et": "10:00",
+            "clock_source": "test",
+            "is_trading_day": True,
+            "is_market_open": True,
+            "is_pre_market": False,
+            "is_regular_market": True,
+            "is_post_market": False,
+            "next_open": None,
+            "next_close": None,
+            "scanner_mode": "open",
+            "session_warnings": [],
+        },
+    )
 
     result = scanner_worker.run()
 
