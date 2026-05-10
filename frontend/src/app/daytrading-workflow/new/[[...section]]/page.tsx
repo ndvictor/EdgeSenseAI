@@ -3,17 +3,6 @@
 import Link from "next/link";
 import { useParams, usePathname } from "next/navigation";
 import { useCallback, useEffect, useMemo, useState } from "react";
-import {
-  api,
-  getPlatformReadinessStatus,
-  getPromotionModelsStatus,
-  getPromotionStrategiesStatus,
-  runWorkflowOrchestrator,
-  type OrchestratorRunRequest,
-  type PlatformReadinessStatusResponse,
-  type PromotionModelsStatusResponse,
-  type PromotionStrategiesStatusResponse,
-} from "@/lib/api";
 
 const API_BASE = process.env.NEXT_PUBLIC_API_URL;
 
@@ -26,6 +15,13 @@ type OrchestratorHttpResponse = {
   blockers: string[];
   warnings: string[];
   run: Record<string, unknown>;
+};
+
+type V1StatusBundle = {
+  status: string;
+  health: Record<string, unknown>;
+  platform_readiness: Record<string, unknown>;
+  final_readiness: Record<string, unknown>;
 };
 
 type SectionId =
@@ -92,6 +88,23 @@ function str(v: unknown): string {
   return String(v);
 }
 
+function envelopeFromWorkflowLatest(workflowLatest: { run: Record<string, unknown> | null } | null): OrchestratorHttpResponse | null {
+  const run = workflowLatest?.run;
+  if (!run || typeof run !== "object") return null;
+  const recRaw = run.recommendation;
+  const rec = recRaw && typeof recRaw === "object" ? (recRaw as Record<string, unknown>) : {};
+  return {
+    status: String(run.status ?? ""),
+    recommendation: rec,
+    submitted_order: Boolean(run.submitted_order),
+    broker_called: Boolean(run.broker_called),
+    llm_used: Boolean(run.llm_used),
+    blockers: Array.isArray(run.blockers) ? (run.blockers as string[]) : [],
+    warnings: Array.isArray(run.warnings) ? (run.warnings as string[]) : [],
+    run,
+  };
+}
+
 function DataCard({
   title,
   endpoint,
@@ -137,13 +150,15 @@ export default function NewDayTradingWorkflowDashboard() {
   const section: SectionId = (segments[0] as SectionId) || "status-summary";
 
   const [symbolsInput, setSymbolsInput] = useState("");
-  const [health, setHealth] = useState<Record<string, unknown> | null>(null);
-  const [platform, setPlatform] = useState<PlatformReadinessStatusResponse | null>(null);
-  const [finalReadiness, setFinalReadiness] = useState<Record<string, unknown> | null>(null);
+  const [statusBundle, setStatusBundle] = useState<V1StatusBundle | null>(null);
   const [workerLatest, setWorkerLatest] = useState<Record<string, unknown> | null>(null);
-  const [promoStrategies, setPromoStrategies] = useState<PromotionStrategiesStatusResponse | null>(null);
-  const [promoModels, setPromoModels] = useState<PromotionModelsStatusResponse | null>(null);
-  const [orch, setOrch] = useState<OrchestratorHttpResponse | null>(null);
+  const [scannerLatest, setScannerLatest] = useState<Record<string, unknown> | null>(null);
+  const [promoStrategies, setPromoStrategies] = useState<Record<string, unknown> | null>(null);
+  const [promoModels, setPromoModels] = useState<Record<string, unknown> | null>(null);
+  const [workflowLatest, setWorkflowLatest] = useState<{ run: Record<string, unknown> | null } | null>(null);
+  const [recommendationLatest, setRecommendationLatest] = useState<Record<string, unknown> | null>(null);
+  const [riskStatus, setRiskStatus] = useState<Record<string, unknown> | null>(null);
+  const [executionBoundary, setExecutionBoundary] = useState<Record<string, unknown> | null>(null);
   const [scannerResult, setScannerResult] = useState<Record<string, unknown> | null>(null);
   const [loadError, setLoadError] = useState<string | null>(null);
   const [refreshing, setRefreshing] = useState(false);
@@ -157,20 +172,26 @@ export default function NewDayTradingWorkflowDashboard() {
     setLoadError(null);
     setRefreshing(true);
     try {
-      const [h, p, f, w, ps, pm] = await Promise.all([
-        dashGetJson<Record<string, unknown>>("/health").catch(() => null),
-        getPlatformReadinessStatus(),
-        api.getFinalReadiness().catch(() => null),
-        dashGetJson<Record<string, unknown>>("/api/worker-status/latest"),
-        getPromotionStrategiesStatus(),
-        getPromotionModelsStatus(),
+      const [bundle, workers, scanner, ps, pm, wf, rec, risk, exec] = await Promise.all([
+        dashGetJson<V1StatusBundle>("/api/v1/daytrading/status"),
+        dashGetJson<Record<string, unknown>>("/api/v1/daytrading/workers/latest"),
+        dashGetJson<Record<string, unknown>>("/api/v1/daytrading/scanner/latest"),
+        dashGetJson<Record<string, unknown>>("/api/v1/daytrading/evidence/strategies"),
+        dashGetJson<Record<string, unknown>>("/api/v1/daytrading/evidence/models"),
+        dashGetJson<{ run: Record<string, unknown> | null }>("/api/v1/daytrading/workflow/latest"),
+        dashGetJson<Record<string, unknown>>("/api/v1/daytrading/recommendation/latest"),
+        dashGetJson<Record<string, unknown>>("/api/v1/daytrading/risk/status"),
+        dashGetJson<Record<string, unknown>>("/api/v1/daytrading/execution-boundary"),
       ]);
-      setHealth(h);
-      setPlatform(p);
-      setFinalReadiness(f as Record<string, unknown>);
-      setWorkerLatest(w);
+      setStatusBundle(bundle);
+      setWorkerLatest(workers);
+      setScannerLatest(scanner);
       setPromoStrategies(ps);
       setPromoModels(pm);
+      setWorkflowLatest(wf);
+      setRecommendationLatest(rec);
+      setRiskStatus(risk);
+      setExecutionBoundary(exec);
     } catch (e) {
       setLoadError(e instanceof Error ? e.message : String(e));
     } finally {
@@ -182,17 +203,32 @@ export default function NewDayTradingWorkflowDashboard() {
     void refreshGets();
   }, [refreshGets]);
 
+  const orch = useMemo(() => envelopeFromWorkflowLatest(workflowLatest), [workflowLatest]);
   const run = orch?.run;
   const rec = orch?.recommendation ?? {};
+  const health = statusBundle?.health;
+  const platform = statusBundle?.platform_readiness;
+  const finalReadiness = statusBundle?.final_readiness;
   const systems = platform?.systems as Record<string, unknown> | undefined;
   const dataPipe = systems?.data_pipeline as Record<string, unknown> | undefined;
-  const execGates = systems?.execution_gates as Record<string, unknown> | undefined;
+  const execGates =
+    (executionBoundary?.execution_gates as Record<string, unknown> | undefined) ??
+    (systems?.execution_gates as Record<string, unknown> | undefined);
   const smallAcctSys = systems?.small_account_feasibility as Record<string, unknown> | undefined;
+  const fromLatestWf = executionBoundary?.from_latest_workflow as Record<string, unknown> | undefined;
 
   const scannerWorker = workerLatest?.scanner_worker as Record<string, unknown> | undefined;
   const ingestionWorker = workerLatest?.ingestion_worker as Record<string, unknown> | undefined;
   const featureWorker = workerLatest?.feature_worker as Record<string, unknown> | undefined;
-  const scannerDx = scannerResult?.scanner_diagnostics as Record<string, unknown> | undefined;
+  const scannerDx =
+    (scannerResult?.scanner_diagnostics as Record<string, unknown> | undefined) ??
+    (scannerLatest?.latest_scanner_diagnostics as Record<string, unknown> | undefined);
+
+  const strategiesList = promoStrategies?.strategies as Array<Record<string, unknown>> | undefined;
+  const modelsList = promoModels?.models as Array<Record<string, unknown>> | undefined;
+
+  const riskRun = riskStatus?.run as Record<string, unknown> | undefined;
+  const recRisk = riskStatus?.recommendation as Record<string, unknown> | undefined;
 
   const onRunScanner = async () => {
     setActionMsg(null);
@@ -208,7 +244,7 @@ export default function NewDayTradingWorkflowDashboard() {
         trigger_workflow: false,
         max_candidates: 10,
       };
-      const out = await dashPostJson<Record<string, unknown>>("/api/scanner/run", body);
+      const out = await dashPostJson<Record<string, unknown>>("/api/v1/daytrading/scanner/run", body);
       setScannerResult(out);
       setActionMsg("Scanner run completed.");
       await refreshGets();
@@ -224,14 +260,13 @@ export default function NewDayTradingWorkflowDashboard() {
     setWorkflowBusy(true);
     try {
       const symbols = parseSymbols(symbolsInput);
-      const body: OrchestratorRunRequest = {
+      const body = {
         dry_run: true,
         allow_submit: false,
         symbols,
         source: symbols.length ? "manual" : "runtime",
       };
-      const resp = (await runWorkflowOrchestrator(body)) as unknown as OrchestratorHttpResponse;
-      setOrch(resp);
+      await dashPostJson<Record<string, unknown>>("/api/v1/daytrading/workflow/run", body);
       setActionMsg("Workflow run completed.");
       await refreshGets();
     } catch (e) {
@@ -249,7 +284,7 @@ export default function NewDayTradingWorkflowDashboard() {
         <div className="mb-4 px-1">
           <div className="text-[10px] font-bold uppercase tracking-[0.2em] text-cyan-400/70">Day Trading Workflow</div>
           <div className="mt-1 text-lg font-semibold text-cyan-100">Production UI</div>
-          <p className="mt-1 text-[11px] leading-4 text-slate-500">Contract-only endpoints. No legacy routes.</p>
+          <p className="mt-1 text-[11px] leading-4 text-slate-500">Day Trading v1 API only (`/api/v1/daytrading/*`).</p>
         </div>
         <nav className="flex-1 space-y-1 overflow-y-auto">
           {NAV.map((item) => {
@@ -317,20 +352,19 @@ export default function NewDayTradingWorkflowDashboard() {
         </div>
 
         <div className="space-y-4 p-6">
-          {/* Safety strip */}
           <section className="rounded-xl border border-cyan-400/20 bg-cyan-950/30 px-4 py-3 text-xs text-cyan-50">
             <span className="font-semibold">Safety display</span>
             <span className="mt-1 block text-cyan-100/90">
               broker_called=
-              {str(orch?.broker_called ?? run?.broker_called ?? false)}, submitted_order=
-              {str(orch?.submitted_order ?? run?.submitted_order ?? false)}, llm_used=
-              {str(orch?.llm_used ?? run?.llm_used ?? false)}, live_trading_enabled=
+              {str(orch?.broker_called ?? run?.broker_called ?? fromLatestWf?.broker_called ?? false)}, submitted_order=
+              {str(orch?.submitted_order ?? run?.submitted_order ?? fromLatestWf?.submitted_order ?? false)}, llm_used=
+              {str(orch?.llm_used ?? run?.llm_used ?? fromLatestWf?.llm_used ?? false)}, live_trading_enabled=
               {str(pick(execGates, ["live_trading_enabled"]) ?? false)}, mock_data_used=
               {str(usingNonReal)}, synthetic_data_used=
               {str(usingNonReal)}
             </span>
             <span className="mt-1 block text-[10px] text-slate-400">
-              Until you run workflow, orchestrator flags reflect last run only. GET /health: {health ? "ok" : "not loaded"}.
+              Bundle: GET /api/v1/daytrading/status (health) {health ? "ok" : "not loaded"}.
             </span>
           </section>
 
@@ -338,7 +372,7 @@ export default function NewDayTradingWorkflowDashboard() {
             <div className="grid gap-4 lg:grid-cols-2">
               <DataCard
                 title="Workflow status"
-                endpoint="POST /api/workflow-orchestrator/run"
+                endpoint="GET /api/v1/daytrading/workflow/latest + POST /api/v1/daytrading/workflow/run"
                 expected="status, run.status, run.workflow_run_id, run.orchestrator_run_id"
               >
                 {!orch ? (
@@ -354,7 +388,7 @@ export default function NewDayTradingWorkflowDashboard() {
               </DataCard>
               <DataCard
                 title="Recommendation status"
-                endpoint="POST /api/workflow-orchestrator/run"
+                endpoint="GET /api/v1/daytrading/recommendation/latest"
                 expected="recommendation.status, recommendation.symbol, run.alpha_recommendation"
               >
                 {!orch ? (
@@ -365,12 +399,13 @@ export default function NewDayTradingWorkflowDashboard() {
                     <Row label="recommendation.symbol" value={str(rec.symbol)} />
                     <Row label="run.recommendation" value={str(run?.recommendation)} />
                     <Row label="run.alpha_recommendation" value={str(run?.alpha_recommendation)} />
+                    <Row label="GET recommendation.latest.symbol" value={str(recommendationLatest?.selected_symbol)} />
                   </>
                 )}
               </DataCard>
               <DataCard
                 title="Provider"
-                endpoint="GET /api/platform-readiness/status"
+                endpoint="GET /api/v1/daytrading/status → platform_readiness"
                 expected="systems.data_pipeline.provider_name, provider_status, freshness_status"
               >
                 <Row label="provider_name" value={str(dataPipe?.provider_name)} />
@@ -379,7 +414,7 @@ export default function NewDayTradingWorkflowDashboard() {
               </DataCard>
               <DataCard
                 title="Candidate source"
-                endpoint="POST /api/workflow-orchestrator/run"
+                endpoint="GET /api/v1/daytrading/workflow/latest"
                 expected="run.candidate_source, usable_symbols, symbols, selected_symbol"
               >
                 {!orch ? (
@@ -395,13 +430,13 @@ export default function NewDayTradingWorkflowDashboard() {
               </DataCard>
               <DataCard
                 title="Safety flags"
-                endpoint="POST /api/workflow-orchestrator/run + GET /api/platform-readiness/status"
+                endpoint="GET /api/v1/daytrading/execution-boundary + workflow latest"
                 expected="broker_called, submitted_order, llm_used, allow_submit, live_trading_enabled, broker_execution_enabled"
               >
-                <Row label="broker_called" value={str(orch?.broker_called ?? run?.broker_called ?? false)} />
-                <Row label="submitted_order" value={str(orch?.submitted_order ?? run?.submitted_order ?? false)} />
-                <Row label="llm_used" value={str(orch?.llm_used ?? run?.llm_used ?? false)} />
-                <Row label="allow_submit" value={str(run?.allow_submit ?? false)} />
+                <Row label="broker_called" value={str(orch?.broker_called ?? run?.broker_called ?? fromLatestWf?.broker_called ?? false)} />
+                <Row label="submitted_order" value={str(orch?.submitted_order ?? run?.submitted_order ?? fromLatestWf?.submitted_order ?? false)} />
+                <Row label="llm_used" value={str(orch?.llm_used ?? run?.llm_used ?? fromLatestWf?.llm_used ?? false)} />
+                <Row label="allow_submit" value={str(run?.allow_submit ?? fromLatestWf?.allow_submit ?? false)} />
                 <Row label="live_trading_enabled" value={str(pick(execGates, ["live_trading_enabled"]) ?? "—")} />
                 <Row label="broker_execution_enabled" value={str(pick(execGates, ["broker_execution_enabled"]) ?? "—")} />
               </DataCard>
@@ -410,14 +445,14 @@ export default function NewDayTradingWorkflowDashboard() {
 
           {section === "scanner-candidate-feed" ? (
             <div className="grid gap-4 lg:grid-cols-2">
-              <DataCard title="Worker status" endpoint="GET /api/worker-status/latest" expected="scanner, ingestion, feature worker.status">
+              <DataCard title="Worker status" endpoint="GET /api/v1/daytrading/workers/latest" expected="scanner, ingestion, feature worker.status">
                 <Row label="scanner_worker.status" value={str(scannerWorker?.status)} />
                 <Row label="ingestion_worker.status" value={str(ingestionWorker?.status)} />
                 <Row label="feature_worker.status" value={str(featureWorker?.status)} />
               </DataCard>
               <DataCard
                 title="Provider diagnostics"
-                endpoint="GET /api/worker-status/latest + GET /api/platform-readiness/status"
+                endpoint="GET /api/v1/daytrading/workers/latest + GET /api/v1/daytrading/status"
                 expected="counts, persistence_mode, provider"
               >
                 <Row label="candidate_count" value={str(workerLatest?.candidate_count)} />
@@ -429,7 +464,7 @@ export default function NewDayTradingWorkflowDashboard() {
               </DataCard>
               <DataCard
                 title="Rejection counts"
-                endpoint="POST /api/scanner/run"
+                endpoint="POST /api/v1/daytrading/scanner/run"
                 expected="matched_signals, skipped_signals, workflow_trigger_status"
               >
                 {!scannerResult && !scannerDx ? (
@@ -443,7 +478,11 @@ export default function NewDayTradingWorkflowDashboard() {
                   </>
                 )}
               </DataCard>
-              <DataCard title="Candidates" endpoint="GET /api/worker-status/latest + POST /api/scanner/run" expected="scanner_candidates, matched_signals">
+              <DataCard
+                title="Candidates"
+                endpoint="GET /api/v1/daytrading/workers/latest + POST /api/v1/daytrading/scanner/run"
+                expected="scanner_candidates, matched_signals"
+              >
                 <Row label="scanner_worker.scanner_candidates" value={str(scannerWorker?.scanner_candidates)} />
                 <Row label="matched_signals (last scanner)" value={str(scannerDx?.matched_signals)} />
                 <Row label="symbols_scanned" value={str(scannerDx?.symbols_scanned)} />
@@ -453,7 +492,7 @@ export default function NewDayTradingWorkflowDashboard() {
 
           {section === "alpha-recommendation" ? (
             <div className="grid gap-4 lg:grid-cols-2">
-              <DataCard title="Selected symbol" endpoint="POST /api/workflow-orchestrator/run" expected="recommendation.symbol, run.selected_symbol">
+              <DataCard title="Selected symbol" endpoint="GET /api/v1/daytrading/workflow/latest" expected="recommendation.symbol, run.selected_symbol">
                 {!orch ? (
                   <p className="text-slate-500">no qualified setup / selected_symbol null until workflow.</p>
                 ) : (
@@ -464,7 +503,7 @@ export default function NewDayTradingWorkflowDashboard() {
                   </>
                 )}
               </DataCard>
-              <DataCard title="Strategy" endpoint="POST /api/workflow-orchestrator/run" expected="strategy keys">
+              <DataCard title="Strategy" endpoint="GET /api/v1/daytrading/workflow/latest" expected="strategy keys">
                 {!orch ? (
                   <p className="text-slate-500">—</p>
                 ) : (
@@ -476,7 +515,7 @@ export default function NewDayTradingWorkflowDashboard() {
                   </>
                 )}
               </DataCard>
-              <DataCard title="Final score" endpoint="POST /api/workflow-orchestrator/run" expected="final_score / alpha_score">
+              <DataCard title="Final score" endpoint="GET /api/v1/daytrading/workflow/latest" expected="final_score / alpha_score">
                 {!orch ? (
                   <p className="text-slate-500">—</p>
                 ) : (
@@ -487,7 +526,7 @@ export default function NewDayTradingWorkflowDashboard() {
                   </>
                 )}
               </DataCard>
-              <DataCard title="Expected return" endpoint="POST /api/workflow-orchestrator/run" expected="expected_return fields">
+              <DataCard title="Expected return" endpoint="GET /api/v1/daytrading/workflow/latest" expected="expected_return fields">
                 {!orch ? (
                   <p className="text-slate-500">—</p>
                 ) : (
@@ -498,7 +537,7 @@ export default function NewDayTradingWorkflowDashboard() {
                   </>
                 )}
               </DataCard>
-              <DataCard title="Entry / stop / target" endpoint="POST /api/workflow-orchestrator/run" expected="price_plan">
+              <DataCard title="Entry / stop / target" endpoint="GET /api/v1/daytrading/workflow/latest" expected="price_plan">
                 {!orch ? (
                   <p className="text-slate-500">—</p>
                 ) : (
@@ -510,7 +549,7 @@ export default function NewDayTradingWorkflowDashboard() {
                   </>
                 )}
               </DataCard>
-              <DataCard title="Reason / blockers" endpoint="POST /api/workflow-orchestrator/run" expected="reason, blockers, warnings">
+              <DataCard title="Reason / blockers" endpoint="GET /api/v1/daytrading/workflow/latest" expected="reason, blockers, warnings">
                 {!orch ? (
                   <p className="text-slate-500">blockers may include no_scanner_candidates_passed_filters when empty.</p>
                 ) : (
@@ -518,7 +557,7 @@ export default function NewDayTradingWorkflowDashboard() {
                     <Row label="recommendation.reason" value={str(rec.reason)} />
                     <Row label="recommendation.final_reason" value={str(rec.final_reason)} />
                     <Row label="run.blockers" value={str(run?.blockers)} />
-                    <Row label="top-level blockers" value={str(orch.blockers)} />
+                    <Row label="envelope blockers" value={str(orch.blockers)} />
                     <Row label="warnings" value={str(orch.warnings)} />
                   </>
                 )}
@@ -528,11 +567,11 @@ export default function NewDayTradingWorkflowDashboard() {
 
           {section === "evidence-promotion" ? (
             <div className="grid gap-4 lg:grid-cols-2">
-              <DataCard title="Backtest proof" endpoint="GET /api/promotion/strategies/status" expected="strategies[] metrics">
-                {promoStrategies?.strategies?.length ? (
+              <DataCard title="Backtest proof" endpoint="GET /api/v1/daytrading/evidence/strategies" expected="strategies[] metrics">
+                {strategiesList?.length ? (
                   <pre className="max-h-64 overflow-auto rounded-lg bg-black/40 p-2 text-xs text-slate-300">
                     {JSON.stringify(
-                      promoStrategies.strategies.map((s) => ({
+                      strategiesList.map((s) => ({
                         strategy_key: s.strategy_key,
                         sample_size: s.sample_size,
                         avg_r: s.avg_r,
@@ -547,11 +586,11 @@ export default function NewDayTradingWorkflowDashboard() {
                   <p className="text-slate-500">promotion_readiness=not_ready / empty strategies safe.</p>
                 )}
               </DataCard>
-              <DataCard title="Model evidence" endpoint="GET /api/promotion/models/status" expected="models[] metrics">
-                {promoModels?.models?.length ? (
+              <DataCard title="Model evidence" endpoint="GET /api/v1/daytrading/evidence/models" expected="models[] metrics">
+                {modelsList?.length ? (
                   <pre className="max-h-64 overflow-auto rounded-lg bg-black/40 p-2 text-xs text-slate-300">
                     {JSON.stringify(
-                      promoModels.models.map((m) => ({
+                      modelsList.map((m) => ({
                         model_key: m.model_key,
                         sample_size: m.sample_size,
                         validation_score: m.validation_score,
@@ -566,18 +605,21 @@ export default function NewDayTradingWorkflowDashboard() {
                   <p className="text-slate-500">Safe empty: no models.</p>
                 )}
               </DataCard>
-              <DataCard title="Promotion status" endpoint="GET promotion strategies + models" expected="promotion_readiness">
+              <DataCard title="Promotion status" endpoint="GET /api/v1/daytrading/evidence/*" expected="promotion_readiness">
                 <Row label="strategies status" value={str(promoStrategies?.status)} />
                 <Row label="models status" value={str(promoModels?.status)} />
-                <Row label="readiness sample" value={str(promoStrategies?.strategies?.map((s) => `${s.strategy_key}:${s.promotion_readiness}`).join("; "))} />
+                <Row
+                  label="readiness sample"
+                  value={str(strategiesList?.map((s) => `${String(s.strategy_key)}:${String(s.promotion_readiness)}`).join("; "))}
+                />
               </DataCard>
               <DataCard
                 title="Missing evidence"
-                endpoint="GET promotion/* + GET /api/final-readiness/status"
+                endpoint="GET /api/v1/daytrading/evidence/* + GET /api/v1/daytrading/status → final_readiness"
                 expected="blockers, next_action, missing_backend_components"
               >
-                <Row label="strategy blockers (first)" value={str(promoStrategies?.strategies?.[0]?.blockers)} />
-                <Row label="model blockers (first)" value={str(promoModels?.models?.[0]?.blockers)} />
+                <Row label="strategy blockers (first)" value={str(strategiesList?.[0]?.blockers)} />
+                <Row label="model blockers (first)" value={str(modelsList?.[0]?.blockers)} />
                 <Row label="final_readiness.next_action" value={str(finalReadiness?.next_action)} />
                 <Row label="missing_backend_components" value={str(finalReadiness?.missing_backend_components)} />
               </DataCard>
@@ -586,43 +628,43 @@ export default function NewDayTradingWorkflowDashboard() {
 
           {section === "risk-small-account" ? (
             <div className="grid gap-4 lg:grid-cols-2">
-              <DataCard title="Max risk dollars" endpoint="POST /api/workflow-orchestrator/run" expected="run.max_risk_dollars, recommendation.risk_plan">
-                {!orch ? (
+              <DataCard title="Max risk dollars" endpoint="GET /api/v1/daytrading/risk/status" expected="run.max_risk_dollars, recommendation.risk_plan">
+                {!riskStatus?.run && !orch ? (
                   <p className="text-slate-500">max_risk_dollars null until workflow.</p>
                 ) : (
                   <>
-                    <Row label="run.max_risk_dollars" value={str(run?.max_risk_dollars)} />
-                    <Row label="recommendation.risk_plan.max_dollar_risk" value={str(pick(rec.risk_plan as object, ["max_dollar_risk"]))} />
+                    <Row label="run.max_risk_dollars" value={str(riskRun?.max_risk_dollars ?? riskStatus?.max_risk_dollars ?? run?.max_risk_dollars)} />
+                    <Row label="recommendation.risk_plan.max_dollar_risk" value={str(pick(recRisk?.risk_plan ?? rec.risk_plan, ["max_dollar_risk"]))} />
                   </>
                 )}
               </DataCard>
-              <DataCard title="Position size" endpoint="POST /api/workflow-orchestrator/run" expected="position_size">
-                {!orch ? (
+              <DataCard title="Position size" endpoint="GET /api/v1/daytrading/risk/status" expected="position_size">
+                {!riskStatus?.run && !orch ? (
                   <p className="text-slate-500">—</p>
                 ) : (
                   <>
-                    <Row label="run.position_size" value={str(run?.position_size)} />
-                    <Row label="recommendation.risk_plan.position_size_dollars" value={str(pick(rec.risk_plan as object, ["position_size_dollars"]))} />
+                    <Row label="run.position_size" value={str(riskRun?.position_size ?? riskStatus?.position_size ?? run?.position_size)} />
+                    <Row label="recommendation.risk_plan.position_size_dollars" value={str(pick(recRisk?.risk_plan ?? rec.risk_plan, ["position_size_dollars"]))} />
                   </>
                 )}
               </DataCard>
-              <DataCard title="Feasibility" endpoint="POST /api/workflow-orchestrator/run" expected="small_account_decision, feasible_symbols">
-                {!orch ? (
+              <DataCard title="Feasibility" endpoint="GET /api/v1/daytrading/risk/status" expected="small_account_decision, feasible_symbols">
+                {!riskStatus?.run && !orch ? (
                   <p className="text-slate-500">feasibility=no_candidate safe when no run.</p>
                 ) : (
                   <>
-                    <Row label="run.small_account_decision" value={str(run?.small_account_decision)} />
-                    <Row label="recommendation.risk_plan.account_fit" value={str(pick(rec.risk_plan as object, ["account_fit"]))} />
-                    <Row label="run.feasible_symbols" value={str(run?.feasible_symbols)} />
-                    <Row label="run.rejected_symbols" value={str(run?.rejected_symbols)} />
+                    <Row label="run.small_account_decision" value={str(riskRun?.small_account_decision ?? riskStatus?.small_account_decision ?? run?.small_account_decision)} />
+                    <Row label="recommendation.risk_plan.account_fit" value={str(pick(recRisk?.risk_plan ?? rec.risk_plan, ["account_fit"]))} />
+                    <Row label="run.feasible_symbols" value={str(riskRun?.feasible_symbols ?? run?.feasible_symbols)} />
+                    <Row label="run.rejected_symbols" value={str(riskRun?.rejected_symbols ?? run?.rejected_symbols)} />
                   </>
                 )}
               </DataCard>
-              <DataCard title="Daily limits" endpoint="POST /api/workflow-orchestrator/run + GET /api/platform-readiness/status" expected="max_daily_loss, systems">
+              <DataCard title="Daily limits" endpoint="GET /api/v1/daytrading/risk/status + GET /api/v1/daytrading/status" expected="max_daily_loss, systems">
                 {!orch ? (
                   <p className="text-slate-500">—</p>
                 ) : (
-                  <Row label="run.max_daily_loss_dollars" value={str(run?.max_daily_loss_dollars)} />
+                  <Row label="run.max_daily_loss_dollars" value={str(riskRun?.max_daily_loss_dollars ?? run?.max_daily_loss_dollars)} />
                 )}
                 <Row label="systems.small_account_feasibility" value={str(JSON.stringify(smallAcctSys))} />
                 <Row label="systems.execution_gates (summary)" value={str(execGates ? JSON.stringify(execGates) : "—")} />
@@ -632,23 +674,23 @@ export default function NewDayTradingWorkflowDashboard() {
 
           {section === "execution-boundary" ? (
             <div className="grid gap-4 lg:grid-cols-2">
-              <DataCard title="Paper trading status" endpoint="GET /api/platform-readiness/status" expected="execution_gates">
+              <DataCard title="Paper trading status" endpoint="GET /api/v1/daytrading/execution-boundary" expected="execution_gates">
                 <Row label="paper_trading_enabled" value={str(pick(execGates, ["paper_trading_enabled"]))} />
                 <Row label="execution_enabled" value={str(pick(execGates, ["execution_enabled"]))} />
               </DataCard>
-              <DataCard title="Approval required" endpoint="GET /api/platform-readiness/status + POST /api/workflow-orchestrator/run" expected="require_human_approval, run.approval_required">
+              <DataCard title="Approval required" endpoint="GET /api/v1/daytrading/execution-boundary" expected="require_human_approval, run.approval_required">
                 <Row label="require_human_approval" value={str(pick(execGates, ["require_human_approval"]))} />
-                <Row label="run.approval_required" value={str(run?.approval_required ?? "—")} />
+                <Row label="run.approval_required" value={str(run?.approval_required ?? fromLatestWf?.approval_required ?? "—")} />
               </DataCard>
-              <DataCard title="Broker called" endpoint="POST /api/workflow-orchestrator/run" expected="broker_called — expected false">
-                <Row label="broker_called" value={str(orch?.broker_called ?? run?.broker_called ?? false)} />
+              <DataCard title="Broker called" endpoint="GET /api/v1/daytrading/execution-boundary" expected="broker_called — expected false">
+                <Row label="broker_called" value={str(orch?.broker_called ?? run?.broker_called ?? fromLatestWf?.broker_called ?? false)} />
                 <Row label="Expected safe" value="false" />
               </DataCard>
-              <DataCard title="Submitted order" endpoint="POST /api/workflow-orchestrator/run" expected="submitted_order — expected false">
-                <Row label="submitted_order" value={str(orch?.submitted_order ?? run?.submitted_order ?? false)} />
+              <DataCard title="Submitted order" endpoint="GET /api/v1/daytrading/execution-boundary" expected="submitted_order — expected false">
+                <Row label="submitted_order" value={str(orch?.submitted_order ?? run?.submitted_order ?? fromLatestWf?.submitted_order ?? false)} />
                 <Row label="Expected safe" value="false" />
               </DataCard>
-              <DataCard title="Live trading status" endpoint="GET /api/platform-readiness/status" expected="live_trading, broker_execution">
+              <DataCard title="Live trading status" endpoint="GET /api/v1/daytrading/execution-boundary" expected="live_trading, broker_execution">
                 <Row label="live_trading_enabled" value={str(pick(execGates, ["live_trading_enabled"]))} />
                 <Row label="broker_execution_enabled" value={str(pick(execGates, ["broker_execution_enabled"]))} />
                 <Row label="Expected safe" value="live_trading_enabled false in paper-first contract" />
@@ -657,7 +699,7 @@ export default function NewDayTradingWorkflowDashboard() {
           ) : null}
 
           <p className="text-center text-[10px] text-slate-600">
-            Active route: {activeHref} · Allowed endpoints only · No import from legacy /daytrading-workflow/page.tsx
+            Active route: {activeHref} · <span className="font-mono">/api/v1/daytrading/*</span> only · No legacy dashboard import
           </p>
         </div>
       </main>

@@ -6,6 +6,7 @@ import time
 from fastapi import FastAPI
 from fastapi.middleware.cors import CORSMiddleware
 from fastapi.responses import JSONResponse
+from starlette.requests import Request
 
 from app.api.routes.agent_scorecards import router as agent_scorecards_router
 from app.api.routes.agent_validation import router as agent_validation_router
@@ -79,6 +80,7 @@ from app.api.routes.proof_registry import router as proof_registry_router
 from app.api.routes.model_evidence import router as model_evidence_router
 from app.api.routes.strategy_evidence import router as strategy_evidence_router
 from app.api.routes.qlib_integration import router as qlib_integration_router
+from app.api.routes.daytrading_v1 import router as daytrading_v1_router
 from app.api.routes.workflow_orchestrator import router as workflow_orchestrator_router
 from app.api.routes.workflow_governance import router as workflow_governance_router
 from app.api.routes.worker_status import router as worker_status_router
@@ -138,6 +140,18 @@ _PRODUCTION_ALLOWED_RUNTIME_ROUTES: frozenset[tuple[str, str]] = frozenset(
         ("POST", "/api/scanner/run"),
         ("GET", "/api/promotion/strategies/status"),
         ("GET", "/api/promotion/models/status"),
+        ("GET", "/api/v1/daytrading/status"),
+        ("POST", "/api/v1/daytrading/scanner/run"),
+        ("GET", "/api/v1/daytrading/scanner/latest"),
+        ("GET", "/api/v1/daytrading/workers/latest"),
+        ("POST", "/api/v1/daytrading/workflow/run"),
+        ("GET", "/api/v1/daytrading/workflow/latest"),
+        ("GET", "/api/v1/daytrading/recommendation/latest"),
+        ("GET", "/api/v1/daytrading/evidence/strategies"),
+        ("GET", "/api/v1/daytrading/evidence/models"),
+        ("GET", "/api/v1/daytrading/risk/status"),
+        ("GET", "/api/v1/daytrading/execution-boundary"),
+        ("GET", "/api/v1/daytrading/contracts/routes"),
     }
 )
 
@@ -147,6 +161,22 @@ _LEGACY_RUNTIME_DISABLED_PAYLOAD = {
     "items": [],
     "symbol": None,
 }
+
+
+def _legacy_runtime_disabled_response(request: Request) -> JSONResponse:
+    """Return 410 with the same CORS surface as normal responses.
+
+    `legacy_runtime_disabled_middleware` runs outside `CORSMiddleware`'s response
+    path for short-circuited requests; without these headers the browser hides the
+    real HTTP status and reports TypeError: Failed to fetch.
+    """
+    headers: dict[str, str] = {}
+    origin = (request.headers.get("origin") or "").strip()
+    if origin and origin in settings.cors_origins:
+        headers["access-control-allow-origin"] = origin
+        headers["access-control-allow-credentials"] = "true"
+        headers["vary"] = "Origin"
+    return JSONResponse(status_code=410, content=_LEGACY_RUNTIME_DISABLED_PAYLOAD, headers=headers)
 
 
 def _production_api_allowlist_enabled() -> bool:
@@ -188,7 +218,7 @@ async def legacy_runtime_disabled_middleware(request, call_next):
         return await call_next(request)
     if (method, path) in _PRODUCTION_ALLOWED_RUNTIME_ROUTES:
         return await call_next(request)
-    return JSONResponse(status_code=410, content=_LEGACY_RUNTIME_DISABLED_PAYLOAD)
+    return _legacy_runtime_disabled_response(request)
 
 
 app.include_router(backtesting_router, prefix="/api")
@@ -268,6 +298,7 @@ app.include_router(model_evidence_router, prefix="/api")
 app.include_router(strategy_evidence_router, prefix="/api")
 app.include_router(qlib_integration_router, prefix="/api")
 app.include_router(workflow_orchestrator_router, prefix="/api")
+app.include_router(daytrading_v1_router, prefix="/api/v1")
 app.include_router(worker_status_router, prefix="/api")
 app.include_router(pipeline_automation_router, prefix="/api")
 app.include_router(promotion_center_router, prefix="/api")
