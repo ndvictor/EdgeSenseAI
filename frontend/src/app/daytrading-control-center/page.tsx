@@ -16,20 +16,144 @@ const sections = [
   { label: "Settings", route: "Azure env + CORS + frontend API URL", link: "/daytrading-control-center#settings" },
 ];
 
-const mappingRows = [
-  ["Command Center", "/api/command-center", "/api/v1/daytrading/status + /workflow/latest", "Migrate status/control fields into v1. Keep legacy blocked."],
-  ["Live Watchlist", "/api/live-watchlist/latest", "/api/v1/daytrading/scanner/latest", "Use scanner-linked worker output as candidate truth."],
-  ["Edge Signals", "/api/edge-signals/latest", "/api/v1/daytrading/scanner/latest", "Signals become scanner diagnostics/candidates."],
-  ["Models Status", "/api/models/status", "/api/v1/daytrading/evidence/models", "Model readiness comes from promotion evidence."],
-  ["Market Snapshots", "/api/market/snapshots", "/api/v1/daytrading/workers/latest", "Snapshots are internal ingestion worker output."],
-  ["Features", "/api/features/{symbol}", "/api/v1/daytrading/workers/latest", "Features are scanner-linked worker output."],
-  ["Model Pipeline", "/api/model-pipeline/{symbol}", "/api/v1/daytrading/recommendation/latest", "Model scoring belongs inside Alpha output."],
-  ["Candidate Universe", "/api/candidate-universe/*", "internal only", "Do not use as production fallback."],
-  ["Universe Selection", "/api/universe-selection/*", "internal only", "Do not use as scheduled scanner fallback."],
-  ["Approval Queue", "/api/approval-queue/*", "/api/v1/daytrading/execution-boundary", "Expose safe read-only status later, not mutation routes."],
-  ["Audit Log", "/api/audit-log/*", "future admin route", "Keep out of production trading dashboard."],
-  ["Workflow Scheduler", "/api/workflow-scheduler/*", "future timing/session route", "Azure schedule + MarketSessionService owns timing."],
+const MIGRATION_POLICY_MESSAGE =
+  "Legacy runtime routes are intentionally restricted in production. Do not re-enable legacy fetches from the frontend. Use the migration table to move useful legacy route fields into the clean `/api/v1/daytrading/*` contract routes. The dashboard should only call v1 routes. Legacy routes may remain in the backend for internal migration and non-production review, but they are not production UI endpoints.";
+
+/** Legacy route → v1 + what to migrate. Legacy UI fetch always No in production; v1 Yes when a dashboard endpoint exists. */
+const mappingRows: Array<{
+  area: string;
+  legacyRoute: string;
+  v1Route: string;
+  migrationAction: string;
+  legacyUiFetch: "No";
+  v1UiFetch: "Yes" | "Planned";
+}> = [
+  {
+    area: "Command Center",
+    legacyRoute: "/api/command-center",
+    v1Route: "/api/v1/daytrading/status, /api/v1/daytrading/workflow/latest",
+    migrationAction: "Move aggregated status, readiness, and control-surface fields into v1 status/workflow bundles; keep orchestration behind v1 workflow routes.",
+    legacyUiFetch: "No",
+    v1UiFetch: "Yes",
+  },
+  {
+    area: "Live Watchlist",
+    legacyRoute: "/api/live-watchlist/latest",
+    v1Route: "/api/v1/daytrading/scanner/latest, /api/v1/daytrading/workers/latest",
+    migrationAction: "Surface candidate/scanner-linked worker output in v1 scanner/workers payloads instead of watchlist JSON.",
+    legacyUiFetch: "No",
+    v1UiFetch: "Yes",
+  },
+  {
+    area: "Edge Signals",
+    legacyRoute: "/api/edge-signals/latest",
+    v1Route: "/api/v1/daytrading/scanner/latest",
+    migrationAction: "Fold signal summaries into scanner diagnostics / worker status fields exposed on v1 scanner latest.",
+    legacyUiFetch: "No",
+    v1UiFetch: "Yes",
+  },
+  {
+    area: "Models Status",
+    legacyRoute: "/api/models/status",
+    v1Route: "/api/v1/daytrading/evidence/models",
+    migrationAction: "Use promotion model evidence contract only; align model health fields with `evidence/models`.",
+    legacyUiFetch: "No",
+    v1UiFetch: "Yes",
+  },
+  {
+    area: "Market Snapshots",
+    legacyRoute: "/api/market/snapshots",
+    v1Route: "/api/v1/daytrading/workers/latest",
+    migrationAction: "Keep snapshot ingestion internal; expose only counts/status the operator needs via workers latest.",
+    legacyUiFetch: "No",
+    v1UiFetch: "Yes",
+  },
+  {
+    area: "Features",
+    legacyRoute: "/api/features/*",
+    v1Route: "/api/v1/daytrading/workers/latest",
+    migrationAction: "Feature row summaries belong in worker output; add v1 fields if operators need more detail.",
+    legacyUiFetch: "No",
+    v1UiFetch: "Yes",
+  },
+  {
+    area: "Model Pipeline",
+    legacyRoute: "/api/model-pipeline/*",
+    v1Route: "/api/v1/daytrading/recommendation/latest",
+    migrationAction: "Pipeline scoring and alpha output must surface through orchestrator → recommendation/latest projection.",
+    legacyUiFetch: "No",
+    v1UiFetch: "Yes",
+  },
+  {
+    area: "Candidate Universe",
+    legacyRoute: "/api/candidate-universe/*",
+    v1Route: "(add v1 projection when needed)",
+    migrationAction: "Do not use legacy universe routes from production UI; design a read-only v1 slice if operators need universe visibility.",
+    legacyUiFetch: "No",
+    v1UiFetch: "Planned",
+  },
+  {
+    area: "Universe Selection",
+    legacyRoute: "/api/universe-selection/*",
+    v1Route: "(add v1 projection when needed)",
+    migrationAction: "Selection runs stay server-side; any operator visibility goes through a future v1 read model.",
+    legacyUiFetch: "No",
+    v1UiFetch: "Planned",
+  },
+  {
+    area: "Approval Queue",
+    legacyRoute: "/api/approval-queue/*",
+    v1Route: "/api/v1/daytrading/execution-boundary",
+    migrationAction: "Map safe approval/boundary signals into execution-boundary; never expose queue mutations from this dashboard.",
+    legacyUiFetch: "No",
+    v1UiFetch: "Yes",
+  },
+  {
+    area: "Audit Log",
+    legacyRoute: "/api/audit-log/*",
+    v1Route: "(separate admin surface; not day-trading v1)",
+    migrationAction: "Keep audit out of trading control center; dedicated admin UI if required.",
+    legacyUiFetch: "No",
+    v1UiFetch: "Planned",
+  },
+  {
+    area: "Workflow Scheduler",
+    legacyRoute: "/api/workflow-scheduler/*",
+    v1Route: "(timing via workers/session — extend v1 if needed)",
+    migrationAction: "Scheduler triggers stay backend/Azure; expose schedule/session hints via workers or future v1 field.",
+    legacyUiFetch: "No",
+    v1UiFetch: "Planned",
+  },
 ];
+
+/** Do not call from this dashboard (browser) — production quarantine / not production UI endpoints. */
+const LEGACY_ROUTES_NEVER_IN_UI = [
+  "/api/command-center",
+  "/api/live-watchlist/latest",
+  "/api/edge-signals/latest",
+  "/api/models/status",
+  "/api/market/snapshots",
+  "/api/features/*",
+  "/api/model-pipeline/*",
+  "/api/candidate-universe/*",
+  "/api/universe-selection/*",
+  "/api/approval-queue/*",
+  "/api/audit-log/*",
+  "/api/workflow-scheduler/*",
+] as const;
+
+/** This control center and production day-trading dashboards should only use these API paths (GETs for display; POST scanner/workflow run live on the operator dashboard). */
+const V1_ROUTES_PRODUCTION_UI = [
+  "/api/v1/daytrading/status",
+  "/api/v1/daytrading/scanner/latest",
+  "/api/v1/daytrading/workers/latest",
+  "/api/v1/daytrading/recommendation/latest",
+  "/api/v1/daytrading/evidence/strategies",
+  "/api/v1/daytrading/evidence/models",
+  "/api/v1/daytrading/risk/status",
+  "/api/v1/daytrading/execution-boundary",
+  "/api/v1/daytrading/contracts/routes",
+] as const;
 
 const settingsRows = [
   ["NEXT_PUBLIC_API_URL", "Frontend Azure Container App", API_BASE || "not configured", "Backend API base used by browser fetches."],
@@ -123,7 +247,7 @@ export default function DayTradingControlCenter() {
           <div className="mb-5 rounded-3xl border border-cyan-400/20 bg-cyan-400/10 p-4">
             <p className="text-[10px] font-bold uppercase tracking-[0.28em] text-cyan-300/70">EdgeSenseAI</p>
             <h1 className="mt-2 text-xl font-black text-white">Day Trading Control Center</h1>
-            <p className="mt-2 text-xs leading-5 text-slate-400">Mapped v1 API dashboard. Legacy routes are migration sources, not production UI truth.</p>
+            <p className="mt-2 text-xs leading-5 text-slate-400">Mapped v1 API dashboard. Legacy paths are migration references only — production UI fetches `/api/v1/daytrading/*` only.</p>
           </div>
           <nav className="space-y-2">
             {sections.map((item) => (
@@ -144,7 +268,7 @@ export default function DayTradingControlCenter() {
             <p className="text-[10px] font-bold uppercase tracking-[0.28em] text-cyan-300/70">New route</p>
             <h1 className="mt-2 text-3xl font-black tracking-tight text-white">Day Trading Control Center</h1>
             <p className="mt-2 max-w-4xl text-sm leading-6 text-slate-400">
-              This replaces the blocked legacy visual surface with a mapped dashboard that keeps the old design idea, but reads only the clean v1 route contract.
+              This control center reads only the Day Trading v1 contract. Legacy routes are not production UI endpoints; they remain for backend migration and non-production review.
             </p>
             {error ? <p className="mt-4 rounded-xl border border-amber-400/25 bg-amber-500/10 p-3 text-sm text-amber-100">Partial load warning: {error}</p> : null}
           </header>
@@ -212,21 +336,87 @@ export default function DayTradingControlCenter() {
             <Row label="live_trading_status" value={field(execution, "live_trading_status") ?? field(execution, "live_trading_enabled")} />
           </Card>
 
-          <Card id="mapping" title="Legacy to v1 route mapping" endpoint="Static dashboard mapping + GET /api/v1/daytrading/contracts/routes">
+          <Card id="mapping" title="Legacy → v1 migration map" endpoint="Static mapping + GET /api/v1/daytrading/contracts/routes">
+            <div className="mb-4 rounded-2xl border border-cyan-400/20 bg-cyan-950/40 p-4 text-sm leading-6 text-slate-200">
+              <p className="font-semibold text-cyan-100">Production UI policy</p>
+              <p className="mt-2 text-slate-300">{MIGRATION_POLICY_MESSAGE}</p>
+              <p className="mt-3 text-xs uppercase tracking-[0.14em] text-slate-500">Table columns</p>
+              <ul className="mt-2 list-inside list-disc space-y-1 text-xs text-slate-400">
+                <li>
+                  <span className="text-slate-200">Legacy route</span> — old source of capability (not called from production UI).
+                </li>
+                <li>
+                  <span className="text-slate-200">New v1 route</span> — production dashboard endpoint under `/api/v1/daytrading/*`.
+                </li>
+                <li>
+                  <span className="text-slate-200">Migration action</span> — which fields or services must move into v1.
+                </li>
+                <li>
+                  <span className="text-slate-200">Frontend fetch allowed</span> — <span className="text-rose-200">No</span> for legacy paths; <span className="text-cyan-200">Yes</span> for v1 where the route exists (otherwise <span className="text-amber-200">Planned</span>).
+                </li>
+              </ul>
+            </div>
             <div className="overflow-x-auto">
-              <table className="w-full min-w-[900px] text-left text-sm">
-                <thead className="text-xs uppercase tracking-[0.16em] text-slate-500"><tr><th className="p-2">Area</th><th className="p-2">Legacy route</th><th className="p-2">New v1 route</th><th className="p-2">Migration action</th></tr></thead>
+              <table className="w-full min-w-[1100px] text-left text-sm">
+                <thead className="text-xs uppercase tracking-[0.16em] text-slate-500">
+                  <tr>
+                    <th className="p-2">Area</th>
+                    <th className="p-2">Legacy route (old source)</th>
+                    <th className="p-2">New v1 route (dashboard endpoint)</th>
+                    <th className="p-2">Migration action</th>
+                    <th className="p-2">Legacy UI fetch</th>
+                    <th className="p-2">V1 UI fetch</th>
+                  </tr>
+                </thead>
                 <tbody>
-                  {mappingRows.map(([area, legacy, newRoute, action]) => (
-                    <tr key={area} className="border-t border-white/[0.06]"><td className="p-2 font-semibold text-white">{area}</td><td className="p-2 font-mono text-rose-200">{legacy}</td><td className="p-2 font-mono text-cyan-200">{newRoute}</td><td className="p-2 text-slate-300">{action}</td></tr>
+                  {mappingRows.map((row) => (
+                    <tr key={row.area} className="border-t border-white/[0.06]">
+                      <td className="p-2 font-semibold text-white">{row.area}</td>
+                      <td className="p-2 font-mono text-rose-200/95">{row.legacyRoute}</td>
+                      <td className="p-2 font-mono text-cyan-200/95">{row.v1Route}</td>
+                      <td className="p-2 text-slate-300">{row.migrationAction}</td>
+                      <td className="p-2 font-semibold text-rose-300">{row.legacyUiFetch}</td>
+                      <td className="p-2 font-semibold text-cyan-300">{row.v1UiFetch}</td>
+                    </tr>
                   ))}
                 </tbody>
               </table>
             </div>
-            <details className="mt-4 rounded-2xl border border-white/10 bg-black/25 p-3"><summary className="cursor-pointer text-sm font-semibold text-slate-300">Route contract payload</summary><pre className="mt-3 max-h-96 overflow-auto whitespace-pre-wrap text-xs text-slate-400">{JSON.stringify(routes, null, 2)}</pre></details>
+            <details className="mt-4 rounded-2xl border border-white/10 bg-black/25 p-3">
+              <summary className="cursor-pointer text-sm font-semibold text-slate-300">Route contract payload (GET /api/v1/daytrading/contracts/routes)</summary>
+              <pre className="mt-3 max-h-96 overflow-auto whitespace-pre-wrap text-xs text-slate-400">{JSON.stringify(routes, null, 2)}</pre>
+            </details>
           </Card>
 
           <Card id="settings" title="Settings UI" endpoint="Azure Container Apps env / dashboard read-only settings">
+            <div className="mb-4 rounded-2xl border border-white/10 bg-black/30 p-4 text-sm leading-6 text-slate-200">
+              <p className="font-semibold text-white">Migration and production UI</p>
+              <p className="mt-2 text-slate-300">{MIGRATION_POLICY_MESSAGE}</p>
+            </div>
+            <div className="mb-4 grid gap-4 lg:grid-cols-2">
+              <div className="rounded-2xl border border-rose-400/25 bg-rose-950/30 p-4">
+                <h3 className="text-xs font-bold uppercase tracking-[0.16em] text-rose-200">Do not call from the dashboard (browser)</h3>
+                <p className="mt-2 text-xs text-slate-400">These paths are quarantined or non–production UI; migrating features must land in v1 instead.</p>
+                <ul className="mt-3 space-y-1.5 font-mono text-[11px] text-rose-100/90">
+                  {LEGACY_ROUTES_NEVER_IN_UI.map((path) => (
+                    <li key={path}>{path}</li>
+                  ))}
+                </ul>
+              </div>
+              <div className="rounded-2xl border border-cyan-400/25 bg-cyan-950/30 p-4">
+                <h3 className="text-xs font-bold uppercase tracking-[0.16em] text-cyan-200">Production dashboard GET contract (this page)</h3>
+                <p className="mt-2 text-xs text-slate-400">
+                  Only these v1 paths are used for display here. Operator run actions on other UIs may use{" "}
+                  <span className="font-mono text-cyan-200">POST /api/v1/daytrading/scanner/run</span> and{" "}
+                  <span className="font-mono text-cyan-200">POST /api/v1/daytrading/workflow/run</span> — never legacy POSTs.
+                </p>
+                <ul className="mt-3 space-y-1.5 font-mono text-[11px] text-cyan-100/90">
+                  {V1_ROUTES_PRODUCTION_UI.map((path) => (
+                    <li key={path}>{path}</li>
+                  ))}
+                </ul>
+              </div>
+            </div>
             <div className="overflow-x-auto">
               <table className="w-full min-w-[900px] text-left text-sm">
                 <thead className="text-xs uppercase tracking-[0.16em] text-slate-500"><tr><th className="p-2">Setting</th><th className="p-2">Owner</th><th className="p-2">Expected value</th><th className="p-2">Purpose</th></tr></thead>
@@ -238,7 +428,8 @@ export default function DayTradingControlCenter() {
               </table>
             </div>
             <div className="mt-4 rounded-2xl border border-amber-400/20 bg-amber-500/10 p-4 text-sm text-amber-100">
-              This settings panel is read-only. Change Azure values with `az containerapp update --set-env-vars ...`, then redeploy/restart as needed.
+              This settings panel is read-only. Change Azure values with `az containerapp update --set-env-vars ...`, then redeploy/restart as needed. Ensure{" "}
+              <span className="font-mono">CORS_ORIGINS</span> lists every frontend origin (local and deployed); CORS is origin-based, not per-route.
             </div>
           </Card>
         </section>
