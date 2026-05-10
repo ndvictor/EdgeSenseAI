@@ -8,11 +8,16 @@ from typing import Literal
 from pydantic import BaseModel, Field
 
 
-DEFAULT_ACCOUNT_EQUITY = 1000.0
-DEFAULT_BUYING_POWER = 1000.0
-DEFAULT_MAX_RISK_PER_TRADE_PCT = 0.005
-DEFAULT_MAX_DAILY_LOSS_PCT = 0.015
-DEFAULT_MAX_POSITION_NOTIONAL_PCT = 1.0
+# Owner risk policy uses **human percent values** at the input boundary:
+#   max_risk_per_trade_pct = 0.5   means 0.5%
+#   max_daily_loss_pct     = 1.5   means 1.5%
+#   max_position_notional_pct = 100 means 100%
+# Internally we convert the percent value to a decimal **fraction** exactly
+# once via ``_percent_to_fraction`` and use the ``_fraction`` variables for
+# multiplication. Never apply ``/100`` more than once.
+MAX_RISK_PER_TRADE_PCT = 0.5
+MAX_DAILY_LOSS_PCT = 1.5
+MAX_POSITION_NOTIONAL_PCT = 100.0
 DEFAULT_MAX_OPEN_POSITIONS = 1
 DEFAULT_MAX_TRADES_PER_DAY = 3
 DEFAULT_MIN_ORDER_NOTIONAL = 1.0
@@ -22,14 +27,18 @@ DEFAULT_EXPECTED_R = 1.0
 
 
 class AccountFeasibilityInput(BaseModel):
-    account_equity: float = DEFAULT_ACCOUNT_EQUITY
+    account_equity: float | None = None
     buying_power: float | None = None
     fractional_trading_enabled: bool = True
     risk_budget: float | None = None
-    max_risk_pct: float = DEFAULT_MAX_RISK_PER_TRADE_PCT
-    max_daily_loss_pct: float = DEFAULT_MAX_DAILY_LOSS_PCT
+    # Owner risk policy: percent values (``0.5`` = 0.5%, ``100`` = 100%).
+    # Converted to a decimal fraction internally exactly once.
+    max_risk_pct: float | None = None
+    max_daily_loss_pct: float | None = None
+    max_risk_dollars: float | None = None
     max_risk_dollars_cap: float | None = None
-    max_position_notional_pct: float = DEFAULT_MAX_POSITION_NOTIONAL_PCT
+    max_position_notional_pct: float | None = None
+    max_position_notional: float | None = None
     max_position_notional_cap: float | None = None
 
     symbols: list[str] = Field(default_factory=list)
@@ -60,6 +69,7 @@ class AccountFeasibilityInput(BaseModel):
     planned_risk_dollars: float | None = None
     open_positions: int = 0
     day_trades_used: int = 0
+    current_daily_loss: float = 0.0
     max_open_positions: int = DEFAULT_MAX_OPEN_POSITIONS
     max_trades_per_day: int = DEFAULT_MAX_TRADES_PER_DAY
 
@@ -77,8 +87,8 @@ class AccountFeasibilityInput(BaseModel):
 
 
 class AccountFeasibilityOutput(BaseModel):
-    account_feasibility_decision: Literal["feasible", "degraded", "blocked"]
-    small_account_decision: Literal["feasible", "degraded", "blocked"]
+    account_feasibility_decision: Literal["feasible", "degraded", "blocked", "data_unavailable"]
+    small_account_decision: Literal["feasible", "degraded", "blocked", "data_unavailable"]
     fractional_feasible: bool
     fractional_trading_enabled: bool
     position_size_shares: float | None = None
@@ -100,8 +110,10 @@ class AccountFeasibilityOutput(BaseModel):
     warnings: list[str] = Field(default_factory=list)
     account_feasibility_blockers: list[str] = Field(default_factory=list)
     account_feasibility_warnings: list[str] = Field(default_factory=list)
-    account_equity: float
-    buying_power: float
+    small_account_blockers: list[str] = Field(default_factory=list)
+    small_account_warnings: list[str] = Field(default_factory=list)
+    account_equity: float | None = None
+    buying_power: float | None = None
     max_risk_dollars: float
     max_daily_loss_dollars: float
     max_position_notional: float
@@ -116,14 +128,38 @@ def _clean_symbols(values: list[str]) -> list[str]:
     return [str(symbol).strip().upper() for symbol in values if str(symbol).strip()]
 
 
-def _pct_to_fraction(value: float, *, default: float) -> float:
+def _percent_to_fraction(
+    value_pct: float | None,
+    *,
+    default_pct: float,
+    warnings: list[str],
+    label: str,
+) -> float:
+    """Convert a human percent value (``0.5`` = 0.5%, ``100`` = 100%) into a decimal fraction.
+
+    The service applies ``/ 100`` exactly once here. ``None`` quietly uses the
+    configured default (no warning -- an unset value is the expected callsite).
+    Explicitly-provided values must lie in ``(0, 100]``; anything else falls back
+    to ``default_pct`` and emits a ``risk_policy_default_used`` warning so the
+    auditor can flag the suspicious input.
+    """
+    if value_pct is None:
+        return float(default_pct) / 100.0
     try:
-        pct = float(value)
+        pct = float(value_pct)
     except (TypeError, ValueError):
-        return default
+        warnings.append(f"{label}_invalid_value")
+        warnings.append("risk_policy_default_used")
+        return float(default_pct) / 100.0
     if pct <= 0:
-        return default
-    return pct / 100.0 if pct > 0.05 else pct
+        warnings.append(f"{label}_non_positive_rejected")
+        warnings.append("risk_policy_default_used")
+        return float(default_pct) / 100.0
+    if pct > 100.0:
+        warnings.append(f"{label}_above_100_percent_rejected")
+        warnings.append("risk_policy_default_used")
+        return float(default_pct) / 100.0
+    return pct / 100.0
 
 
 def _round_f(value: float | None, digits: int = 4) -> float | None:
@@ -142,24 +178,76 @@ def _live_execution_spread_hard_block(inp: AccountFeasibilityInput) -> bool:
 
 
 def evaluate_account_feasibility(inp: AccountFeasibilityInput) -> AccountFeasibilityOutput:
-    account_equity = float(inp.account_equity or DEFAULT_ACCOUNT_EQUITY)
-    buying_power = float(
-        inp.buying_power if inp.buying_power is not None else account_equity if account_equity > 0 else DEFAULT_BUYING_POWER
+    pct_warnings: list[str] = []
+    # Convert owner policy percent values to decimal fractions exactly once.
+    max_risk_per_trade_fraction = _percent_to_fraction(
+        inp.max_risk_pct,
+        default_pct=MAX_RISK_PER_TRADE_PCT,
+        warnings=pct_warnings,
+        label="max_risk_per_trade_pct",
     )
-    max_risk_pct = _pct_to_fraction(inp.max_risk_pct, default=DEFAULT_MAX_RISK_PER_TRADE_PCT)
-    max_daily_loss_pct = _pct_to_fraction(inp.max_daily_loss_pct, default=DEFAULT_MAX_DAILY_LOSS_PCT)
-    max_position_notional_pct = _pct_to_fraction(inp.max_position_notional_pct, default=DEFAULT_MAX_POSITION_NOTIONAL_PCT)
-
-    max_risk_dollars = round(account_equity * max_risk_pct, 2)
-    if inp.max_risk_dollars_cap is not None:
-        max_risk_dollars = min(max_risk_dollars, float(inp.max_risk_dollars_cap))
-    max_daily_loss_dollars = round(account_equity * max_daily_loss_pct, 2)
-    max_position_notional = round(account_equity * max_position_notional_pct, 2)
-    if inp.max_position_notional_cap is not None:
-        max_position_notional = min(max_position_notional, float(inp.max_position_notional_cap))
+    max_daily_loss_fraction = _percent_to_fraction(
+        inp.max_daily_loss_pct,
+        default_pct=MAX_DAILY_LOSS_PCT,
+        warnings=pct_warnings,
+        label="max_daily_loss_pct",
+    )
+    max_position_notional_fraction = _percent_to_fraction(
+        inp.max_position_notional_pct,
+        default_pct=MAX_POSITION_NOTIONAL_PCT,
+        warnings=pct_warnings,
+        label="max_position_notional_pct",
+    )
 
     blockers: list[str] = []
-    warnings: list[str] = []
+    warnings: list[str] = list(pct_warnings)
+    account_equity = float(inp.account_equity) if inp.account_equity is not None and float(inp.account_equity) > 0 else None
+    buying_power = float(inp.buying_power) if inp.buying_power is not None and float(inp.buying_power) >= 0 else None
+    if account_equity is None:
+        blockers.append("account_equity_unavailable")
+    if buying_power is None:
+        blockers.append("buying_power_unavailable")
+
+    if account_equity is None or buying_power is None:
+        blockers = sorted(set(blockers))
+        warnings = sorted(set(warnings))
+        return AccountFeasibilityOutput(
+            account_feasibility_decision="data_unavailable",
+            small_account_decision="data_unavailable",
+            fractional_feasible=False,
+            fractional_trading_enabled=bool(inp.fractional_trading_enabled),
+            risk_dollars=0.0,
+            feasible_symbols=[],
+            rejected_symbols=_clean_symbols([inp.selected_symbol] if inp.selected_symbol else []),
+            blockers=blockers,
+            warnings=warnings,
+            account_feasibility_blockers=blockers,
+            account_feasibility_warnings=warnings,
+            small_account_blockers=blockers,
+            small_account_warnings=warnings,
+            account_equity=account_equity,
+            buying_power=buying_power,
+            max_risk_dollars=0.0,
+            max_daily_loss_dollars=0.0,
+            max_position_notional=0.0,
+            next_agent=None,
+            allow_submit=False,
+            submitted_order=False,
+            broker_called=False,
+            llm_used=False,
+        )
+
+    max_risk_dollars = round(account_equity * max_risk_per_trade_fraction, 2)
+    if inp.max_risk_dollars is not None:
+        max_risk_dollars = min(max_risk_dollars, float(inp.max_risk_dollars))
+    if inp.max_risk_dollars_cap is not None:
+        max_risk_dollars = min(max_risk_dollars, float(inp.max_risk_dollars_cap))
+    max_daily_loss_dollars = round(account_equity * max_daily_loss_fraction, 2)
+    max_position_notional = round(account_equity * max_position_notional_fraction, 2)
+    if inp.max_position_notional is not None:
+        max_position_notional = min(max_position_notional, float(inp.max_position_notional))
+    if inp.max_position_notional_cap is not None:
+        max_position_notional = min(max_position_notional, float(inp.max_position_notional_cap))
 
     symbols = _clean_symbols(inp.usable_symbols or inp.symbols)
     selected_symbol = str(inp.selected_symbol).strip().upper() if inp.selected_symbol else None
@@ -194,7 +282,7 @@ def evaluate_account_feasibility(inp: AccountFeasibilityInput) -> AccountFeasibi
         blockers.append("missing_entry")
 
     if inp.stop is None:
-        warnings.append("missing_stop_for_risk_based_sizing")
+        blockers.append("missing_stop")
 
     risk_per_share: float | None = None
     if entry_f is not None and entry_f > 0 and stop is not None:
@@ -215,6 +303,13 @@ def evaluate_account_feasibility(inp: AccountFeasibilityInput) -> AccountFeasibi
 
     if int(inp.day_trades_used or 0) >= int(inp.max_trades_per_day):
         blockers.append("max_trades_per_day_reached")
+
+    # Daily-loss accumulator: never block the first trade of the day, only
+    # block when the proposed trade's risk would push cumulative loss past the
+    # configured policy cap.
+    current_daily_loss = max(0.0, float(inp.current_daily_loss or 0.0))
+    if current_daily_loss + float(risk_dollars) > float(max_daily_loss_dollars):
+        blockers.append("daily_loss_limit_would_be_exceeded")
 
     proof_status = str(inp.proof_status or "").strip().lower()
     if proof_status in {"", "backtest_required", "proof_required"}:
@@ -386,6 +481,8 @@ def evaluate_account_feasibility(inp: AccountFeasibilityInput) -> AccountFeasibi
         warnings=list(warnings),
         account_feasibility_blockers=list(blockers),
         account_feasibility_warnings=list(warnings),
+        small_account_blockers=list(blockers),
+        small_account_warnings=list(warnings),
         account_equity=round(account_equity, 2),
         buying_power=round(buying_power, 2),
         max_risk_dollars=max_risk_dollars,
