@@ -158,14 +158,6 @@ def _persist_run(resp: OrchestratorRunResponse, *, req: OrchestratorRunRequest) 
 
 
 def run_workflow(body: OrchestratorRunRequest) -> OrchestratorRunResponse:
-    if not body.symbols:
-        return _blocked_run_response(
-            body=body,
-            blockers=["no_symbols_selected"],
-            warnings=[],
-            next_action="Run scanner/provider candidate selection before invoking the autonomous workflow.",
-        )
-
     db_blocker = production_database_blocker()
     if db_blocker:
         db_health = check_database_health()
@@ -350,6 +342,10 @@ def run_workflow(body: OrchestratorRunRequest) -> OrchestratorRunResponse:
                 k: state.model_dump().get(k)
                 for k in (
                     "symbols",
+                    "discovery_mode",
+                    "candidate_source",
+                    "raw_candidate_count",
+                    "filtered_candidate_count",
                     "symbol",
                     "selected_symbol",
                     "strategy_key",
@@ -445,8 +441,16 @@ def run_workflow(body: OrchestratorRunRequest) -> OrchestratorRunResponse:
         next_action = "Preview completed."
 
     if blockers:
+        if "scanner_or_provider_unavailable" in blockers:
+            recommendation_status = "data_unavailable"
+        elif "no_scanner_candidates_passed_filters" in blockers:
+            recommendation_status = "no_qualified_setup"
+        elif "no_usable_symbols" in blockers or "operational_failure" in blockers:
+            recommendation_status = "data_unavailable"
+        else:
+            recommendation_status = "blocked"
         recommendation = _recommendation_payload(
-            status="data_unavailable" if "no_usable_symbols" in blockers or "no_symbols_selected" in blockers or "operational_failure" in blockers else "no_qualified_setup",
+            status=recommendation_status,
             symbol=None,
             reason="; ".join(sorted(set(blockers)))[:500],
             mock_data_used=bool(state.using_mock_data),

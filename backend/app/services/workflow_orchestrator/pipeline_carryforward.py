@@ -82,6 +82,8 @@ def apply_stage_carryforward(*, agent_key: str, agent_result: AgentRunResult, st
                 setattr(state, attr, str(tr[attr]))
         if "using_mock_data" in tr:
             state.using_mock_data = bool(tr["using_mock_data"])
+        if "discovery_mode" in tr:
+            state.discovery_mode = bool(tr["discovery_mode"])
         state.usable_symbols = _clean_symbols(tr.get("usable_symbols"))
         state.rejected_symbols = _clean_symbols(tr.get("rejected_symbols"))
         if state.usable_symbols:
@@ -111,6 +113,15 @@ def apply_stage_carryforward(*, agent_key: str, agent_result: AgentRunResult, st
         syms = _clean_symbols(tr.get("symbols"))
         if syms:
             state.symbols = syms
+        for attr in ("candidate_source",):
+            if tr.get(attr) is not None:
+                setattr(state, attr, str(tr[attr]))
+        if tr.get("raw_candidate_count") is not None:
+            state.raw_candidate_count = int(tr.get("raw_candidate_count") or 0)
+        if tr.get("filtered_candidate_count") is not None:
+            state.filtered_candidate_count = int(tr.get("filtered_candidate_count") or 0)
+        _append_strings(state.blockers, tr.get("blockers"))
+        _append_strings(state.warnings, tr.get("warnings"))
         cand = tr.get("selected_candidate") or tr.get("selected_symbol") or tr.get("symbol")
         if cand:
             state.symbol = str(cand).strip().upper()

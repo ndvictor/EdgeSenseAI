@@ -584,7 +584,7 @@ function DebugPanel({ title, value }: { title: string; value: unknown }) {
 }
 
 function RunWorkflowPanel({ onRun, busy }: { onRun: (symbols: string, stopStage: number) => Promise<void>; busy: boolean }) {
-  const [symbols, setSymbols] = useState("AMD");
+  const [symbols, setSymbols] = useState("");
   const [stopStage, setStopStage] = useState(100);
   return (
     <Card title="Run Safe Paper Workflow" subtitle="Locked to stock, day_trading, paper_first, dry_run, human approval, and allow_submit=false.">
@@ -595,8 +595,9 @@ function RunWorkflowPanel({ onRun, busy }: { onRun: (symbols: string, stopStage:
             value={symbols}
             onChange={(event) => setSymbols(event.target.value.toUpperCase())}
             className="mt-2 w-full rounded-xl border border-white/10 bg-black/30 px-3 py-2 text-sm normal-case tracking-normal text-slate-100 outline-none focus:border-emerald-400/50"
-            placeholder="AMD, NVDA"
+            placeholder="Leave blank to scan the real market"
           />
+          <span className="mt-1 block text-xs normal-case tracking-normal text-slate-500">Blank means scanner/provider discovery. No mock data or default ticker is used.</span>
         </label>
         <label className="text-xs font-semibold uppercase tracking-[0.14em] text-slate-500">
           Stop stage
@@ -755,8 +756,7 @@ export default function DayTradingWorkflowPage() {
     async (symbolsText: string, stopStage: number) => {
       const parsedSymbols = symbolsText.split(",").map((symbol) => symbol.trim().toUpperCase()).filter(Boolean);
       if (!parsedSymbols.length) {
-        setRunMessage("Enter at least one symbol.");
-        return;
+        setRunMessage("Scanning real market for provider-backed candidates...");
       }
       setRunBusy(true);
       setRunMessage(null);
@@ -817,7 +817,7 @@ export default function DayTradingWorkflowPage() {
       try {
         const result = await createAgentRun({
           agent_key: agentKey,
-          inputs: { timestamp: new Date().toISOString(), symbol: run?.selected_symbol ?? run?.symbol ?? "AMD" },
+          inputs: { timestamp: new Date().toISOString(), symbol: run?.selected_symbol ?? run?.symbol ?? null },
           context: { source: "daytrading_platform" },
           dry_run: true,
           requested_stage: null,

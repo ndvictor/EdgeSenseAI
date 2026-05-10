@@ -6,9 +6,6 @@ from app.services.candidate_universe_service import list_candidates
 from app.services.feature_store_service import get_latest_feature_rows
 from app.services.universe_selection_service import UniverseSelectionRequest, get_latest_universe_selection, run_universe_selection
 
-# When no seeds and feature-store is empty, scan these liquid names through the same data pipeline (Alpaca when configured).
-_ALPACA_PIPELINE_BOOTSTRAP_SYMBOLS: tuple[str, ...] = ("SPY", "QQQ", "AAPL", "MSFT", "AMD", "NVDA")
-
 
 def _norm_symbols(raw: list[str] | None) -> list[str]:
     out: list[str] = []
@@ -61,6 +58,25 @@ def _symbols_from_latest_universe(*, max_pick: int) -> list[str]:
     return out
 
 
+def _symbols_from_candidate_universe(*, asset_class: str, horizon: str, max_pick: int) -> list[str]:
+    candidates = list_candidates(status="active")
+    out: list[str] = []
+    for candidate in sorted(candidates, key=lambda c: (-float(c.priority_score or 0), str(c.symbol))):
+        symbol = (candidate.symbol or "").strip().upper()
+        if not symbol or symbol in out:
+            continue
+        if candidate.asset_class != asset_class:
+            continue
+        if candidate.horizon not in {horizon, "day_trade", "day_trading"}:
+            continue
+        if candidate.source_type == "manual":
+            continue
+        out.append(symbol)
+        if len(out) >= max_pick:
+            break
+    return out
+
+
 def build_watchlist(
     *,
     asset_class: str,
@@ -85,33 +101,84 @@ def build_watchlist(
         cap = max(1, min(100, max_symbols))
         pipeline_horizon = _horizon_for_universe(horizon)
         seeds = _norm_symbols(seed_symbols)
+        ac_raw = (asset_class or "stock").lower().strip()
+        if ac_raw not in ("stock", "option", "crypto"):
+            ac_raw = "stock"
+        if not seeds:
+            seeds = _symbols_from_candidate_universe(asset_class=ac_raw, horizon=horizon, max_pick=cap * 3)
         if not seeds:
             seeds = _symbols_from_feature_pipeline(max_pick=cap * 3)
         if not seeds:
             seeds = _symbols_from_latest_universe(max_pick=cap * 3)
-        if not seeds:
-            seeds = list(_ALPACA_PIPELINE_BOOTSTRAP_SYMBOLS)
 
-        ac_raw = (asset_class or "stock").lower().strip()
-        if ac_raw not in ("stock", "option", "crypto"):
-            ac_raw = "stock"
+        if not seeds:
+            return {
+                "decision": "no_trade",
+                "recommendation": {
+                    "status": "no_qualified_setup",
+                    "symbol": None,
+                    "mock_data_used": False,
+                    "synthetic_data_used": False,
+                    "reason": "no_scanner_candidates_passed_filters",
+                },
+                "symbols": [],
+                "ranked_candidates": [],
+                "source_breakdown": {"candidate_universe": 0, "feature_pipeline": 0, "latest_universe": 0},
+                "selected_candidate": None,
+                "candidate_source": "none",
+                "raw_candidate_count": 0,
+                "filtered_candidate_count": 0,
+                "blockers": ["no_scanner_candidates_passed_filters"],
+                "warnings": [],
+                "next_action": "No provider-backed scanner/candidate symbols are available.",
+            }
         src = data_source if data_source in ("auto", "yfinance", "alpaca", "polygon", "mock") else "auto"
-        univ = run_universe_selection(
-            UniverseSelectionRequest(
-                symbols=seeds[: max(50, cap * 5)],
-                asset_class=ac_raw,  # type: ignore[arg-type]
-                horizon=pipeline_horizon,  # type: ignore[arg-type]
-                source=src,  # type: ignore[arg-type]
-                max_candidates=cap,
-                min_score=40,
-                include_mock=include_mock or src == "mock",
+        try:
+            univ = run_universe_selection(
+                UniverseSelectionRequest(
+                    symbols=seeds[: max(50, cap * 5)],
+                    asset_class=ac_raw,  # type: ignore[arg-type]
+                    horizon=pipeline_horizon,  # type: ignore[arg-type]
+                    source=src,  # type: ignore[arg-type]
+                    max_candidates=cap,
+                    min_score=40,
+                    include_mock=include_mock or src == "mock",
+                )
             )
-        )
+        except Exception as exc:
+            return {
+                "decision": "blocked",
+                "recommendation": {
+                    "status": "data_unavailable",
+                    "symbol": None,
+                    "mock_data_used": False,
+                    "synthetic_data_used": False,
+                    "reason": "scanner_or_provider_unavailable",
+                },
+                "symbols": [],
+                "ranked_candidates": [],
+                "source_breakdown": {"candidate_universe": len(seeds)},
+                "selected_candidate": None,
+                "candidate_source": "scanner/provider",
+                "raw_candidate_count": len(seeds),
+                "filtered_candidate_count": 0,
+                "blockers": ["scanner_or_provider_unavailable"],
+                "warnings": [str(exc)],
+                "next_action": "Provider-backed discovery failed; verify market data provider configuration.",
+            }
         selected = univ.selected_watchlist or []
         if not selected and univ.ranked_candidates:
             selected = univ.ranked_candidates[:cap]
 
         symbols = [(c.symbol or "").upper() for c in selected if c.symbol][:cap]
+        discovery_blocker = "no_scanner_candidates_passed_filters"
+        discovery_status = "no_qualified_setup"
+        if not symbols and (
+            univ.status == "blocked_by_data_freshness"
+            or any("unavailable" in str(b).lower() or "provider" in str(b).lower() for b in (univ.blockers or []))
+        ):
+            discovery_blocker = "scanner_or_provider_unavailable"
+            discovery_status = "data_unavailable"
         ranked_candidates = [
             {
                 "symbol": c.symbol,
@@ -135,6 +202,18 @@ def build_watchlist(
             "next_action": "Proceed to strategy selection." if symbols else (univ.blockers[0] if univ.blockers else "No symbols passed universe selection."),
             "universe_selection_status": univ.status,
             "pipeline_blockers": univ.blockers,
+            "candidate_source": "universe_selection",
+            "raw_candidate_count": len(seeds),
+            "filtered_candidate_count": len(symbols),
+            "recommendation": {
+                "status": "candidate_selected" if symbols else discovery_status,
+                "symbol": symbols[0] if symbols else None,
+                "mock_data_used": False,
+                "synthetic_data_used": False,
+                "reason": None if symbols else discovery_blocker,
+            },
+            "blockers": [] if symbols else [discovery_blocker],
+            "warnings": list(univ.warnings or []),
         }
 
     candidates = list_candidates(status="active")

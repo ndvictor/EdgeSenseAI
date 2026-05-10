@@ -42,14 +42,14 @@ def run_glue_agent(*, agent_key: str, inputs: dict[str, Any], context: dict[str,
     if agent_key == "market_condition_agent":
         if not symbols:
             out = {
-                "decision": "blocked",
-                "market_context": {"should_trigger_workflow": False},
-                "blockers": ["no_symbols_selected"],
-                "warnings": [],
-                "next_agent": None,
-                "next_action": "Provide scanner-selected symbols before market condition scan.",
+                "decision": "discovery",
+                "market_context": {"should_trigger_workflow": False, "regime": "unknown", "discovery_mode": True},
+                "blockers": [],
+                "warnings": ["market_condition_deferred_until_discovery_candidates"],
+                "next_agent": "watchlist_builder_agent",
+                "next_action": "Continue to watchlist discovery; no manual symbols were supplied.",
             }
-            return {"tool_name": "market_scanner.scan", "tool_request": {"symbols": symbols}, "tool_response": out, "next_agent": None, "safety": safety}
+            return {"tool_name": "market_scanner.scan", "tool_request": {"symbols": symbols}, "tool_response": out, "next_agent": "watchlist_builder_agent", "safety": safety}
         out = scan_market_condition(symbols=symbols, source=str(s.get("source", "auto")))
         mc = out["market_context"]
         next_agent = "workflow_router_agent" if mc.get("should_trigger_workflow") else "watchlist_builder_agent"

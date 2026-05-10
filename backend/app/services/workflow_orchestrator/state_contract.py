@@ -11,8 +11,12 @@ class WorkflowCarryForwardState(BaseModel):
     asset_class: str = "stock"
     horizon: str = "day_trading"
     mode: str = "paper_first"
-    source: str = "mock"
+    source: str = "runtime"
     symbols: list[str] = Field(default_factory=list)
+    discovery_mode: bool = False
+    candidate_source: str | None = None
+    raw_candidate_count: int = 0
+    filtered_candidate_count: int = 0
     symbol: str | None = None
     selected_symbol: str | None = None
     market_context: dict[str, Any] = Field(default_factory=dict)

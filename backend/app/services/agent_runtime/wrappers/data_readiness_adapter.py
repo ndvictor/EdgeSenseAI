@@ -76,11 +76,12 @@ def evaluate_data_readiness(*, symbols: list[str], asset_class: str, horizon: st
 
     if not symbols:
         return {
-            "decision": "blocked",
+            "decision": "discovery",
+            "discovery_mode": True,
             "provider_status": {},
             "provider_name": "unknown",
             "source_mode": source_mode,
-            "using_mock_data": source_mode == "mock",
+            "using_mock_data": False,
             "symbols": [],
             "usable_symbols": [],
             "rejected_symbols": [],
@@ -92,11 +93,11 @@ def evaluate_data_readiness(*, symbols: list[str], asset_class: str, horizon: st
             "persistence_status": "unavailable",
             "freshness_status": "unknown",
             "kafka_status": "configured_optional_not_active",
-            "blockers": ["no_symbols_selected"],
-            "warnings": [],
+            "blockers": [],
+            "warnings": ["no_manual_symbols_using_scanner_discovery"],
             "artifacts": {"provider_status": {}, "feature_rows": [], "latest_snapshots": [], "kafka_status": "configured_optional_not_active"},
-            "next_agent": None,
-            "next_action": "Provide at least one symbol.",
+            "next_agent": "watchlist_builder_agent",
+            "next_action": "No manual symbols supplied; continue with provider-backed scanner/candidate discovery.",
         }
 
     clean_symbols = [str(sym).strip().upper() for sym in symbols[:5] if str(sym).strip()]

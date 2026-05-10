@@ -22,7 +22,7 @@ class OrchestratorRunRequest(BaseModel):
     horizon: str = "day_trading"
     mode: str = "paper_first"
     source: str = "manual"
-    symbols: list[str] = Field(default_factory=lambda: ["AMD"])
+    symbols: list[str] = Field(default_factory=list)
     strategy_key: str | None = None
     max_candidates: int = 5
     stop_at_stage: int = 100

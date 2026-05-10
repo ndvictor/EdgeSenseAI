@@ -7,6 +7,20 @@ from typing import Any
 import app.services.agent_runtime.wrappers.data_readiness_adapter as adapter
 
 
+def test_empty_symbols_enters_discovery_mode_without_inventing_symbols():
+    out = adapter.evaluate_data_readiness(symbols=[], asset_class="stock", horizon="day_trading", source="runtime")
+
+    assert out["decision"] == "discovery"
+    assert out["discovery_mode"] is True
+    assert out["symbols"] == []
+    assert out["usable_symbols"] == []
+    assert out["blockers"] == []
+    assert "no_symbols_selected" not in out["warnings"]
+    assert "no_manual_symbols_using_scanner_discovery" in out["warnings"]
+    assert out["next_agent"] == "watchlist_builder_agent"
+    assert out["using_mock_data"] is False
+
+
 def _fake_resp(
     symbol: str,
     *,

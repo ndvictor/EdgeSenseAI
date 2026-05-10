@@ -39,7 +39,7 @@ def _is_orchestrator_context(context: dict[str, Any]) -> bool:
     return context.get("source") == "workflow_orchestrator"
 
 
-def _first_symbol(inputs: dict[str, Any], *, fallback: str = "AMD") -> str:
+def _first_symbol(inputs: dict[str, Any], *, fallback: str = "") -> str:
     if inputs.get("symbol"):
         return str(inputs["symbol"]).strip().upper()
     if inputs.get("selected_symbol"):
