@@ -101,15 +101,41 @@ def build_watchlist(
         cap = max(1, min(100, max_symbols))
         pipeline_horizon = _horizon_for_universe(horizon)
         seeds = _norm_symbols(seed_symbols)
+        candidate_source = "manual_symbols" if seeds else None
         ac_raw = (asset_class or "stock").lower().strip()
         if ac_raw not in ("stock", "option", "crypto"):
             ac_raw = "stock"
-        if not seeds:
-            seeds = _symbols_from_candidate_universe(asset_class=ac_raw, horizon=horizon, max_pick=cap * 3)
-        if not seeds:
-            seeds = _symbols_from_feature_pipeline(max_pick=cap * 3)
-        if not seeds:
-            seeds = _symbols_from_latest_universe(max_pick=cap * 3)
+        try:
+            if not seeds:
+                seeds = _symbols_from_candidate_universe(asset_class=ac_raw, horizon=horizon, max_pick=cap)
+                candidate_source = "candidate_universe" if seeds else candidate_source
+            if not seeds:
+                seeds = _symbols_from_feature_pipeline(max_pick=cap)
+                candidate_source = "feature_pipeline" if seeds else candidate_source
+            if not seeds:
+                seeds = _symbols_from_latest_universe(max_pick=cap)
+                candidate_source = "latest_universe_selection" if seeds else candidate_source
+        except Exception as exc:
+            return {
+                "decision": "blocked",
+                "recommendation": {
+                    "status": "data_unavailable",
+                    "symbol": None,
+                    "mock_data_used": False,
+                    "synthetic_data_used": False,
+                    "reason": "scanner_or_provider_unavailable",
+                },
+                "symbols": [],
+                "ranked_candidates": [],
+                "source_breakdown": {},
+                "selected_candidate": None,
+                "candidate_source": "scanner/provider",
+                "raw_candidate_count": 0,
+                "filtered_candidate_count": 0,
+                "blockers": ["scanner_or_provider_unavailable"],
+                "warnings": [str(exc)],
+                "next_action": "Provider-backed discovery failed; verify market data provider configuration.",
+            }
 
         if not seeds:
             return {
@@ -131,6 +157,28 @@ def build_watchlist(
                 "blockers": ["no_scanner_candidates_passed_filters"],
                 "warnings": [],
                 "next_action": "No provider-backed scanner/candidate symbols are available.",
+            }
+        if not seed_symbols:
+            symbols = seeds[:cap]
+            return {
+                "decision": "candidate_selected" if symbols else "no_trade",
+                "recommendation": {
+                    "status": "candidate_selected" if symbols else "no_qualified_setup",
+                    "symbol": symbols[0] if symbols else None,
+                    "mock_data_used": False,
+                    "synthetic_data_used": False,
+                    "reason": None if symbols else "no_scanner_candidates_passed_filters",
+                },
+                "symbols": symbols,
+                "ranked_candidates": [{"symbol": symbol, "source_type": candidate_source or "scanner/provider"} for symbol in symbols],
+                "source_breakdown": {candidate_source or "scanner/provider": len(symbols)},
+                "selected_candidate": symbols[0] if symbols else None,
+                "candidate_source": candidate_source or "scanner/provider",
+                "raw_candidate_count": len(seeds),
+                "filtered_candidate_count": len(symbols),
+                "blockers": [] if symbols else ["no_scanner_candidates_passed_filters"],
+                "warnings": [],
+                "next_action": "Proceed to strategy selection." if symbols else "No provider-backed scanner/candidate symbols are available.",
             }
         src = data_source if data_source in ("auto", "yfinance", "alpaca", "polygon", "mock") else "auto"
         try:
