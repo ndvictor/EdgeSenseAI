@@ -30,5 +30,44 @@ class SubagentRegistry:
 
 
 def default_subagent_registry() -> SubagentRegistry:
-    """Empty registry; wire strategy-specific subagents at integration time."""
-    return SubagentRegistry()
+    """Register advisory subagents using existing workflow agent names."""
+    registry = SubagentRegistry()
+    for key, description, capabilities in (
+        (
+            "market_condition_agent",
+            "Review market condition evidence and session context.",
+            ["market_session.get_state", "scanner.get_latest_candidates"],
+        ),
+        (
+            "watchlist_builder_agent",
+            "Review provider-backed watchlist candidates without adding symbols.",
+            ["scanner.get_latest_candidates", "features.get_enriched_rows"],
+        ),
+        (
+            "alpha_engine_agent",
+            "Review existing alpha recommendation evidence.",
+            ["alpha.generate_recommendation", "features.get_enriched_rows"],
+        ),
+        (
+            "strategy_selection_agent",
+            "Review strategy evidence without promoting strategies.",
+            ["alpha.generate_recommendation"],
+        ),
+        (
+            "model_selection_agent",
+            "Review model evidence without activating models.",
+            ["features.get_enriched_rows"],
+        ),
+        (
+            "small_account_feasibility_agent",
+            "Review small-account feasibility evidence.",
+            ["account.get_policy", "risk.evaluate_fractional_feasibility"],
+        ),
+        (
+            "execution_planner_agent",
+            "Review plan-only execution evidence without broker calls.",
+            ["execution_planner.plan_execution", "account.get_policy"],
+        ),
+    ):
+        registry.register(SubagentDescriptor(key=key, description=description, capabilities=capabilities))
+    return registry

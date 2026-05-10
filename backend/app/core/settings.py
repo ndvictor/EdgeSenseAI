@@ -51,6 +51,36 @@ class Settings(BaseSettings):
     max_daily_agent_runs: int = Field(default=500, alias="MAX_DAILY_AGENT_RUNS")
     langsmith_tracing: bool = Field(default=False, alias="LANGSMITH_TRACING")
 
+    agent_reasoning_enabled: bool = Field(default=False, alias="AGENT_REASONING_ENABLED")
+    agent_can_recommend_trades: bool = Field(default=False, alias="AGENT_CAN_RECOMMEND_TRADES")
+    agent_can_create_paper_plans: bool = Field(default=False, alias="AGENT_CAN_CREATE_PAPER_PLANS")
+    agent_can_create_approval_requests: bool = Field(default=False, alias="AGENT_CAN_CREATE_APPROVAL_REQUESTS")
+    agent_can_submit_paper_orders: bool = Field(default=False, alias="AGENT_CAN_SUBMIT_PAPER_ORDERS")
+    agent_can_submit_live_orders: bool = Field(default=False, alias="AGENT_CAN_SUBMIT_LIVE_ORDERS")
+
+    @property
+    def agent_capability_flags(self) -> dict[str, bool]:
+        """Effective agent capability gates.
+
+        Live submission is always force-gated by `live_trading_enabled` and
+        `broker_execution_enabled`; this property reflects the resolved
+        permissions used by the agent runtime / DeepAgents advisory layer.
+        """
+        live_allowed = (
+            self.agent_can_submit_live_orders
+            and self.live_trading_enabled
+            and self.broker_execution_enabled
+        )
+        paper_allowed = self.agent_can_submit_paper_orders and self.paper_trading_enabled
+        return {
+            "agent_reasoning_enabled": bool(self.agent_reasoning_enabled),
+            "agent_can_recommend_trades": bool(self.agent_can_recommend_trades),
+            "agent_can_create_paper_plans": bool(self.agent_can_create_paper_plans),
+            "agent_can_create_approval_requests": bool(self.agent_can_create_approval_requests),
+            "agent_can_submit_paper_orders": bool(paper_allowed),
+            "agent_can_submit_live_orders": bool(live_allowed),
+        }
+
     market_data_mode: str = Field(default="provider", alias="MARKET_DATA_MODE")
     allow_synthetic_market_data: bool = Field(default=False, alias="ALLOW_SYNTHETIC_MARKET_DATA")
     market_data_provider: str = Field(default="alpaca", alias="MARKET_DATA_PROVIDER")

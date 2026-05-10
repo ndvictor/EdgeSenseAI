@@ -284,3 +284,43 @@ def test_non_dry_run_governance_blockers_stop_before_stages():
     assert run["submitted_order"] is False
     assert run["broker_called"] is False
     assert run["llm_used"] is False
+
+
+# ---------- DeepAgents advisory layer must not cross broker / submit boundaries ----------
+
+
+def test_orchestrator_run_remains_non_submitting_with_reasoning_enabled(monkeypatch):
+    """Even when AGENT_REASONING_ENABLED=true, orchestrator must not submit or call broker."""
+    monkeypatch.setenv("AGENT_REASONING_ENABLED", "true")
+    run = _run_orchestrator()
+
+    assert run["allow_submit"] is False
+    assert run["submitted_order"] is False
+    assert run["broker_called"] is False
+    assert run["llm_used"] is False
+
+
+def test_agent_runtime_status_surfaces_capability_flags():
+    response = client.get("/api/agent-runtime/status")
+    assert response.status_code == 200
+    payload = response.json()
+
+    summary = payload.get("summary") or {}
+    safety = payload.get("safety") or {}
+    flags = summary.get("agent_capability_flags") or safety.get("agent_capability_flags")
+
+    assert isinstance(flags, dict)
+    for required in (
+        "agent_reasoning_enabled",
+        "agent_can_recommend_trades",
+        "agent_can_create_paper_plans",
+        "agent_can_create_approval_requests",
+        "agent_can_submit_paper_orders",
+        "agent_can_submit_live_orders",
+    ):
+        assert required in flags
+    # Live submission is hard-gated regardless of the flag value.
+    assert flags["agent_can_submit_live_orders"] is False
+    assert safety["no_broker_calls"] is True
+    assert safety["no_execution_submit"] is True
+    assert safety["no_llm_for_trade_decision"] is True

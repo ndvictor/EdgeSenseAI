@@ -36,6 +36,19 @@ from app.services.agent_runtime.redis_runtime import (
 def build_status() -> AgentRuntimeStatusResponse:
     updated_at = iso_utc_now()
     redis_status = get_redis_runtime_status()
+    try:
+        from app.core.settings import get_settings
+
+        capability_flags = get_settings().agent_capability_flags
+    except Exception:
+        capability_flags = {
+            "agent_reasoning_enabled": False,
+            "agent_can_recommend_trades": False,
+            "agent_can_create_paper_plans": False,
+            "agent_can_create_approval_requests": False,
+            "agent_can_submit_paper_orders": False,
+            "agent_can_submit_live_orders": False,
+        }
     return AgentRuntimeStatusResponse(
         updated_at=updated_at,
         summary={
@@ -47,6 +60,7 @@ def build_status() -> AgentRuntimeStatusResponse:
             "llm_required": False,
             "agent_reasoning_advisory_only": True,
             "broker_submission_enabled": False,
+            "agent_capability_flags": capability_flags,
             "next_action": "Existing wrappers run deterministic gates; optional Agent Reasoning Runtime attaches audited advisory reasoning only.",
         },
         safety={
@@ -54,6 +68,7 @@ def build_status() -> AgentRuntimeStatusResponse:
             "no_execution_submit": True,
             "no_llm_for_trade_decision": True,
             "dry_run_default": True,
+            "agent_capability_flags": capability_flags,
         },
     )
 
@@ -119,15 +134,31 @@ def _attach_advisory_reasoning(
     tool_request: dict[str, Any],
     tool_response: dict[str, Any],
 ) -> tuple[dict[str, Any], dict[str, Any] | None, list[str]]:
-    """Attach audited AI reasoning to a tool response without changing hard gate outcome."""
+    """Run the watchlist DeepAgent and let the audited decision control the watchlist output.
+
+    Behavior:
+    * For ``watchlist_builder_agent`` and only when ``AGENT_REASONING_ENABLED=true``,
+      a DeepAgents reasoning turn is invoked over the closed-world evidence pack.
+    * If the supervisor returns ``reasoning_status="completed"`` and ``DecisionAuditor``
+      accepts it, the agentic ``usable_symbols`` / ``rejected_symbols`` /
+      ``candidate_rankings`` / ``candidate_source`` replace the deterministic
+      values in the merged tool response. ``selected_symbol`` /
+      ``selected_candidate`` remain ``None`` — Alpha selects later.
+    * If the supervisor returns ``audit_rejected``, deterministic
+      ``usable_symbols`` are preserved (test 8) and reasoning blockers are
+      surfaced.
+    * If reasoning is disabled or unavailable, the deterministic tool response
+      is returned unchanged with ``reasoning_status`` attached for visibility.
+    * Broker / submit / live-trade decision flags are always forced ``False``.
+    """
     warnings: list[str] = []
     if not isinstance(tool_response, dict):
         return tool_response, None, warnings
+    if agent_key != "watchlist_builder_agent":
+        return tool_response, None, warnings
     try:
-        from app.services.agent_reasoning import ReasoningRuntime
+        from app.services.deepagents_runtime import DeepAgentRunContext, DeepAgentSupervisor, EvidencePackBuilder
 
-        if not ReasoningRuntime.supported_agent(agent_key):
-            return tool_response, None, warnings
         workflow_state: dict[str, Any] = {
             **(inputs or {}),
             **(tool_response or {}),
@@ -136,19 +167,81 @@ def _attach_advisory_reasoning(
             "agent_key": agent_key,
             "tool_name": tool_request.get("tool_name") if isinstance(tool_request, dict) else None,
         }
-        # Normalize common response fields into evidence-builder names without creating symbols/data.
         for key in ("selected_candidates", "watchlist_candidates", "scanner_candidates", "feature_rows", "watchlist"):
             if key not in workflow_state and isinstance(tool_response.get(key), list):
                 workflow_state[key] = tool_response[key]
-        reasoning = ReasoningRuntime.reason(agent_key, workflow_state)
+        evidence = EvidencePackBuilder.build(workflow_state, agent_key)
+        reasoning = DeepAgentSupervisor().reason(
+            evidence=evidence,
+            context=DeepAgentRunContext(
+                workflow_run_id=workflow_run_id,
+                orchestrator_run_id=context.get("orchestrator_run_id"),
+                trace_id=context.get("trace_id"),
+                metadata={"tool_name": tool_request.get("tool_name") if isinstance(tool_request, dict) else None},
+            ),
+        )
         reasoning_payload = reasoning.model_dump()
         merged = dict(tool_response)
         merged["agent_reasoning"] = reasoning_payload
+        merged["deepagent_reasoning"] = reasoning_payload
         ro = merged.get("reasoning_outputs") if isinstance(merged.get("reasoning_outputs"), dict) else {}
         ro[agent_key] = reasoning_payload
         merged["reasoning_outputs"] = ro
         merged["reasoning_blockers"] = list(reasoning_payload.get("hard_blockers") or [])
         merged["reasoning_warnings"] = list(reasoning_payload.get("soft_warnings") or [])
+        merged["agent_reasoning_enabled"] = reasoning.reasoning_status != "disabled"
+        merged["watchlist_agent_decision"] = reasoning_payload
+
+        agentic_applied = False
+        if reasoning.reasoning_status in {"completed", "blocked"}:
+            if reasoning.decision in {"candidates_selected", "candidate_selected"}:
+                allowed = {s.upper() for s in evidence.allowed_symbols}
+                agentic_symbols = [
+                    str(s).upper().strip()
+                    for s in (reasoning.usable_symbols or [])
+                    if str(s).upper().strip() in allowed
+                ]
+                if agentic_symbols:
+                    merged["symbols"] = agentic_symbols
+                    merged["usable_symbols"] = agentic_symbols
+                    merged["selected_candidate"] = None
+                    merged["selected_symbol"] = None
+                    if reasoning.candidate_source and reasoning.candidate_source.lower() != "none":
+                        merged["candidate_source"] = reasoning.candidate_source
+                    merged["candidate_rankings"] = [dict(r) for r in (reasoning.candidate_rankings or [])]
+                    merged["rejected_symbols"] = [dict(r) for r in (reasoning.rejected_symbols or [])]
+                    merged["recommendation"] = {
+                        "status": "candidate_selected",
+                        "symbol": None,
+                        "non_real_data_used": False,
+                        "synthetic_data_used": False,
+                        "reason": reasoning.thesis or "agentic_watchlist_selection",
+                    }
+                    merged["decision"] = "candidates_selected"
+                    agentic_applied = True
+            elif reasoning.decision == "no_qualified_setup":
+                merged["symbols"] = []
+                merged["usable_symbols"] = []
+                merged["selected_candidate"] = None
+                merged["selected_symbol"] = None
+                merged["candidate_source"] = "none"
+                merged["candidate_rankings"] = []
+                merged["rejected_symbols"] = []
+                merged["recommendation"] = {
+                    "status": "no_qualified_setup",
+                    "symbol": None,
+                    "non_real_data_used": False,
+                    "synthetic_data_used": False,
+                    "reason": "no_real_scanner_candidates",
+                }
+                merged["decision"] = "no_qualified_setup"
+                merged["blockers"] = sorted(set((merged.get("blockers") or []) + ["no_real_scanner_candidates"]))
+                agentic_applied = True
+
+        merged["agentic_decision_applied"] = agentic_applied
+        merged["llm_used"] = reasoning.reasoning_status == "completed" and bool(reasoning.llm_used)
+        merged["submitted_order"] = False
+        merged["broker_called"] = False
         merged["llm_used_for_trade_decision"] = False
         return merged, reasoning_payload, warnings
     except Exception as exc:  # Defensive: reasoning must never break deterministic agent execution.
