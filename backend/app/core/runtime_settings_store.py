@@ -46,8 +46,8 @@ DEFAULT_RUNTIME_SETTINGS: dict[str, Any] = {
     "LLM_GATEWAY_DEFAULT_FALLBACK_MODEL": "local-placeholder",
     "EMBEDDINGS_ENABLE_PAID_CALLS": False,
     # Market Data Settings
-    "MARKET_DATA_PROVIDER": "yfinance",
-    "MARKET_DATA_PROVIDER_PRIORITY": "polygon,alpaca,yfinance",
+    "MARKET_DATA_PROVIDER": "alpaca",
+    "MARKET_DATA_PROVIDER_PRIORITY": "alpaca,polygon,yfinance",
     "MARKET_DATA_PROVIDER_TIMEOUT_SECONDS": 10,
     "ALPACA_MARKET_DATA_ENABLED": False,
     # When false, upper workflow results (market phase, universe selection, etc.) are kept in-process only — not written to Postgres and /latest skips DB.

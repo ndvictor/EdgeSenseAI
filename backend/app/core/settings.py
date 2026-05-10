@@ -54,7 +54,7 @@ class Settings(BaseSettings):
     market_data_mode: str = Field(default="provider", alias="MARKET_DATA_MODE")
     allow_mock_market_data: bool = Field(default=False, alias="ALLOW_MOCK_MARKET_DATA")
     allow_synthetic_market_data: bool = Field(default=False, alias="ALLOW_SYNTHETIC_MARKET_DATA")
-    market_data_provider: str = Field(default="yfinance", alias="MARKET_DATA_PROVIDER")
+    market_data_provider: str = Field(default="alpaca", alias="MARKET_DATA_PROVIDER")
     market_data_provider_priority_raw: str = Field(default="alpaca,polygon,yfinance", alias="MARKET_DATA_PROVIDER_PRIORITY")
     market_data_provider_timeout_seconds: int = Field(default=10, alias="MARKET_DATA_PROVIDER_TIMEOUT_SECONDS")
 
