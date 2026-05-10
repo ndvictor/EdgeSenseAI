@@ -4,22 +4,31 @@ from datetime import datetime
 from typing import Any
 from zoneinfo import ZoneInfo
 
+from app.services.market_session_service import get_market_session_state
 from app.services.session_router.models import SessionEvaluateRequest, SessionEvaluation, SessionRouterStatusResponse, iso_utc_now
-from app.services.session_router.rules import (
-    CT_TZ,
-    SUPPORTED_SESSIONS,
-    evaluate_market_calendar_checker,
-    evaluate_session_time_checker,
-    session_rules_v1,
-)
+from app.services.session_router.rules import SUPPORTED_SESSIONS
 
-# In-memory latest evaluation (single-process; deterministic and test-friendly).
 _LATEST_SESSION: SessionEvaluation | None = None
 
 
 def _deterministic_session_id(evaluated_at_iso: str) -> str:
     compact = evaluated_at_iso.replace("-", "").replace(":", "").replace(".000", "").replace("Z", "Z")
     return f"sr_{compact}"
+
+
+def _parse_requested_time(request: SessionEvaluateRequest) -> datetime | None:
+    if request.use_current_time or not request.timestamp:
+        return None
+    dt = datetime.fromisoformat(request.timestamp.replace("Z", "+00:00"))
+    if dt.tzinfo is None:
+        dt = dt.replace(tzinfo=ZoneInfo(request.timezone or "America/Chicago"))
+    return dt
+
+
+def _legacy_session_name(market_session: str) -> str:
+    if market_session == "regular_market":
+        return "market_open"
+    return market_session
 
 
 def get_latest_session() -> SessionEvaluation | None:
@@ -37,62 +46,23 @@ def build_status() -> SessionRouterStatusResponse:
         summary={
             "router_status": "ready",
             "llm_required": False,
-            "calendar_mode": "us_equities_basic",
+            "calendar_mode": "shared_market_session_service",
             "latest_session_id": (latest.session_id if latest else None),
-            "next_action": "Evaluate current or supplied timestamp to produce session context.",
+            "next_action": "Evaluate current or supplied timestamp using shared MarketSessionService.",
         },
         supported_sessions=list(SUPPORTED_SESSIONS),
         checkers=[
-            {"key": "session_time_checker", "label": "Session Time Checker", "status": "ready", "uses_llm": False},
-            {"key": "market_calendar_checker", "label": "Market Calendar Checker", "status": "ready", "uses_llm": False},
+            {"key": "market_session_service", "label": "Shared Market Session Service", "status": "ready", "uses_llm": False},
         ],
     )
 
 
-def _parse_timestamp_to_ct(request: SessionEvaluateRequest) -> tuple[datetime | None, str | None]:
-    """
-    Parse request timestamp and return datetime in Central Time, or (None, error_message).
-
-    v1 supports:
-    - use_current_time: server UTC -> Central
-    - ISO-8601 timestamp with offset (preferred)
-    - naive timestamps interpreted in provided timezone (default America/Chicago)
-    """
-    if request.use_current_time:
-        return (datetime.now(tz=ZoneInfo("UTC")).astimezone(CT_TZ), None)
-
-    if not request.timestamp:
-        return (None, "No timestamp provided and use_current_time is false.")
-
-    try:
-        dt = datetime.fromisoformat(request.timestamp)
-    except Exception as e:
-        return (None, f"Failed to parse timestamp: {e}")
-
-    try:
-        if dt.tzinfo is None:
-            tz = ZoneInfo(request.timezone or "America/Chicago")
-            dt = dt.replace(tzinfo=tz)
-        dt_ct = dt.astimezone(CT_TZ)
-        return (dt_ct, None)
-    except Exception as e:
-        return (None, f"Failed to apply timezone conversion: {e}")
-
-
 def evaluate_session(request: SessionEvaluateRequest) -> dict[str, Any]:
-    """
-    Deterministic Stage-3 session routing.
-
-    This is an AI-Agent *without* an LLM:
-    it observes time/session state, evaluates constraints, outputs a session context,
-    and stores the latest state.
-    """
     global _LATEST_SESSION
 
-    # v1 market support
     market = (request.market or "").strip().lower()
+    evaluated_at = iso_utc_now()
     if market != "us_equities":
-        evaluated_at = iso_utc_now()
         session = SessionEvaluation(
             session_id=_deterministic_session_id(evaluated_at),
             session="unknown",
@@ -108,11 +78,12 @@ def evaluate_session(request: SessionEvaluateRequest) -> dict[str, Any]:
             next_action="Fix request market or extend session router market support.",
         )
         _LATEST_SESSION = session
-        return {"status": "ok", "session": session.model_dump()}
+        return {"status": "ok", "session": session.model_dump(), "market_session_state": {}}
 
-    dt_ct, err = _parse_timestamp_to_ct(request)
-    evaluated_at = iso_utc_now()
-    if err or dt_ct is None:
+    try:
+        requested_time = _parse_requested_time(request)
+        state = get_market_session_state(requested_time, prefer_alpaca=request.use_current_time)
+    except Exception as exc:
         session = SessionEvaluation(
             session_id=_deterministic_session_id(evaluated_at),
             session="unknown",
@@ -123,35 +94,42 @@ def evaluate_session(request: SessionEvaluateRequest) -> dict[str, Any]:
             is_trading_day=False,
             is_holiday=False,
             allowed_workflow_bias=[],
-            blocked_workflow_bias=[{"workflow": "trade_execution", "reason": "Session timestamp parsing failed."}],
-            session_notes=[err or "Unknown parsing error."],
-            next_action="Provide a valid ISO timestamp with timezone offset, or set use_current_time=true.",
+            blocked_workflow_bias=[{"workflow": "trade_execution", "reason": "Session evaluation failed."}],
+            session_notes=[str(exc)],
+            next_action="Verify market session service configuration.",
         )
         _LATEST_SESSION = session
-        return {"status": "ok", "session": session.model_dump()}
+        return {"status": "ok", "session": session.model_dump(), "market_session_state": {}}
 
-    # Checkers (kept simple in v1 but included for traceability)
-    _ = evaluate_session_time_checker(dt_ct)
-    _ = evaluate_market_calendar_checker(dt_ct)
-
-    result = session_rules_v1(dt_ct)
-    market_date = dt_ct.date().isoformat()
+    blocked = []
+    allowed = ["observe_only_path", "backtest_queue_path"]
+    notes = [f"Market session resolved by {state.clock_source}."]
+    next_action = "Send session context to Stage 5 Workflow Router."
+    if state.market_session == "regular_market":
+        allowed = ["baseline_fast_path", "paper_only_path", "observe_only_path"]
+    elif state.market_session == "pre_market":
+        allowed = ["adjusted_research_path", "backtest_queue_path", "paper_only_path"]
+        blocked = [{"workflow": "trade_execution", "reason": "Pre-market execution not enabled in v1."}]
+    elif state.market_session == "post_market":
+        allowed = ["adjusted_research_path", "backtest_queue_path", "learning_loop"]
+        blocked = [{"workflow": "trade_execution", "reason": "Post-market execution not enabled in v1."}]
+    else:
+        blocked = [{"workflow": "trade_execution", "reason": "Market is closed."}]
+        notes.append("Market is closed; worker scanner should not scan.")
 
     session = SessionEvaluation(
         session_id=_deterministic_session_id(evaluated_at),
-        session=result.session,
+        session=_legacy_session_name(state.market_session),
         market="us_equities",
-        timezone="America/Chicago",
+        timezone="America/New_York",
         evaluated_at=evaluated_at,
-        market_date=market_date,
-        is_trading_day=result.is_trading_day,
-        is_holiday=result.is_holiday,
-        allowed_workflow_bias=result.allowed_workflow_bias,
-        blocked_workflow_bias=result.blocked_workflow_bias,
-        session_notes=result.session_notes,
-        next_action=result.next_action,
+        market_date=state.market_date,
+        is_trading_day=state.is_trading_day,
+        is_holiday=False,
+        allowed_workflow_bias=allowed,
+        blocked_workflow_bias=blocked,
+        session_notes=notes + list(state.warnings or []),
+        next_action=next_action,
     )
-
     _LATEST_SESSION = session
-    return {"status": "ok", "session": session.model_dump()}
-
+    return {"status": "ok", "session": session.model_dump(), "market_session_state": state.model_dump()}
