@@ -109,7 +109,7 @@ class DecisionAuditor:
         text_original = " ".join(text_parts)
         text_upper = text_original.upper()
 
-        if not allowed and audited.decision == "candidate_selected":
+        if not allowed and audited.decision in {"candidate_selected", "candidates_selected"}:
             audited.hard_blockers.append("recommendation_with_zero_candidates")
             audited.reasoning_status = "audit_rejected"
             audited.decision = "no_qualified_setup"
@@ -213,6 +213,9 @@ class DecisionAuditor:
             audited.hard_blockers.append("agent_invented_candidates_with_zero_evidence")
             audited.reasoning_status = "audit_rejected"
 
+        if audited.agent_key == "alpha_engine_agent":
+            DecisionAuditor._audit_alpha_decision(audited, evidence, allowed, known_prices, text_upper)
+
         audited.submitted_order = False
         audited.broker_called = False
         audited.llm_used_for_trade_decision = False
@@ -226,4 +229,116 @@ class DecisionAuditor:
             audited.rejected_symbols = []
             audited.candidate_rankings = []
             audited.candidate_source = "none"
+            audited.symbol = None
+            audited.strategy_key = None
+            audited.setup_type = None
+            audited.entry_plan = {}
+            audited.recommendation_id = None
+            audited.predicted_return_pct = None
+            audited.predicted_return_r = None
+            audited.predicted_win_probability = None
+            audited.predicted_expected_value_r = None
+            audited.prediction_horizon_minutes = None
+            audited.prediction_model_key = None
+            audited.prediction_reason = None
         return audited
+
+    @staticmethod
+    def _collect_strategy_keys(value: Any) -> set[str]:
+        keys: set[str] = set()
+        if isinstance(value, str) and value.strip():
+            keys.add(value.strip())
+        elif isinstance(value, dict):
+            for key, item in value.items():
+                if isinstance(key, str) and key.strip() and key.endswith("_v1"):
+                    keys.add(key.strip())
+                if key in {"strategy_key", "selected_strategy_key", "alpha_strategy_key"} and isinstance(item, str) and item.strip():
+                    keys.add(item.strip())
+                else:
+                    keys.update(DecisionAuditor._collect_strategy_keys(item))
+        elif isinstance(value, list):
+            for item in value:
+                keys.update(DecisionAuditor._collect_strategy_keys(item))
+        return keys
+
+    @staticmethod
+    def _has_trained_model_evidence(evidence: EvidencePack, symbol: str | None, strategy_key: str | None) -> bool:
+        registry = evidence.model_registry or {}
+        raw = registry.get("trained_model_evidence")
+        if raw is True:
+            return True
+        if isinstance(raw, dict):
+            candidates = ["global"]
+            if symbol:
+                candidates.extend([symbol, symbol.upper()])
+            if strategy_key:
+                candidates.append(strategy_key)
+            if any(bool(raw.get(key)) for key in candidates):
+                return True
+        selected = registry.get("selected_model_key")
+        selected_many = registry.get("selected_model_keys")
+        if isinstance(selected, str) and selected.strip():
+            return True
+        if isinstance(selected_many, list) and any(str(item).strip() for item in selected_many):
+            return True
+        return False
+
+    @staticmethod
+    def _audit_alpha_decision(
+        audited: DeepAgentDecision,
+        evidence: EvidencePack,
+        allowed: set[str],
+        known_prices: dict[str, list[float]],
+        text_upper: str,
+    ) -> None:
+        symbol = str(audited.symbol or "").upper().strip()
+        if audited.decision == "candidate_selected":
+            if not symbol:
+                audited.hard_blockers.append("alpha_selected_symbol_missing")
+                audited.reasoning_status = "audit_rejected"
+            elif symbol not in allowed:
+                audited.hard_blockers.append(f"hallucinated_symbol:{symbol}")
+                audited.reasoning_status = "audit_rejected"
+        elif symbol and symbol not in allowed:
+            audited.hard_blockers.append(f"hallucinated_symbol:{symbol}")
+            audited.reasoning_status = "audit_rejected"
+
+        if not allowed and (symbol or audited.strategy_key or audited.entry_plan):
+            audited.hard_blockers.append("alpha_recommendation_with_zero_candidates")
+            audited.reasoning_status = "audit_rejected"
+
+        strategy_key = str(audited.strategy_key or "").strip()
+        if strategy_key:
+            allowed_strategy_keys = DecisionAuditor._collect_strategy_keys(evidence.strategy_registry)
+            if strategy_key not in allowed_strategy_keys:
+                audited.hard_blockers.append(f"unknown_strategy_key:{strategy_key}")
+                audited.reasoning_status = "audit_rejected"
+
+        entry_plan = audited.entry_plan if isinstance(audited.entry_plan, dict) else {}
+        if entry_plan:
+            if not symbol or symbol not in allowed:
+                audited.hard_blockers.append("alpha_entry_plan_without_allowed_symbol")
+                audited.reasoning_status = "audit_rejected"
+            for price_key in ("entry", "stop", "target"):
+                raw_price = entry_plan.get(price_key)
+                if raw_price is None:
+                    continue
+                try:
+                    price = float(raw_price)
+                except (TypeError, ValueError):
+                    audited.hard_blockers.append(f"invented_price:{symbol}:{raw_price}")
+                    audited.reasoning_status = "audit_rejected"
+                    continue
+                if symbol and price not in known_prices.get(symbol, []):
+                    audited.hard_blockers.append(f"invented_price:{symbol}:{price:g}")
+                    audited.reasoning_status = "audit_rejected"
+
+        prediction_model_key = str(audited.prediction_model_key or "").strip()
+        claims_trained_model = (
+            bool(prediction_model_key and prediction_model_key != "heuristic_alpha_v1")
+            or "TRAINED MODEL" in text_upper
+            or "MODEL INFERENCE" in text_upper
+        )
+        if claims_trained_model and not DecisionAuditor._has_trained_model_evidence(evidence, symbol or None, strategy_key or None):
+            audited.hard_blockers.append("trained_model_claim_without_evidence")
+            audited.reasoning_status = "audit_rejected"

@@ -185,6 +185,57 @@ def _known_prices(rows: list[dict[str, Any]]) -> dict[str, list[float]]:
     return {symbol: sorted(values) for symbol, values in prices.items() if values}
 
 
+def _strategy_registry_from_state(workflow_state: dict[str, Any]) -> dict[str, Any]:
+    registry: dict[str, Any] = {}
+    raw_registry = workflow_state.get("strategy_registry")
+    if isinstance(raw_registry, dict):
+        registry.update(raw_registry)
+    for key in ("selected_strategy_key", "strategy_key", "alpha_strategy_key"):
+        value = workflow_state.get(key)
+        if isinstance(value, str) and value.strip():
+            registry[key] = value.strip()
+    for key in ("strategy_keys", "selected_strategy_keys"):
+        value = workflow_state.get(key)
+        if isinstance(value, list):
+            registry[key] = [str(item).strip() for item in value if str(item).strip()]
+    for key in ("evidence_score_by_strategy", "proof_status_by_strategy"):
+        value = workflow_state.get(key)
+        if isinstance(value, dict):
+            registry[key] = dict(value)
+    try:
+        from app.services.alpha_engine.playbook_registry import get_intraday_playbooks
+
+        registry["alpha_playbooks"] = [
+            {
+                "strategy_key": str(playbook.get("strategy_key") or ""),
+                "setup_type": playbook.get("setup_type"),
+                "status": playbook.get("status"),
+            }
+            for playbook in get_intraday_playbooks()
+            if playbook.get("strategy_key")
+        ]
+    except Exception:
+        pass
+    return registry
+
+
+def _model_registry_from_state(workflow_state: dict[str, Any]) -> dict[str, Any]:
+    registry: dict[str, Any] = {}
+    raw_registry = workflow_state.get("model_registry")
+    if isinstance(raw_registry, dict):
+        registry.update(raw_registry)
+    registry.update(
+        {
+            "selected_model_key": workflow_state.get("selected_model_key"),
+            "selected_model_keys": workflow_state.get("selected_model_keys") or [],
+            "model_score_by_symbol": workflow_state.get("model_score_by_symbol") if isinstance(workflow_state.get("model_score_by_symbol"), dict) else {},
+            "trained_model_evidence": workflow_state.get("trained_model_evidence"),
+            "prediction_model_key": workflow_state.get("prediction_model_key"),
+        }
+    )
+    return registry
+
+
 class EvidencePackBuilder:
     """Build a closed-world evidence pack without fetching data or symbols."""
 
@@ -209,6 +260,9 @@ class EvidencePackBuilder:
         candidate_features = _dict_list(workflow_state.get("candidate_features")) or _dict_list(workflow_state.get("feature_rows"))
         candidate_features = _filter_real_rows(candidate_features)
         allowed_symbols = sorted(_symbols_from_rows(scanner_rows) | _symbols_from_rows(candidate_features))
+        if agent_key == "alpha_engine_agent" and isinstance(workflow_state.get("usable_symbols"), list):
+            watchlist_symbols = {str(symbol).strip().upper() for symbol in workflow_state["usable_symbols"] if str(symbol).strip()}
+            allowed_symbols = sorted(set(allowed_symbols) | watchlist_symbols)
 
         alpha = workflow_state.get("alpha_recommendation") if isinstance(workflow_state.get("alpha_recommendation"), dict) else {}
         alpha_symbol = str(alpha.get("symbol") or workflow_state.get("alpha_selected_symbol") or "").strip().upper()
@@ -223,6 +277,7 @@ class EvidencePackBuilder:
             allowed_symbols=allowed_symbols,
             scanner_candidates=scanner_rows,
             candidate_features=candidate_features,
+            candidate_rankings=_dict_list(workflow_state.get("candidate_rankings")),
             scanner_diagnostics=scanner_diagnostics,
             worker_status_summary={
                 "data_ingestion": workflow_state.get("data_ingestion_status"),
@@ -249,11 +304,8 @@ class EvidencePackBuilder:
                 "require_human_approval": True,
             },
             alpha_recommendation=alpha,
-            strategy_registry={"selected_strategy_key": workflow_state.get("selected_strategy_key") or workflow_state.get("strategy_key")},
-            model_registry={
-                "selected_model_key": workflow_state.get("selected_model_key"),
-                "selected_model_keys": workflow_state.get("selected_model_keys") or [],
-            },
+            strategy_registry=_strategy_registry_from_state(workflow_state),
+            model_registry=_model_registry_from_state(workflow_state),
             risk_sizing_context={
                 "latest_price": workflow_state.get("latest_price"),
                 "spread_bps": workflow_state.get("spread_bps"),

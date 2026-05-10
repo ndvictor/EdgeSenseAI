@@ -12,7 +12,7 @@ from app.services.deepagents_runtime.safety import DecisionAuditor
 from app.services.deepagents_runtime.subagents import SubagentRegistry, default_subagent_registry
 from app.services.deepagents_runtime.tools import DeepAgentToolRegistry, default_tool_registry
 
-_WATCHLIST_ONLY_AGENT_KEYS = {"watchlist_builder_agent"}
+_SUPPORTED_AGENT_KEYS = {"watchlist_builder_agent", "alpha_engine_agent"}
 
 
 def _env_bool(name: str, default: bool = False) -> bool:
@@ -92,6 +92,24 @@ def _decision_from_raw(raw: Any, *, evidence: EvidencePack, prompt_hash: str, ou
     payload.setdefault("rejected_symbols", [])
     payload.setdefault("candidate_rankings", [])
     payload.setdefault("candidate_source", None)
+    payload.setdefault("symbol", None)
+    payload.setdefault("strategy_key", None)
+    payload.setdefault("setup_type", None)
+    payload.setdefault("scanner_score", None)
+    payload.setdefault("model_score", None)
+    payload.setdefault("evidence_score", None)
+    payload.setdefault("small_account_score", None)
+    payload.setdefault("strategy_fit_score", None)
+    payload.setdefault("final_score", None)
+    payload.setdefault("entry_plan", {})
+    payload.setdefault("recommendation_id", None)
+    payload.setdefault("predicted_return_pct", None)
+    payload.setdefault("predicted_return_r", None)
+    payload.setdefault("predicted_win_probability", None)
+    payload.setdefault("predicted_expected_value_r", None)
+    payload.setdefault("prediction_horizon_minutes", None)
+    payload.setdefault("prediction_model_key", None)
+    payload.setdefault("prediction_reason", None)
     payload["llm_used"] = True
     payload["llm_model"] = payload.get("llm_model") or model
     payload["prompt_hash"] = payload.get("prompt_hash") or prompt_hash
@@ -118,7 +136,7 @@ class DeepAgentSupervisor:
 
     @staticmethod
     def supported_agent(agent_key: str) -> bool:
-        return agent_key in _WATCHLIST_ONLY_AGENT_KEYS
+        return agent_key in _SUPPORTED_AGENT_KEYS
 
     def reason(self, *, evidence: EvidencePack, context: DeepAgentRunContext | None = None, objective: str | None = None) -> DeepAgentDecision:
         """Run controlled advisory reasoning. Deterministic gates remain final."""
@@ -127,7 +145,7 @@ class DeepAgentSupervisor:
                 agent_key=evidence.agent_key,
                 decision=_fallback_decision_for_evidence(evidence),  # type: ignore[arg-type]
                 reasoning_status="disabled",
-                thesis="DeepAgents reasoning is currently integrated only with watchlist_builder_agent.",
+                thesis="DeepAgents reasoning is currently integrated only with watchlist_builder_agent and alpha_engine_agent.",
                 soft_warnings=["deepagent_not_integrated_for_agent"],
             )
         if not _reasoning_enabled():
@@ -172,7 +190,7 @@ class DeepAgentSupervisor:
                 "required_output": {
                     "agent_key": evidence.agent_key,
                     "reasoning_status": "completed",
-                    "decision": "candidate_selected | no_qualified_setup | data_unavailable | blocked | needs_more_evidence | plan_only",
+                    "decision": "candidate_selected | candidates_selected | no_qualified_setup | data_unavailable | blocked | needs_more_evidence | plan_only",
                     "confidence": "number between 0 and 1",
                     "thesis": "short evidence-based thesis",
                     "bull_case": [],
@@ -188,6 +206,35 @@ class DeepAgentSupervisor:
                     "rejected_symbols": [{"symbol": "...", "reason": "..."}],
                     "candidate_rankings": [{"symbol": "...", "score": "0..1", "reason": "..."}],
                     "candidate_source": "scanner | worker_output_scanner | manual_request | none",
+                    # Alpha-specific structured recommendation (only for alpha_engine_agent).
+                    "symbol": "single selected symbol from allowed_symbols, or null",
+                    "strategy_key": "must be present in strategy_registry / Alpha evidence, or null",
+                    "setup_type": "evidence-backed setup label, or null",
+                    "scanner_score": "number or null",
+                    "model_score": "number or null",
+                    "evidence_score": "number or null",
+                    "small_account_score": "number or null",
+                    "strategy_fit_score": "number or null",
+                    "final_score": "number or null",
+                    "entry_plan": {
+                        "entry": "evidence-backed price or null",
+                        "stop": "evidence-backed/derived price or null",
+                        "target": "evidence-backed/derived price or null",
+                        "risk_per_share": "number or null",
+                        "risk_dollars": "number or null",
+                        "expected_r": "number or null",
+                        "position_size_estimate": "number or null",
+                        "plan_type": "string or null",
+                        "notes": [],
+                    },
+                    "recommendation_id": "string or null",
+                    "predicted_return_pct": "number or null",
+                    "predicted_return_r": "number or null",
+                    "predicted_win_probability": "number or null",
+                    "predicted_expected_value_r": "number or null",
+                    "prediction_horizon_minutes": "integer or null",
+                    "prediction_model_key": "heuristic/model key or null",
+                    "prediction_reason": "string or null",
                     "llm_used": True,
                     "submitted_order": False,
                     "broker_called": False,

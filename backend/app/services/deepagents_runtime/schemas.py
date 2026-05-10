@@ -94,6 +94,7 @@ class EvidencePack(BaseModel):
     allowed_symbols: list[str]
     scanner_candidates: list[dict[str, Any]] = Field(default_factory=list)
     candidate_features: list[dict[str, Any]] = Field(default_factory=list)
+    candidate_rankings: list[dict[str, Any]] = Field(default_factory=list)
     scanner_diagnostics: dict[str, Any] = Field(default_factory=dict)
     worker_status_summary: dict[str, Any] = Field(default_factory=dict)
     provider_status: dict[str, Any] = Field(default_factory=dict)
@@ -116,6 +117,8 @@ class EvidencePack(BaseModel):
 
 
 class DeepAgentDecision(BaseModel):
+    model_config = {"protected_namespaces": ()}
+
     agent_key: str
     reasoning_status: ReasoningStatus
     decision: ReasoningDecision
@@ -139,6 +142,28 @@ class DeepAgentDecision(BaseModel):
     rejected_symbols: list[dict[str, Any]] = Field(default_factory=list)
     candidate_rankings: list[dict[str, Any]] = Field(default_factory=list)
     candidate_source: str | None = None
+    # Alpha Engine agentic-decision fields (optional; populated for
+    # ``alpha_engine_agent`` only). These mirror the deterministic Alpha
+    # recommendation shape so an accepted audited decision can replace the
+    # alpha output without touching broker/execution code.
+    symbol: str | None = None
+    strategy_key: str | None = None
+    setup_type: str | None = None
+    scanner_score: float | None = None
+    model_score: float | None = None
+    evidence_score: float | None = None
+    small_account_score: float | None = None
+    strategy_fit_score: float | None = None
+    final_score: float | None = None
+    entry_plan: dict[str, Any] = Field(default_factory=dict)
+    recommendation_id: str | None = None
+    predicted_return_pct: float | None = None
+    predicted_return_r: float | None = None
+    predicted_win_probability: float | None = None
+    predicted_expected_value_r: float | None = None
+    prediction_horizon_minutes: int | None = None
+    prediction_model_key: str | None = None
+    prediction_reason: str | None = None
     submitted_order: bool = False
     broker_called: bool = False
     llm_used_for_trade_decision: bool = False

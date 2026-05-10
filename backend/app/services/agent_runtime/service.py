@@ -125,6 +125,96 @@ def _trace_event(event: str, details: dict[str, Any] | None = None) -> dict[str,
     return {"event": event, "details": details or {}, "at": iso_utc_now()}
 
 
+def _empty_alpha_entry_plan() -> dict[str, Any]:
+    return {
+        "entry": None,
+        "stop": None,
+        "target": None,
+        "risk_per_share": None,
+        "risk_dollars": None,
+        "expected_r": None,
+        "position_size_estimate": None,
+        "plan_type": None,
+        "notes": [],
+    }
+
+
+def _alpha_recommendation_from_reasoning(reasoning_payload: dict[str, Any], *, status: str) -> dict[str, Any]:
+    entry_plan = reasoning_payload.get("entry_plan") if isinstance(reasoning_payload.get("entry_plan"), dict) else {}
+    entry = {**_empty_alpha_entry_plan(), **entry_plan}
+    return {
+        "status": status,
+        "symbol": reasoning_payload.get("symbol"),
+        "strategy_key": reasoning_payload.get("strategy_key"),
+        "setup_type": reasoning_payload.get("setup_type"),
+        "scanner_score": reasoning_payload.get("scanner_score"),
+        "model_score": reasoning_payload.get("model_score"),
+        "evidence_score": reasoning_payload.get("evidence_score"),
+        "small_account_score": reasoning_payload.get("small_account_score"),
+        "strategy_fit_score": reasoning_payload.get("strategy_fit_score"),
+        "final_score": reasoning_payload.get("final_score"),
+        "confidence": reasoning_payload.get("confidence"),
+        "entry_plan": entry,
+        "evidence_summary": {
+            "data_used": reasoning_payload.get("data_used") or {},
+            "bull_case": reasoning_payload.get("bull_case") or [],
+            "bear_case": reasoning_payload.get("bear_case") or [],
+        },
+        "risk_summary": {"risk_notes": reasoning_payload.get("risk_notes") or []},
+        "blockers": list(reasoning_payload.get("hard_blockers") or []),
+        "warnings": list(reasoning_payload.get("soft_warnings") or []),
+        "reason": reasoning_payload.get("thesis") or "",
+        "non_real_data_used": False,
+        "synthetic_data_used": False,
+        "submitted_order": False,
+        "broker_called": False,
+        "llm_used_for_trade_decision": False,
+        "recommendation_id": reasoning_payload.get("recommendation_id"),
+        "predicted_return_pct": reasoning_payload.get("predicted_return_pct"),
+        "predicted_return_r": reasoning_payload.get("predicted_return_r"),
+        "predicted_win_probability": reasoning_payload.get("predicted_win_probability"),
+        "predicted_expected_value_r": reasoning_payload.get("predicted_expected_value_r"),
+        "prediction_horizon_minutes": reasoning_payload.get("prediction_horizon_minutes"),
+        "prediction_model_key": reasoning_payload.get("prediction_model_key"),
+        "prediction_reason": reasoning_payload.get("prediction_reason"),
+    }
+
+
+def _safe_alpha_no_qualified(reason: str, *, blockers: list[str] | None = None, warnings: list[str] | None = None) -> dict[str, Any]:
+    return {
+        "status": "no_qualified_setup",
+        "symbol": None,
+        "strategy_key": None,
+        "setup_type": None,
+        "scanner_score": None,
+        "model_score": None,
+        "evidence_score": None,
+        "small_account_score": None,
+        "strategy_fit_score": None,
+        "final_score": None,
+        "confidence": None,
+        "entry_plan": _empty_alpha_entry_plan(),
+        "evidence_summary": {},
+        "risk_summary": {},
+        "blockers": sorted(set(blockers or [])),
+        "warnings": sorted(set(warnings or [])),
+        "reason": reason,
+        "non_real_data_used": False,
+        "synthetic_data_used": False,
+        "submitted_order": False,
+        "broker_called": False,
+        "llm_used_for_trade_decision": False,
+        "recommendation_id": None,
+        "predicted_return_pct": None,
+        "predicted_return_r": None,
+        "predicted_win_probability": None,
+        "predicted_expected_value_r": None,
+        "prediction_horizon_minutes": None,
+        "prediction_model_key": None,
+        "prediction_reason": None,
+    }
+
+
 def _attach_advisory_reasoning(
     *,
     agent_key: str,
@@ -134,7 +224,7 @@ def _attach_advisory_reasoning(
     tool_request: dict[str, Any],
     tool_response: dict[str, Any],
 ) -> tuple[dict[str, Any], dict[str, Any] | None, list[str]]:
-    """Run the watchlist DeepAgent and let the audited decision control the watchlist output.
+    """Run supported DeepAgents and let audited decisions control agent outputs.
 
     Behavior:
     * For ``watchlist_builder_agent`` and only when ``AGENT_REASONING_ENABLED=true``,
@@ -149,12 +239,16 @@ def _attach_advisory_reasoning(
       surfaced.
     * If reasoning is disabled or unavailable, the deterministic tool response
       is returned unchanged with ``reasoning_status`` attached for visibility.
+    * For ``alpha_engine_agent``, an accepted audited ``candidate_selected``
+      decision replaces ``alpha_recommendation`` / ``alpha_status`` /
+      ``alpha_selected_symbol`` / ``alpha_strategy_key``. Rejected output does
+      not overwrite the deterministic safe Alpha response.
     * Broker / submit / live-trade decision flags are always forced ``False``.
     """
     warnings: list[str] = []
     if not isinstance(tool_response, dict):
         return tool_response, None, warnings
-    if agent_key != "watchlist_builder_agent":
+    if agent_key not in {"watchlist_builder_agent", "alpha_engine_agent"}:
         return tool_response, None, warnings
     try:
         from app.services.deepagents_runtime import DeepAgentRunContext, DeepAgentSupervisor, EvidencePackBuilder
@@ -190,10 +284,13 @@ def _attach_advisory_reasoning(
         merged["reasoning_blockers"] = list(reasoning_payload.get("hard_blockers") or [])
         merged["reasoning_warnings"] = list(reasoning_payload.get("soft_warnings") or [])
         merged["agent_reasoning_enabled"] = reasoning.reasoning_status != "disabled"
-        merged["watchlist_agent_decision"] = reasoning_payload
+        if agent_key == "watchlist_builder_agent":
+            merged["watchlist_agent_decision"] = reasoning_payload
+        elif agent_key == "alpha_engine_agent":
+            merged["alpha_agent_decision"] = reasoning_payload
 
         agentic_applied = False
-        if reasoning.reasoning_status in {"completed", "blocked"}:
+        if agent_key == "watchlist_builder_agent" and reasoning.reasoning_status in {"completed", "blocked"}:
             if reasoning.decision in {"candidates_selected", "candidate_selected"}:
                 allowed = {s.upper() for s in evidence.allowed_symbols}
                 agentic_symbols = [
@@ -236,6 +333,41 @@ def _attach_advisory_reasoning(
                 }
                 merged["decision"] = "no_qualified_setup"
                 merged["blockers"] = sorted(set((merged.get("blockers") or []) + ["no_real_scanner_candidates"]))
+                agentic_applied = True
+
+        if agent_key == "alpha_engine_agent" and reasoning.reasoning_status in {"completed", "blocked"}:
+            if reasoning.decision == "candidate_selected" and reasoning.symbol:
+                alpha_payload = _alpha_recommendation_from_reasoning(reasoning_payload, status="candidate_selected")
+                merged["alpha_recommendation"] = alpha_payload
+                merged["recommendation"] = alpha_payload
+                merged["alpha_status"] = "candidate_selected"
+                merged["alpha_selected_symbol"] = str(reasoning.symbol).upper()
+                merged["alpha_strategy_key"] = reasoning.strategy_key
+                merged["alpha_score"] = reasoning.final_score
+                merged["alpha_reason"] = reasoning.thesis
+                merged["alpha_blockers"] = list(reasoning.hard_blockers or [])
+                merged["alpha_warnings"] = list(reasoning.soft_warnings or [])
+                merged["next_action"] = reasoning.recommended_next_action or "Proceed with audited Alpha-selected candidate."
+                agentic_applied = True
+            elif reasoning.decision in {"no_qualified_setup", "data_unavailable", "blocked"}:
+                status = reasoning.decision
+                alpha_payload = _safe_alpha_no_qualified(
+                    "no_real_alpha_candidates" if status == "no_qualified_setup" else (reasoning.thesis or status),
+                    blockers=list(reasoning.hard_blockers or []),
+                    warnings=list(reasoning.soft_warnings or []),
+                )
+                if status in {"data_unavailable", "blocked"}:
+                    alpha_payload["status"] = status
+                merged["alpha_recommendation"] = alpha_payload
+                merged["recommendation"] = alpha_payload
+                merged["alpha_status"] = alpha_payload["status"]
+                merged["alpha_selected_symbol"] = None
+                merged["alpha_strategy_key"] = None
+                merged["alpha_score"] = None
+                merged["alpha_reason"] = alpha_payload["reason"]
+                merged["alpha_blockers"] = list(alpha_payload["blockers"])
+                merged["alpha_warnings"] = list(alpha_payload["warnings"])
+                merged["next_action"] = reasoning.recommended_next_action or "No audited Alpha Engine candidate selected."
                 agentic_applied = True
 
         merged["agentic_decision_applied"] = agentic_applied
