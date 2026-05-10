@@ -44,10 +44,10 @@ def production_database_blocker(database_url: str | None = None) -> str | None:
 
 
 def allow_mock_market_data() -> bool:
-    raw = os.environ.get("ALLOW_MOCK_MARKET_DATA")
-    if raw is None:
-        return not is_production_environment()
-    return _truthy(raw)
+    """Mock/demo market payloads are opt-in. Production never allows them."""
+    if is_production_environment():
+        return False
+    return _truthy(os.environ.get("ALLOW_MOCK_MARKET_DATA"))
 
 
 def allow_synthetic_market_data() -> bool:

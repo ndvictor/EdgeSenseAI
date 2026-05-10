@@ -1,7 +1,8 @@
+from app.core.production_safety import allow_mock_market_data
 from app.schemas import EdgeSignal
 
 
-def build_edge_signals() -> list[EdgeSignal]:
+def _prototype_demo_edge_signals() -> list[EdgeSignal]:
     return [
         EdgeSignal(
             symbol="NVDA",
@@ -58,3 +59,9 @@ def build_edge_signals() -> list[EdgeSignal]:
             risk_factors=["liquidation cascade", "weekend liquidity", "macro correlation"],
         ),
     ]
+
+
+def build_edge_signals() -> list[EdgeSignal]:
+    if not allow_mock_market_data():
+        return []
+    return _prototype_demo_edge_signals()

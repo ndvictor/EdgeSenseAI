@@ -110,6 +110,10 @@ class EdgeSignalsResponse(BaseModel):
     alerts_enabled: bool = True
     account_range: str = "$1K-$10K"
     signals: List[EdgeSignal]
+    signal_source_status: str = Field(
+        default="no_real_signal_source",
+        description="prototype_demo when mock stub signals are returned; otherwise no_real_signal_source.",
+    )
 
 
 class ModelVote(BaseModel):

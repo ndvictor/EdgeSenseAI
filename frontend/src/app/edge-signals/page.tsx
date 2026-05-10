@@ -33,8 +33,11 @@ export default function EdgeSignalsPage() {
   return <EdgeSignalsPanel />;
 }
 
+const MOCK_SCANNER_SOURCE_ENABLED = process.env.NEXT_PUBLIC_ENABLE_MOCK_DATA === "true";
+
 export function EdgeSignalsPanel() {
   const [signals, setSignals] = useState<EdgeSignal[]>([]);
+  const [signalSourceStatus, setSignalSourceStatus] = useState<string | null>(null);
   const [lastUpdated, setLastUpdated] = useState<string>("");
   const [error, setError] = useState<string | null>(null);
   const [strategies, setStrategies] = useState<StrategyConfig[]>([]);
@@ -59,6 +62,7 @@ export function EdgeSignalsPanel() {
     Promise.all([api.getEdgeSignals(), api.getStrategies(), api.getEdgeSignalRules(), api.getMarketScanRuns(), api.getLatestMarketScanRun(), api.getLatestStrategyWorkflowRun()])
       .then(([data, strategiesData, rulesData, runsData, latestRunData, latestWorkflowData]) => {
         setSignals(data.signals);
+        setSignalSourceStatus(typeof data.signal_source_status === "string" ? data.signal_source_status : null);
         setLastUpdated(data.last_updated);
         setStrategies(strategiesData);
         setRules(rulesData);
@@ -131,6 +135,12 @@ export function EdgeSignalsPanel() {
           description="Fast signals are not recommendations by themselves. They must pass spread, liquidity, regime, and account-fit gates before they can be promoted into a top action."
         />
         {error && <div className="rounded-xl border border-amber-500/30 bg-amber-500/10 px-4 py-3 text-sm text-amber-200">{error}</div>}
+        {signalSourceStatus === "no_real_signal_source" && (
+          <div className="rounded-xl border border-slate-700 bg-slate-900 px-4 py-3 text-sm text-slate-300">
+            No live edge-signal feed is configured. Demo prototype rows are disabled unless non-production{" "}
+            <code className="rounded bg-slate-800 px-1">ALLOW_MOCK_MARKET_DATA</code> is enabled on the API.
+          </div>
+        )}
         <div className="text-sm text-slate-800">Last updated: {lastUpdated ? new Date(lastUpdated).toLocaleString() : "loading"}</div>
 
         <div className="grid grid-cols-2 gap-4 md:grid-cols-4">
@@ -225,7 +235,9 @@ export function EdgeSignalsPanel() {
             <label>
               <span className="text-xs uppercase tracking-wide text-slate-400">Data Source</span>
               <select value={scannerSource} onChange={(event) => setScannerSource(event.target.value)} className="mt-1 w-full rounded-lg border border-slate-700 bg-slate-900 px-3 py-2 text-sm text-white">
-                {["auto", "yfinance", "mock"].map((source) => <option key={source}>{source}</option>)}
+                {(MOCK_SCANNER_SOURCE_ENABLED ? ["auto", "yfinance", "mock"] : ["auto", "yfinance"]).map((source) => (
+                  <option key={source}>{source}</option>
+                ))}
               </select>
             </label>
             <label>

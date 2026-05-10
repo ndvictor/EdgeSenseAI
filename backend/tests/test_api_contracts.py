@@ -2015,11 +2015,15 @@ def test_edge_signals_contract():
     payload = response.json()
 
     assert payload["alerts_enabled"] is True
-    assert payload["signals"]
-    for signal in payload["signals"]:
-        assert 0 <= signal["confidence"] <= 1
-        assert signal["recommended_action"]
-        assert signal["risk_factors"]
+    assert payload.get("signal_source_status") in {"prototype_demo", "no_real_signal_source"}
+    if payload["signal_source_status"] == "prototype_demo":
+        assert payload["signals"]
+        for signal in payload["signals"]:
+            assert 0 <= signal["confidence"] <= 1
+            assert signal["recommended_action"]
+            assert signal["risk_factors"]
+    else:
+        assert payload["signals"] == []
 
 
 def test_candidates_status_contract():

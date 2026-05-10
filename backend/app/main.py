@@ -89,6 +89,7 @@ from app.api.routes.upper_workflow import router as upper_workflow_router
 from app.api.routes.watchlists import router as watchlists_router
 from app.api.routes.pipeline_automation import router as pipeline_automation_router
 from app.core.effective_runtime import effective_str
+from app.core.production_safety import allow_mock_market_data
 from app.core.settings import settings
 from app.data_providers.base import MarketCandlesResponse, MarketSnapshot
 from app.data_providers.provider_factory import get_market_data_provider
@@ -312,7 +313,7 @@ def _command_center_data_source_confirmation(
     from app.core.effective_runtime import effective_bool, effective_str, news_provider_priority_from_runtime
     from app.services.market_data_service import market_data_provider_priority_from_runtime
 
-    primary = (effective_str("MARKET_DATA_PROVIDER") or "mock").lower().strip()
+    primary = (effective_str("MARKET_DATA_PROVIDER") or "alpaca").lower().strip()
     return CommandCenterDataSourceConfirmation(
         market_data_primary=primary,
         market_data_fallback_chain=list(market_data_provider_priority_from_runtime()),
@@ -588,7 +589,9 @@ def scan_live_watchlist():
 
 @app.get("/api/edge-signals/latest", response_model=EdgeSignalsResponse)
 def get_edge_signals():
-    return EdgeSignalsResponse(signals=build_edge_signals())
+    signals = build_edge_signals()
+    status = "prototype_demo" if signals else "no_real_signal_source"
+    return EdgeSignalsResponse(signals=signals, signal_source_status=status)
 
 
 @app.post("/api/edge-signals/scan", response_model=EdgeSignalsResponse)
@@ -611,8 +614,10 @@ def _resolved_market_provider(provider: str | None) -> str:
     if provider and provider.strip():
         p = provider.strip().lower()
         if p != "auto":
+            if p == "mock" and not allow_mock_market_data():
+                return (effective_str("MARKET_DATA_PROVIDER") or "alpaca").lower().strip()
             return p
-    return (effective_str("MARKET_DATA_PROVIDER") or "mock").lower().strip()
+    return (effective_str("MARKET_DATA_PROVIDER") or "alpaca").lower().strip()
 
 
 @app.get("/api/market/{symbol}/snapshot", response_model=MarketSnapshot)

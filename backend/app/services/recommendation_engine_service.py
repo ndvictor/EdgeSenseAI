@@ -1,3 +1,4 @@
+from app.core.production_safety import allow_mock_market_data
 from app.schemas import ModelVote, PricePlan, Recommendation, RiskPlan, TradeRecommendation
 
 
@@ -36,7 +37,7 @@ def build_model_votes() -> list[ModelVote]:
     ]
 
 
-def build_top_action_recommendation() -> TradeRecommendation:
+def _legacy_demo_top_action() -> TradeRecommendation:
     return TradeRecommendation(
         symbol="AMD",
         asset_class="stock",
@@ -82,7 +83,47 @@ def build_top_action_recommendation() -> TradeRecommendation:
     )
 
 
-def build_alternative_recommendations() -> list[Recommendation]:
+def _unavailable_top_action() -> TradeRecommendation:
+    return TradeRecommendation(
+        symbol="UNAVAILABLE",
+        asset_class="stock",
+        action="watch",
+        action_label="LEGACY DEMO DISABLED",
+        horizon="swing",
+        confidence=0.0,
+        final_score=0,
+        urgency="low",
+        price_plan=PricePlan(
+            current_price=0.0,
+            buy_zone_low=0.0,
+            buy_zone_high=0.0,
+            stop_loss=0.0,
+            target_price=0.0,
+            target_2_price=0.0,
+        ),
+        risk_plan=RiskPlan(
+            position_size_dollars=0.0,
+            max_dollar_risk=0.0,
+            max_loss_percent=0.0,
+            expected_return_percent=0.0,
+            reward_risk_ratio=0.0,
+            account_fit="unavailable",
+        ),
+        model_votes=[],
+        final_reason="Legacy prototype recommendation engine disabled unless ALLOW_MOCK_MARKET_DATA is enabled (non-production).",
+        invalidation_rules=[],
+        risk_factors=["legacy_demo_disabled"],
+        data_mode="source_unavailable",
+    )
+
+
+def build_top_action_recommendation() -> TradeRecommendation:
+    if not allow_mock_market_data():
+        return _unavailable_top_action()
+    return _legacy_demo_top_action()
+
+
+def _legacy_alternatives() -> list[Recommendation]:
     return [
         Recommendation(
             symbol="AMD",
@@ -111,3 +152,9 @@ def build_alternative_recommendations() -> list[Recommendation]:
             risk_factors=["liquidation cascade", "volatility spike"],
         ),
     ]
+
+
+def build_alternative_recommendations() -> list[Recommendation]:
+    if not allow_mock_market_data():
+        return []
+    return _legacy_alternatives()

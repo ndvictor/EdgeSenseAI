@@ -112,6 +112,8 @@ class MarketDataService:
     def get_price_history(self, symbol: str, period: str = "6mo", interval: str = "1d", source: str | None = None) -> Dict[str, Any]:
         requested_source = (source or "auto").lower().strip()
         if requested_source == "mock":
+            if not allow_mock_market_data():
+                return self._get_unavailable_history(symbol, period, interval, error="mock_market_data_disabled")
             return self._get_mock_history(symbol, period, interval)
 
         yfinance_error = None

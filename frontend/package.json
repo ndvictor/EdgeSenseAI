@@ -15,7 +15,6 @@
     "@tailwindcss/postcss": "^4",
     "@workos-inc/node": "^8.11.0",
     "clsx": "^2.1.1",
-    "faker": "^5.5.3",
     "framer-motion": "^12.38.0",
     "lightweight-charts": "^5.2.0",
     "lucide-react": "^1.14.0",

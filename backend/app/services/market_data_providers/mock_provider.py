@@ -1,5 +1,6 @@
 from typing import Any, Dict
 
+from app.core.production_safety import allow_mock_market_data
 from app.services.market_data_providers.base import MARKET_DATA_FIELDS, MarketDataProvider
 
 
@@ -85,24 +86,21 @@ class MockMarketDataProvider(MarketDataProvider):
     }
 
     def get_snapshot(self, symbol: str) -> Dict[str, Any]:
+        if not allow_mock_market_data():
+            return self._response(
+                symbol=symbol,
+                data_quality="unavailable",
+                error="mock_market_data_disabled",
+                values={},
+            )
         values = self.snapshots.get(symbol.upper())
         if not values:
-            base_price = 100.0
-            values = {
-                "current_price": base_price,
-                "previous_close": base_price * 0.99,
-                "change_percent": 1.0,
-                "day_high": base_price * 1.02,
-                "day_low": base_price * 0.98,
-                "volume": 1000000,
-                "average_volume": 1000000,
-                "bid": base_price - 0.02,
-                "ask": base_price + 0.02,
-                "bid_ask_spread": 0.04,
-                "market_cap": None,
-                "sector": "Unknown",
-                "industry": "Unknown",
-            }
+            return self._response(
+                symbol=symbol,
+                data_quality="unavailable",
+                error="unknown_symbol",
+                values={},
+            )
         values = dict(values)
         values["source_fields_used"] = {"price_source": "mock.current_price", "previous_close_source": "mock.previous_close"}
         response = self._response(
