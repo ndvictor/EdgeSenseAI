@@ -22,7 +22,7 @@ fi
 
 create_or_update_job() {
   local name="$1"
-  local module="$2"
+  local command_path="$2"
   local schedule="$3"
 
   local env_args=(
@@ -57,8 +57,7 @@ create_or_update_job() {
       --replica-timeout 600 \
       --replica-retry-limit 1 \
       --set-env-vars "${env_args[@]}" \
-      --command python \
-      --args "-m $module" >/dev/null
+      --command "$command_path" >/dev/null
   else
     az containerapp job create \
       --name "$name" \
@@ -73,13 +72,12 @@ create_or_update_job() {
       --cpu 1.0 \
       --memory 2Gi \
       --env-vars "${env_args[@]}" \
-      --command python \
-      --args "-m $module" >/dev/null
+      --command "$command_path" >/dev/null
   fi
 }
 
-create_or_update_job "edgesenseai-market-scan-job" "app.workers.market_scanner_worker" "*/5 * * * *"
-create_or_update_job "edgesenseai-data-ingest-job" "app.workers.data_ingestion_worker" "*/5 * * * *"
-create_or_update_job "edgesenseai-feature-pipe-job" "app.workers.feature_pipeline_worker" "*/5 * * * *"
+create_or_update_job "edgesenseai-market-scan-job" "/app/scripts/run_market_scanner_worker.sh" "*/5 * * * *"
+create_or_update_job "edgesenseai-data-ingest-job" "/app/scripts/run_data_ingestion_worker.sh" "*/5 * * * *"
+create_or_update_job "edgesenseai-feature-pipe-job" "/app/scripts/run_feature_pipeline_worker.sh" "*/5 * * * *"
 
 echo "Worker jobs configured with existing image: $IMAGE"

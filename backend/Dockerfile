@@ -17,6 +17,10 @@ RUN python -m pip install --upgrade pip setuptools wheel \
     && pip install --prefer-binary --no-cache-dir -r requirements.prod.txt
 
 COPY app ./app
+COPY scripts ./scripts
+RUN chmod +x /app/scripts/run_market_scanner_worker.sh \
+    /app/scripts/run_data_ingestion_worker.sh \
+    /app/scripts/run_feature_pipeline_worker.sh
 
 EXPOSE 8900
 
