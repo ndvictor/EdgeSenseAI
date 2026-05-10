@@ -1,0 +1,83 @@
+---
+description: Locked owner-risk percent convention; do not change without explicit user approval
+alwaysApply: true
+---
+
+# Owner risk policy: percent convention is LOCKED
+
+This convention is final. **Do not "improve", "simplify", or auto-detect** percent
+inputs. Do not flip back to a decimal (`0.01`-style) policy. Do not introduce a
+helper that "tries decimal first then percent". Any change to the rules below
+requires an explicit instruction from the user that names this rule.
+
+## Authoritative rule
+
+Owner-policy values cross the boundary as **human percent values**:
+
+- `max_risk_per_trade_pct = 0.5` means **0.5%**
+- `max_daily_loss_pct = 1.5` means **1.5%**
+- `max_position_notional_pct = 100` means **100%**
+
+The deterministic sizing service in
+`backend/app/services/fractional_sizing_service.py` converts percent → decimal
+fraction **exactly once** via `_percent_to_fraction`:
+
+```python
+risk_fraction              = max_risk_per_trade_pct    / 100.0
+daily_loss_fraction        = max_daily_loss_pct        / 100.0
+position_notional_fraction = max_position_notional_pct / 100.0
+```
+
+Internal working variables MUST be named with the `_fraction` suffix:
+`max_risk_per_trade_fraction`, `max_daily_loss_fraction`,
+`max_position_notional_fraction`.
+
+## Hard prohibitions
+
+- Do **not** treat `0.5` as `50%`, `1.5` as `150%`, or `100` as `10000%`.
+- Do **not** divide by 100 in adapters/wrappers/UI code. Conversion happens
+  exactly once, inside `_percent_to_fraction`.
+- Do **not** add an "autodetect" branch (`pct > 0.05 ? pct/100 : pct`).
+- Do **not** reintroduce `DEFAULT_ACCOUNT_EQUITY` or `DEFAULT_BUYING_POWER`.
+  Missing account state surfaces as `data_unavailable` with explicit blockers.
+- Do **not** rename the public input fields away from `_pct` / `_percent`.
+  External callers and the workflow state contract depend on those names.
+
+## Adapters pass percent through unchanged
+
+`backend/app/services/agent_runtime/wrappers/small_account_feasibility_adapter.py`
+uses `_percent_or_none` (a passthrough), never a `/100` divider. Both
+`max_risk_per_trade_pct` and `max_risk_per_trade_percent` are percent units.
+
+## Validation
+
+`_percent_to_fraction` accepts inputs in `(0, 100]`. `None` quietly uses the
+configured default. Any other value (`0`, negative, `> 100`, non-numeric) falls
+back to the default and emits `risk_policy_default_used` (plus a labeled
+warning) so the auditor can flag it.
+
+## Defaults (percent units)
+
+```python
+MAX_RISK_PER_TRADE_PCT    = 0.5    # 0.5%
+MAX_DAILY_LOSS_PCT        = 1.5    # 1.5%
+MAX_POSITION_NOTIONAL_PCT = 100.0  # 100%
+```
+
+## Required tests (must keep passing)
+
+`backend/tests/test_fractional_sizing_agent.py`:
+
+- `test_max_risk_per_trade_pct_zero_point_five_on_200k_is_1000`
+- `test_max_daily_loss_pct_one_point_five_on_200k_is_3000`
+- `test_max_position_notional_pct_100_on_200k_is_200000`
+- `test_zero_point_five_is_not_treated_as_50_percent`
+- `test_one_point_five_is_not_treated_as_150_percent`
+- `test_one_hundred_is_not_treated_as_10000_percent`
+- `test_value_above_100_percent_is_rejected_and_default_used`
+- `test_internal_fraction_conversion_applied_exactly_once`
+- `test_missing_account_equity_returns_data_unavailable`
+- `test_missing_buying_power_returns_data_unavailable`
+
+If you find yourself wanting to "fix" these tests by rewriting expectations,
+**stop**. The convention is correct; the change you are about to make is the bug.

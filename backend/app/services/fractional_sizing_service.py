@@ -1,4 +1,20 @@
-"""Account-size-agnostic feasibility: risk, notional, liquidity participation, and friction vs expected R."""
+"""Account-size-agnostic feasibility: risk, notional, liquidity participation, and friction vs expected R.
+
+LOCKED CONVENTION -- DO NOT CHANGE WITHOUT EXPLICIT USER APPROVAL
+================================================================
+Owner-policy values are **human percent values** at the input boundary:
+
+    max_risk_per_trade_pct = 0.5    means 0.5%
+    max_daily_loss_pct     = 1.5    means 1.5%
+    max_position_notional_pct = 100 means 100%
+
+``_percent_to_fraction`` divides by 100 **exactly once**. Internal working
+variables use the ``_fraction`` suffix. Adapters MUST NOT divide by 100.
+
+Do not treat 0.5 as 50%, 1.5 as 150%, or 100 as 10000%. Do not autodetect
+decimal-vs-percent. Do not reintroduce DEFAULT_ACCOUNT_EQUITY /
+DEFAULT_BUYING_POWER. See ``.cursor/rules/owner-risk-percent-convention.mdc``.
+"""
 
 from __future__ import annotations
 
