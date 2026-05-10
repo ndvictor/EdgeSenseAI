@@ -63,6 +63,7 @@ def _passing_snapshot(symbol: str = "ROWX", provider: str = "alpaca") -> dict[st
         "ask": 12.01,
         "session_state": "regular",
         "is_non_real": False,
+        "fractionable": True,
     }
 
 
@@ -96,6 +97,10 @@ def test_scanner_diagnostics_exist_and_report_alpaca_feed(monkeypatch):
     assert diagnostics["source"] == "manual_request"
     assert diagnostics["candidate_source"] == "manual_request"
     assert diagnostics["total_symbols_passed"] == 1
+    assert diagnostics["selected_count"] == 1
+    assert diagnostics["watchlist_count"] == 0
+    assert diagnostics["blocked_count"] == 0
+    assert diagnostics["selected_candidates"][0]["candidate_status"] == "candidate_selected"
 
     latest = client.get("/api/worker-status/latest").json()
     assert latest["latest_scanner_diagnostics"]["scanner_run_id"] == diagnostics["scanner_run_id"]
@@ -115,17 +120,71 @@ def test_scanner_diagnostics_exist_and_report_alpaca_feed(monkeypatch):
     assert latest["no_qualified_setup_reason"] is None
 
 
-def test_worker_without_dynamic_universe_reports_no_real_discovery_universe(monkeypatch):
-    monkeypatch.setattr(scanner_worker, "require_production_data_policy", lambda: None)
-    monkeypatch.setattr(scanner_worker, "list_candidates", lambda status=None: [])
-    monkeypatch.setattr(scanner_worker, "get_latest_universe_selection", lambda: None)
+def test_high_priced_fractional_symbol_is_not_rejected_for_price(monkeypatch):
+    _install_market_data(
+        monkeypatch,
+        {
+            "BIGX": {
+                **_passing_snapshot("BIGX"),
+                "price": 1000.0,
+                "volume": 250_000,
+                "average_volume": 100_000,
+                "relative_volume": 2.5,
+                "bid": 999.9,
+                "ask": 1000.1,
+                "fractionable": True,
+            }
+        },
+    )
 
-    result = scanner_worker.run()
+    response = client.post("/api/scanner/run", json={"symbols": ["BIGX"], "max_candidates": 10, "data_source": "alpaca"})
 
-    assert result["recommendation_status"] == "no_qualified_setup"
-    assert "no_real_discovery_universe_configured" in result["blockers"]
-    assert result["scanner_diagnostics"]["reason"] == "no_real_discovery_universe_configured"
-    assert result["scanner_diagnostics"]["total_symbols_seen"] == 0
+    diagnostics = response.json()["scanner_diagnostics"]
+    assert diagnostics["status"] == "candidate_selected"
+    candidate = diagnostics["selected_candidates"][0]
+    assert candidate["last_price"] == 1000.0
+    assert candidate["estimated_quantity"] == 0.05
+    assert candidate["fractional_required"] is True
+    assert candidate["fractional_supported"] is True
+    assert candidate["price_feasibility_status"] == "fractional_feasible"
+    assert "price_out_of_range" not in candidate.get("hard_blockers", [])
+    assert "price_out_of_range" not in diagnostics["rejection_counts"]
+
+
+def test_missing_rvol_goes_to_enrichment_not_blocked(monkeypatch):
+    _install_market_data(
+        monkeypatch,
+        {
+            "ROWX": {
+                "symbol": "ROWX",
+                "provider": "alpaca",
+                "data_quality": "real",
+                "price": 12.0,
+                "volume": 250_000,
+                "bid": 11.99,
+                "ask": 12.01,
+                "session_state": "regular",
+                "is_non_real": False,
+                "fractionable": True,
+            }
+        },
+    )
+
+    response = client.post("/api/scanner/run", json={"symbols": ["ROWX"], "max_candidates": 10})
+
+    diagnostics = response.json()["scanner_diagnostics"]
+    assert diagnostics["status"] == "no_qualified_setup"
+    assert diagnostics["selected_count"] == 0
+    assert diagnostics["watchlist_count"] == 1
+    assert diagnostics["blocked_count"] == 0
+    watch = diagnostics["watchlist_candidates"][0]
+    assert watch["candidate_status"] == "needs_enrichment"
+    assert "missing_relative_volume" in watch["soft_warnings"]
+    assert "relative_volume" in watch["enrichment_needed"]
+    assert "avg_volume" in watch["enrichment_needed"]
+    assert watch["next_action"] == "send_to_feature_enrichment"
+    assert diagnostics["warning_counts"]["missing_relative_volume"] == 1
+    assert diagnostics["enrichment_counts"]["relative_volume"] == 1
 
 
 def test_provider_unavailable_returns_data_unavailable(monkeypatch):
@@ -138,30 +197,56 @@ def test_provider_unavailable_returns_data_unavailable(monkeypatch):
     assert diagnostics["status"] == "data_unavailable"
     assert diagnostics["reason"] == "data_unavailable"
     assert diagnostics["rejection_counts"]["provider_unavailable"] == 1
+    assert diagnostics["blocked_count"] == 1
 
 
-def test_missing_rvol_and_spread_are_rejected_with_reason_counts(monkeypatch):
+def test_missing_price_is_still_blocked(monkeypatch):
     _install_market_data(
         monkeypatch,
         {
-            "ROWX": {
-                "symbol": "ROWX",
+            "BADX": {
+                "symbol": "BADX",
                 "provider": "alpaca",
                 "data_quality": "real",
-                "price": 12.0,
+                "price": None,
                 "volume": 250_000,
+                "session_state": "regular",
                 "is_non_real": False,
             }
         },
     )
 
-    response = client.post("/api/scanner/run", json={"symbols": ["ROWX"], "max_candidates": 10})
-
+    response = client.post("/api/scanner/run", json={"symbols": ["BADX"], "max_candidates": 10})
     diagnostics = response.json()["scanner_diagnostics"]
-    assert diagnostics["status"] == "no_qualified_setup"
-    assert diagnostics["rejection_counts"]["missing_relative_volume"] == 1
-    assert diagnostics["rejection_counts"]["missing_spread"] == 1
-    assert diagnostics["total_symbols_rejected"] == 1
+    assert diagnostics["blocked_count"] == 1
+    assert diagnostics["rejected_candidates"][0]["candidate_status"] == "blocked"
+    assert "missing_price" in diagnostics["rejected_candidates"][0]["hard_blockers"]
+
+
+def test_synthetic_data_is_still_blocked(monkeypatch):
+    snapshot = _passing_snapshot("FAKX")
+    snapshot["synthetic_data_used"] = True
+    _install_market_data(monkeypatch, {"FAKX": snapshot})
+
+    response = client.post("/api/scanner/run", json={"symbols": ["FAKX"], "max_candidates": 10})
+    diagnostics = response.json()["scanner_diagnostics"]
+    assert diagnostics["status"] == "data_unavailable"
+    assert diagnostics["rejected_candidates"][0]["candidate_status"] == "blocked"
+    assert "provider_unavailable" in diagnostics["rejected_candidates"][0]["hard_blockers"]
+
+
+def test_closed_session_wide_spread_is_warning_not_blocker(monkeypatch):
+    snapshot = _passing_snapshot("WIDEX")
+    snapshot["bid"] = 10.0
+    snapshot["ask"] = 12.0
+    snapshot["session_state"] = "unknown"
+    _install_market_data(monkeypatch, {"WIDEX": snapshot})
+
+    response = client.post("/api/scanner/run", json={"symbols": ["WIDEX"], "max_candidates": 10})
+    diagnostics = response.json()["scanner_diagnostics"]
+    row = diagnostics["selected_candidates"][0]
+    assert "spread_too_wide" not in row["hard_blockers"]
+    assert "wide_spread_after_hours" in row["soft_warnings"]
 
 
 def test_passed_manual_candidate_persists_but_not_as_autonomous_scanner_candidate(monkeypatch):
