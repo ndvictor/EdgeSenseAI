@@ -453,7 +453,7 @@ Example output:
 
 ```json
 {
-  "symbol": "NVDA",
+  "symbol": "",
   "asset_class": "stock",
   "signal_name": "RVOL + Breakout",
   "urgency": "high",

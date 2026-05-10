@@ -28,7 +28,7 @@ This document defines the approved 24-step Adaptive Agentic Quant Workflow for E
    - Paper/research mode is the **DEFAULT**
    - All LLM calls go through the **LLM Gateway** for tracking and rate limiting
 
-5. **No hardcoded defaults:** The platform does not use AAPL/MSFT/NVDA/AMD as default symbols. All symbols must be explicitly provided or selected by deterministic models.
+5. **No hardcoded defaults:** The platform does not use hardcoded market symbols as defaults. All symbols must be explicitly provided or selected by deterministic models.
 
 ---
 
@@ -317,10 +317,10 @@ This document defines the approved 24-step Adaptive Agentic Quant Workflow for E
 
 ### Data & Symbol Rules
 
-1. **No hardcoded default symbols** (no AAPL/MSFT/NVDA/AMD unless explicitly provided)
+1. **No hardcoded default symbols**
 2. **Universe Selection uses explicit symbols only**
 3. **Scanner uses explicit symbols or latest watchlist only**
-4. **Mock data remains explicit-only** (opt-in, never silent fallback)
+4. **Non-real market data is not allowed**
 5. **All data quality gates must pass before downstream processing**
 
 ---
@@ -368,7 +368,7 @@ When implementing components, verify:
 - [ ] `live_trading_allowed` is always false
 - [ ] `human_approval_required` is always true
 - [ ] Risk veto cannot be overridden
-- [ ] Mock remains explicit-only (opt-in)
+- [ ] NonReal remains explicit-only (opt-in)
 - [ ] All LLM calls go through LLM Gateway
 - [ ] LLM Budget Gate enforced before any LLM usage
 

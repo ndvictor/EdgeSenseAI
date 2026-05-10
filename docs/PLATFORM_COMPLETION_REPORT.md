@@ -150,7 +150,7 @@ Run after the backend is available:
 API_BASE_URL="http://localhost:8900" bash scripts/smoke_test_platform.sh
 ```
 
-The smoke script checks final readiness, platform readiness, agent runtime, Qlib status, governance, a dry-run AMD workflow, approval queue, audit log, and scheduler status. It verifies `submitted_order=false`, `broker_called=false`, and `llm_used=false`.
+The smoke script checks final readiness, platform readiness, agent runtime, Qlib status, governance, approval queue, audit log, and scheduler status. It verifies `submitted_order=false`, `broker_called=false`, and `llm_used=false`.
 
 ## Intentionally Gated Items
 

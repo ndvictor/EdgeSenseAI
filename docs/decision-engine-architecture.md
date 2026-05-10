@@ -17,14 +17,14 @@ The platform should not provide vague market speculation. Every promoted recomme
 - What models support the decision?
 - What invalidates the trade?
 
-Until live market data and trained models are connected, the app must clearly mark outputs as `synthetic_prototype` or `research_only`.
+Until live market data and trained models are connected, the app must clearly mark outputs as `source_unavailable` or `research_only`.
 
 ## Current Service Layout
 
 ```text
 backend/app/data_providers/
   base.py
-  mock_provider.py
+  non_real_provider.py
   provider_factory.py
 
 backend/app/services/
@@ -227,7 +227,7 @@ GET /api/risk-check/{symbol}
 
 ## Next Implementation Priorities
 
-1. Replace mock provider with a live provider adapter.
+1. Replace non_real provider with a live provider adapter.
 2. Persist account profile and watchlist state.
 3. Build actual feature pipeline from candle and volume data.
 4. Implement ARIMAX, Kalman, GARCH, and HMM services behind the current contract.

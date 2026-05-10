@@ -91,7 +91,7 @@ az containerapp create \
     DATABASE_URL="__REPLACE_WITH_SUPABASE_OR_AZURE_POSTGRES_URL__" \
     CORS_ORIGINS="__REPLACE_WITH_VERCEL_ORIGINS__" \
     MARKET_DATA_MODE=provider \
-    ALLOW_MOCK_MARKET_DATA=false \
+    ALLOW_NON_REAL_MARKET_DATA=false \
     ALLOW_SYNTHETIC_MARKET_DATA=false \
     QLIB_REQUIRED=false \
     LIVE_TRADING_ENABLED=false \
@@ -101,7 +101,7 @@ az containerapp create \
 Notes:
 - `DATABASE_URL` is required for production persistence and must point to managed Postgres, not localhost.
 - `MARKET_DATA_MODE=provider` is required for production workflow runs.
-- Mock and synthetic market data are disabled in production with `ALLOW_MOCK_MARKET_DATA=false` and `ALLOW_SYNTHETIC_MARKET_DATA=false`.
+- NonReal and synthetic market data are disabled in production with `ALLOW_NON_REAL_MARKET_DATA=false` and `ALLOW_SYNTHETIC_MARKET_DATA=false`.
 - Qlib is optional unless a selected strategy explicitly requires it; keep `QLIB_REQUIRED=false` for the paper-first workflow.
 - Redis is **optional but recommended**. If you have one, add `REDIS_URL=...`.
 - Missing provider keys (Alpaca/Polygon/News/Qlib runtime) should yield **blocked/unconfigured** statuses in endpoints, not crash startup.

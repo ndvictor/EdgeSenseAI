@@ -4,7 +4,7 @@
 
 The project is now prototype-complete as an end-to-end decision-intelligence platform skeleton.
 
-It is not yet a live trading system and does not yet contain trained statistical models or a connected market data provider. It does now contain the full architecture, API contracts, UI workspaces, service layer, mock data provider, model readiness, and backend tests needed to continue toward production.
+It is not yet a live trading system and does not yet contain trained statistical models or a connected market data provider. It does now contain the full architecture, API contracts, UI workspaces, service layer, non_real data provider, model readiness, and backend tests needed to continue toward production.
 
 ## Completed Workspaces
 
@@ -25,7 +25,7 @@ It is not yet a live trading system and does not yet contain trained statistical
 - FastAPI route layer
 - Service layer
 - Data provider abstraction
-- Mock market data provider
+- NonReal market data provider
 - Provider factory
 - Feature engineering service
 - Model pipeline service
