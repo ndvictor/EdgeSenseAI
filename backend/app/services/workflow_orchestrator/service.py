@@ -261,6 +261,7 @@ def run_workflow(body: OrchestratorRunRequest) -> OrchestratorRunResponse:
         mode=body.mode,
         source=body.source,
         symbols=list(body.symbols or []),
+        workflow_request_symbols=list(body.symbols or []),
         account_equity=body.account_equity,
         max_risk_per_trade_percent=body.max_risk_per_trade_percent,
         max_daily_loss_percent=body.max_daily_loss_percent,

@@ -55,3 +55,8 @@ def allow_synthetic_market_data() -> bool:
     if raw is None:
         return not is_production_environment()
     return _truthy(raw)
+
+
+def allow_worker_symbols_in_production() -> bool:
+    """When false (default), WORKER_SYMBOLS must not seed scheduled production discovery/hydration."""
+    return _truthy(os.environ.get("ALLOW_WORKER_SYMBOLS_IN_PRODUCTION"))

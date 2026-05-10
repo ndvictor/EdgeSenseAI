@@ -61,20 +61,34 @@ def run_glue_agent(*, agent_key: str, inputs: dict[str, Any], context: dict[str,
         orch = context.get("source") == "workflow_orchestrator"
         data_source = str(s.get("source", "auto"))
         include_mock = data_source == "mock"
-        seed_symbols = [str(x).upper() for x in (s.get("usable_symbols") or symbols) if x]
+        # Manual seeds = workflow HTTP body only (workflow_request_symbols). Never use state.symbols here:
+        # data_readiness carryforward sets state.symbols from usable_symbols and would wrongly trigger universe_selection.
+        req_syms = s.get("workflow_request_symbols")
+        if not isinstance(req_syms, list):
+            req_syms = []
+        manual_seeds = [str(x).upper() for x in req_syms if x]
+        discovery_symbols = [str(x).upper() for x in (s.get("usable_symbols") or []) if x]
         out = build_watchlist(
             asset_class=asset_class,
             horizon=horizon,
             max_symbols=int(s.get("max_symbols", 10)),
-            seed_symbols=seed_symbols if orch else None,
+            seed_symbols=manual_seeds if orch else None,
+            discovery_symbols=discovery_symbols if orch else None,
             orchestrator_mode=orch,
             data_source=data_source,
             include_mock=include_mock,
         )
-        tool = "universe_selection.run_universe_selection" if orch else "candidate_universe.list"
+        used_univ = bool(manual_seeds) and orch and out.get("candidate_source") == "universe_selection"
+        tool = "universe_selection.run_universe_selection" if used_univ else ("watchlist_builder.discovery" if orch else "candidate_universe.list")
         return {
             "tool_name": tool,
-            "tool_request": {"asset_class": asset_class, "horizon": horizon, "source": data_source, "seeds": seed_symbols if orch else None},
+            "tool_request": {
+                "asset_class": asset_class,
+                "horizon": horizon,
+                "source": data_source,
+                "manual_seeds": manual_seeds if orch else None,
+                "discovery_symbols": discovery_symbols if orch else None,
+            },
             "tool_response": out,
             "next_agent": "alpha_engine_agent" if out.get("symbols") or out.get("recommendation") else None,
             "safety": safety,

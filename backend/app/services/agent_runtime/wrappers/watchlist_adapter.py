@@ -2,11 +2,12 @@ from __future__ import annotations
 
 from typing import Any
 
+from app.core.production_safety import allow_worker_symbols_in_production, is_production_environment
 from app.services.candidate_universe_service import list_candidates
 from app.services.feature_store_service import get_latest_feature_rows
 from app.services.universe_selection_service import UniverseSelectionRequest, get_latest_universe_selection, run_universe_selection
 from app.services.worker_output_store import get_latest_feature_rows as get_latest_worker_feature_rows
-from app.services.worker_output_store import get_latest_scanner_candidates
+from app.services.worker_output_store import get_latest_feature_rows_for_production_discovery, get_latest_scanner_candidates
 
 
 def _norm_symbols(raw: list[str] | None) -> list[str]:
@@ -81,17 +82,28 @@ def _symbols_from_candidate_universe(*, asset_class: str, horizon: str, max_pick
 
 def _worker_output_candidates(*, max_pick: int) -> tuple[list[str], list[dict[str, Any]], list[dict[str, Any]]]:
     scanner_candidates = get_latest_scanner_candidates(max_pick)
-    feature_rows = get_latest_worker_feature_rows(max_pick)
+    if is_production_environment():
+        feature_rows = (
+            get_latest_feature_rows_for_production_discovery(max_pick)
+            if allow_worker_symbols_in_production()
+            else []
+        )
+        row_sources = [scanner_candidates, feature_rows]
+    else:
+        feature_rows = get_latest_worker_feature_rows(max_pick)
+        row_sources = [feature_rows, scanner_candidates]
+
     seen: set[str] = set()
     symbols: list[str] = []
-    for row in [*feature_rows, *scanner_candidates]:
-        symbol = str(row.get("symbol") or row.get("ticker") or "").strip().upper()
-        if not symbol or symbol in seen:
-            continue
-        seen.add(symbol)
-        symbols.append(symbol)
-        if len(symbols) >= max_pick:
-            break
+    for src in row_sources:
+        for row in src:
+            symbol = str(row.get("symbol") or row.get("ticker") or "").strip().upper()
+            if not symbol or symbol in seen:
+                continue
+            seen.add(symbol)
+            symbols.append(symbol)
+            if len(symbols) >= max_pick:
+                break
     return symbols, scanner_candidates, feature_rows
 
 
@@ -101,25 +113,54 @@ def build_watchlist(
     horizon: str,
     max_symbols: int = 10,
     seed_symbols: list[str] | None = None,
+    discovery_symbols: list[str] | None = None,
     orchestrator_mode: bool = False,
     data_source: str = "auto",
     include_mock: bool = False,
 ) -> dict[str, Any]:
     """Build a workflow-ready watchlist.
 
-    **Orchestrator mode** (``workflow_orchestrator`` context): builds the watchlist via
-    :func:`run_universe_selection` — data freshness + ranked selection using the same
-    ``data_source`` as the rest of the pipeline (e.g. Alpaca when enabled). Seeds come from
-    orchestrator inputs; if empty, symbols are taken from the feature-store pipeline, then the
-    latest universe run, then a small liquid bootstrap set so snapshots can be pulled.
+    **Orchestrator mode**: ``seed_symbols`` are symbols **explicitly** supplied on the workflow
+    request only. ``discovery_symbols`` are symbols already resolved upstream (e.g. data readiness
+    from worker/scanner output); those never run :func:`run_universe_selection`.
+    When ``seed_symbols`` is empty, discovery uses worker store / scanner paths (not universe_selection).
 
     **Normal mode**: legacy Candidate Universe list for non-orchestrated runs.
     """
     if orchestrator_mode:
         cap = max(1, min(100, max_symbols))
         pipeline_horizon = _horizon_for_universe(horizon)
-        seeds = _norm_symbols(seed_symbols)
-        candidate_source = "manual_symbols" if seeds else None
+        manual = _norm_symbols(seed_symbols)
+        discovered = _norm_symbols(discovery_symbols)
+
+        if not manual and discovered:
+            symbols = discovered[:cap]
+            return {
+                "decision": "candidate_selected",
+                "recommendation": {
+                    "status": "candidate_selected",
+                    "symbol": symbols[0],
+                    "mock_data_used": False,
+                    "synthetic_data_used": False,
+                    "reason": None,
+                },
+                "symbols": symbols,
+                "usable_symbols": symbols,
+                "ranked_candidates": [{"symbol": symbol, "source_type": "scanner"} for symbol in symbols],
+                "scanner_candidates": [],
+                "feature_rows": [],
+                "source_breakdown": {"scanner": len(symbols), "worker_output_feed": len(symbols)},
+                "selected_candidate": symbols[0],
+                "candidate_source": "scanner",
+                "raw_candidate_count": len(symbols),
+                "filtered_candidate_count": len(symbols),
+                "blockers": [],
+                "warnings": [],
+                "next_action": "Proceed to Alpha Engine selection.",
+            }
+
+        seeds = manual
+        candidate_source = "manual_symbols" if manual else None
         ac_raw = (asset_class or "stock").lower().strip()
         if ac_raw not in ("stock", "option", "crypto"):
             ac_raw = "stock"

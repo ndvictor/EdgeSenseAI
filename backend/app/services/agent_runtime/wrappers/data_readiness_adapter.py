@@ -2,9 +2,14 @@ from __future__ import annotations
 
 from typing import Any
 
+from app.core.production_safety import allow_worker_symbols_in_production, is_production_environment
 from app.services.feature_store_service import FeatureStoreRunRequest, get_feature_row_persistence_status, run_feature_store_pipeline
 from app.services.persistence_service import get_persistence_status
-from app.services.worker_output_store import get_latest_feature_rows, get_latest_scanner_candidates
+from app.services.worker_output_store import (
+    get_latest_feature_rows,
+    get_latest_feature_rows_for_production_discovery,
+    get_latest_scanner_candidates,
+)
 
 
 def _provider_source_for(source_mode: str) -> str:
@@ -64,26 +69,32 @@ def _worker_feed_readiness_payload(
     provider_source: str,
     max_symbols: int = 5,
 ) -> dict[str, Any] | None:
-    """If worker_output_store has recent feature rows or scanner rows, hydrate readiness without inventing symbols."""
-    feature_src = get_latest_feature_rows(50)
-    scanner_src = get_latest_scanner_candidates(50)
+    """Hydrate from persisted worker outputs. Production symbols=[] uses scanner rows only unless env allows worker-symbol pipeline rows."""
+    if is_production_environment():
+        scanner_src = get_latest_scanner_candidates(50)
+        feature_src = (
+            get_latest_feature_rows_for_production_discovery(50)
+            if allow_worker_symbols_in_production()
+            else []
+        )
+        row_sources = [scanner_src, feature_src]
+    else:
+        feature_src = get_latest_feature_rows(50)
+        scanner_src = get_latest_scanner_candidates(50)
+        row_sources = [feature_src, scanner_src]
+
     if not feature_src and not scanner_src:
         return None
 
     merged: dict[str, dict[str, Any]] = {}
     order: list[str] = []
-    for row in feature_src:
-        sym = str(row.get("symbol") or row.get("ticker") or "").strip().upper()
-        if not sym or sym in merged:
-            continue
-        merged[sym] = dict(row)
-        order.append(sym)
-    for row in scanner_src:
-        sym = str(row.get("symbol") or "").strip().upper()
-        if not sym or sym in merged:
-            continue
-        merged[sym] = dict(row)
-        order.append(sym)
+    for src in row_sources:
+        for row in src:
+            sym = str(row.get("symbol") or row.get("ticker") or "").strip().upper()
+            if not sym or sym in merged:
+                continue
+            merged[sym] = dict(row)
+            order.append(sym)
 
     warnings: list[str] = ["worker_output_feed_used"]
     blockers: list[str] = []

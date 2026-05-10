@@ -11,6 +11,13 @@ from app.services.persistence_service import (
     save_feature_store_row,
     save_market_scan_run,
 )
+from app.services.worker_discovery_policy import (
+    CANDIDATE_SOURCE_SCANNER,
+    RUN_SOURCE_PRODUCTION_INGESTION,
+    RUN_SOURCE_PRODUCTION_PIPELINE,
+    RUN_SOURCE_PRODUCTION_SCANNER,
+    filter_feature_rows_for_production_discovery,
+)
 
 
 _MEMORY: dict[str, list[dict[str, Any]]] = {
@@ -80,7 +87,18 @@ def record_worker_status(*, worker: str, status: str, worker_run_id: str | None 
     return record
 
 
-def save_scanner_candidates(*, worker_run_id: str, provider_name: str | None, candidates: list[dict[str, Any]], rejected_candidates: list[dict[str, Any]] | None = None, status: str = "candidate_selected", warnings: list[str] | None = None, blockers: list[str] | None = None) -> dict[str, Any]:
+def save_scanner_candidates(
+    *,
+    worker_run_id: str,
+    provider_name: str | None,
+    candidates: list[dict[str, Any]],
+    rejected_candidates: list[dict[str, Any]] | None = None,
+    status: str = "candidate_selected",
+    warnings: list[str] | None = None,
+    blockers: list[str] | None = None,
+    run_source: str = RUN_SOURCE_PRODUCTION_SCANNER,
+    candidate_source: str = CANDIDATE_SOURCE_SCANNER,
+) -> dict[str, Any]:
     rows: list[dict[str, Any]] = []
     for candidate in candidates:
         symbol = _clean_symbol(candidate.get("symbol"))
@@ -102,6 +120,8 @@ def save_scanner_candidates(*, worker_run_id: str, provider_name: str | None, ca
             "rejection_reasons": list(candidate.get("rejection_reasons") or []),
             "worker_run_id": worker_run_id,
             "created_at": _utc_now(),
+            "run_source": run_source,
+            "candidate_source": candidate_source,
         }
         rows.append({k: v for k, v in row.items() if v is not None})
     _MEMORY["scanner_candidates"] = rows
@@ -117,16 +137,39 @@ def save_scanner_candidates(*, worker_run_id: str, provider_name: str | None, ca
         filtered_candidate_count=len(rows),
         warnings=warnings or [],
         blockers=blockers or [],
+        run_source=run_source,
+        candidate_source=candidate_source,
     )
 
 
-def save_market_snapshots(*, worker_run_id: str, provider_name: str | None, snapshots: list[dict[str, Any]], status: str = "data_available", warnings: list[str] | None = None, blockers: list[str] | None = None) -> dict[str, Any]:
+def save_market_snapshots(
+    *,
+    worker_run_id: str,
+    provider_name: str | None,
+    snapshots: list[dict[str, Any]],
+    status: str = "data_available",
+    warnings: list[str] | None = None,
+    blockers: list[str] | None = None,
+    run_source: str = RUN_SOURCE_PRODUCTION_INGESTION,
+    candidate_source: str = CANDIDATE_SOURCE_SCANNER,
+) -> dict[str, Any]:
     rows: list[dict[str, Any]] = []
     for snapshot in snapshots:
         symbol = _clean_symbol(snapshot.get("symbol"))
         if not symbol or _is_mock_or_synthetic(snapshot):
             continue
-        row = {**snapshot, "symbol": symbol, "ticker": symbol, "kind": "worker_market_snapshot", "source": "provider", "provider_name": snapshot.get("provider") or provider_name, "worker_run_id": worker_run_id, "created_at": _utc_now()}
+        row = {
+            **snapshot,
+            "symbol": symbol,
+            "ticker": symbol,
+            "kind": "worker_market_snapshot",
+            "source": "provider",
+            "provider_name": snapshot.get("provider") or provider_name,
+            "worker_run_id": worker_run_id,
+            "created_at": _utc_now(),
+            "run_source": run_source,
+            "candidate_source": candidate_source,
+        }
         rows.append(row)
         save_feature_store_row(
             {
@@ -151,16 +194,39 @@ def save_market_snapshots(*, worker_run_id: str, provider_name: str | None, snap
         snapshot_count=len(rows),
         warnings=warnings or [],
         blockers=blockers or [],
+        run_source=run_source,
+        candidate_source=candidate_source,
     )
 
 
-def save_feature_rows(*, worker_run_id: str, provider_name: str | None, feature_rows: list[dict[str, Any]], status: str = "features_available", warnings: list[str] | None = None, blockers: list[str] | None = None) -> dict[str, Any]:
+def save_feature_rows(
+    *,
+    worker_run_id: str,
+    provider_name: str | None,
+    feature_rows: list[dict[str, Any]],
+    status: str = "features_available",
+    warnings: list[str] | None = None,
+    blockers: list[str] | None = None,
+    run_source: str = RUN_SOURCE_PRODUCTION_PIPELINE,
+    candidate_source: str = CANDIDATE_SOURCE_SCANNER,
+) -> dict[str, Any]:
     rows: list[dict[str, Any]] = []
     for feature in feature_rows:
         symbol = _clean_symbol(feature.get("symbol") or feature.get("ticker"))
         if not symbol or _is_mock_or_synthetic(feature):
             continue
-        row = {**feature, "symbol": symbol, "ticker": symbol, "kind": "worker_feature_row", "source": feature.get("source") or "feature_store", "provider_name": feature.get("provider_name") or feature.get("provider") or provider_name, "worker_run_id": worker_run_id, "created_at": _utc_now()}
+        row = {
+            **feature,
+            "symbol": symbol,
+            "ticker": symbol,
+            "kind": "worker_feature_row",
+            "source": feature.get("source") or "feature_store",
+            "provider_name": feature.get("provider_name") or feature.get("provider") or provider_name,
+            "worker_run_id": worker_run_id,
+            "created_at": _utc_now(),
+            "run_source": run_source,
+            "candidate_source": candidate_source,
+        }
         rows.append(row)
         save_feature_store_row(
             {
@@ -184,6 +250,8 @@ def save_feature_rows(*, worker_run_id: str, provider_name: str | None, feature_
         symbols=[row["symbol"] for row in rows],
         warnings=warnings or [],
         blockers=blockers or [],
+        run_source=run_source,
+        candidate_source=candidate_source,
     )
 
 
@@ -227,14 +295,24 @@ def _latest_feature_rows_from_db(*, kind: str, limit: int) -> list[dict[str, Any
     return rows
 
 
-def get_latest_market_snapshots(limit: int = 25) -> list[dict[str, Any]]:
-    rows = _latest_feature_rows_from_db(kind="worker_market_snapshot", limit=limit)
-    return rows or [dict(row) for row in _MEMORY["market_snapshots"] if not _is_mock_or_synthetic(row)][:limit]
+def get_latest_market_snapshots(limit: int = 25, *, production_scanner_chain_only: bool = False) -> list[dict[str, Any]]:
+    fetch_n = max(limit * 4, limit) if production_scanner_chain_only else limit
+    rows = _latest_feature_rows_from_db(kind="worker_market_snapshot", limit=fetch_n)
+    mem = [dict(row) for row in _MEMORY["market_snapshots"] if not _is_mock_or_synthetic(row)]
+    out = rows if rows else mem
+    if production_scanner_chain_only:
+        out = [r for r in out if str(r.get("run_source") or "") == RUN_SOURCE_PRODUCTION_INGESTION]
+    return out[:limit]
 
 
 def get_latest_feature_rows(limit: int = 25) -> list[dict[str, Any]]:
     rows = _latest_feature_rows_from_db(kind="worker_feature_row", limit=limit)
     return rows or [dict(row) for row in _MEMORY["feature_rows"] if not _is_mock_or_synthetic(row)][:limit]
+
+
+def get_latest_feature_rows_for_production_discovery(limit: int = 25) -> list[dict[str, Any]]:
+    wide = get_latest_feature_rows(max(limit * 4, 50))
+    return filter_feature_rows_for_production_discovery(wide)[:limit]
 
 
 def get_latest_worker_output_summary() -> dict[str, Any]:

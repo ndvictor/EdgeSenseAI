@@ -13,6 +13,7 @@ class WorkflowCarryForwardState(BaseModel):
     mode: str = "paper_first"
     source: str = "runtime"
     symbols: list[str] = Field(default_factory=list)
+    workflow_request_symbols: list[str] = Field(default_factory=list)
     discovery_mode: bool = False
     candidate_source: str | None = None
     raw_candidate_count: int = 0

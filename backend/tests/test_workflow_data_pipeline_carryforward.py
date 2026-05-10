@@ -64,24 +64,45 @@ def test_data_pipeline_fields_carry_forward_to_state():
     assert state.feature_row_count == 1
 
 
-def test_watchlist_builder_receives_usable_symbols_from_carry_forward(monkeypatch):
+def test_watchlist_builder_splits_manual_seeds_and_discovery_after_carry_forward(monkeypatch):
+    """Manual seeds come from workflow_request_symbols only; usable_symbols feed discovery_symbols."""
     captured: dict[str, Any] = {}
 
     def fake_build_watchlist(**kwargs):
         captured.update(kwargs)
-        return {"symbols": kwargs["seed_symbols"], "selected_candidate": kwargs["seed_symbols"][0], "ranked_candidates": [], "next_action": "ok"}
+        seeds = kwargs.get("seed_symbols") or []
+        disc = kwargs.get("discovery_symbols") or []
+        picked = seeds[0] if seeds else (disc[0] if disc else None)
+        return {"symbols": list(seeds) or list(disc), "selected_candidate": picked, "ranked_candidates": [], "next_action": "ok"}
 
     monkeypatch.setattr(glue_agents, "build_watchlist", fake_build_watchlist)
 
+    # After data_readiness, state.symbols matches usable_symbols — original request symbols stay in workflow_request_symbols.
     out = glue_agents.run_glue_agent(
         agent_key="watchlist_builder_agent",
-        inputs={"symbols": ["MSFT"], "usable_symbols": ["AMD"], "source": "runtime"},
+        inputs={},
         context={"source": "workflow_orchestrator"},
-        safety=type("Safety", (), {"sanitized_inputs": {"symbols": ["MSFT"], "usable_symbols": ["AMD"], "source": "runtime", "asset_class": "stock", "horizon": "day_trading"}, "blockers": [], "warnings": []})(),
+        safety=type(
+            "Safety",
+            (),
+            {
+                "sanitized_inputs": {
+                    "symbols": ["AMD"],
+                    "workflow_request_symbols": ["MSFT"],
+                    "usable_symbols": ["AMD"],
+                    "source": "runtime",
+                    "asset_class": "stock",
+                    "horizon": "day_trading",
+                },
+                "blockers": [],
+                "warnings": [],
+            },
+        )(),
     )
 
-    assert captured["seed_symbols"] == ["AMD"]
-    assert out["tool_response"]["symbols"] == ["AMD"]
+    assert captured["seed_symbols"] == ["MSFT"]
+    assert captured["discovery_symbols"] == ["AMD"]
+    assert out["tool_response"]["symbols"] == ["MSFT"]
 
 
 @pytest.fixture()
