@@ -338,12 +338,7 @@ def run_workflow(body: OrchestratorRunRequest) -> OrchestratorRunResponse:
         state.strategy_key = body.strategy_key
         state.selected_strategy_key = body.strategy_key
     scanner_diagnostics, latest_scanner_status = _workflow_scanner_context(body)
-    seed_workflow_state_from_scanner_diagnostics(
-        state,
-        scanner_diagnostics,
-        latest_scanner_status,
-        body.source,
-    )
+    seed_workflow_state_from_scanner_diagnostics(state, scanner_diagnostics, latest_scanner_status)
 
     approval_required = bool(body.require_human_approval)
     approval_id: str | None = None

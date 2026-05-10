@@ -58,7 +58,7 @@ def _fake_scanner_diagnostics(**row_overrides: Any) -> dict[str, Any]:
 def test_seed_state_maps_scanner_candidate_fields():
     state = WorkflowCarryForwardState(symbols=["ROWX"], workflow_request_symbols=["ROWX"], source="manual")
     dx = _fake_scanner_diagnostics()
-    seed_workflow_state_from_scanner_diagnostics(state, dx, {"source": "workflow_manual_request"}, "manual")
+    seed_workflow_state_from_scanner_diagnostics(state, dx, {"source": "workflow_manual_request"})
 
     assert state.latest_price == 427.7
     assert state.spread_bps == pytest.approx(12.0)
