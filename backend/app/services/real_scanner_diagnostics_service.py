@@ -9,21 +9,33 @@ from app.services.market_condition_scanner_service import _relative_volume, _ses
 from app.services.market_data_service import MarketDataService
 
 
-REJECTION_REASONS = (
+HARD_BLOCKER_REASONS = (
     "missing_price",
     "missing_volume",
-    "missing_relative_volume",
-    "relative_volume_too_low",
-    "missing_spread",
-    "spread_too_wide",
     "dollar_volume_too_low",
-    "price_out_of_range",
     "market_closed",
     "provider_unavailable",
     "stale_data",
+    "spread_too_wide",
+    "not_fractionable",
+    "position_notional_below_broker_min",
+    "risk_sizing_failed",
 )
 
-_ALLOWED_SCAN_SESSIONS = {"regular", "market_open", "open", "premarket", "unknown"}
+SOFT_WARNING_REASONS = (
+    "missing_relative_volume",
+    "relative_volume_too_low",
+    "missing_avg_volume",
+    "missing_spread",
+    "wide_spread_after_hours",
+    "high_price_fractional_required",
+    "fractional_support_unknown",
+    "incomplete_feature_set",
+)
+
+REJECTION_REASONS = HARD_BLOCKER_REASONS
+_ALLOWED_SCAN_SESSIONS = {"regular", "market_open", "open", "premarket", "post_market", "postmarket", "unknown"}
+_REGULAR_MARKET_SESSIONS = {"regular", "market_open", "open"}
 _MARKET_DATA = MarketDataService()
 
 
@@ -38,6 +50,18 @@ def _float_or_none(value: Any) -> float | None:
         return float(value)
     except (TypeError, ValueError):
         return None
+
+
+def _bool_from_env(name: str, default: bool) -> bool:
+    raw = effective_str(name)
+    if raw is None or str(raw).strip() == "":
+        return default
+    return str(raw).strip().lower() in {"1", "true", "yes", "on"}
+
+
+def _setting_float(name: str, default: float) -> float:
+    value = _float_or_none(effective_str(name))
+    return default if value is None else value
 
 
 def _clean_symbols(symbols: list[str] | None, max_candidates: int) -> list[str]:
@@ -118,52 +142,209 @@ def _merge_fallback_details(
     return current_provider, current_reason
 
 
+def _fractional_supported(snapshot: dict[str, Any]) -> bool | str:
+    raw = snapshot.get("fractionable")
+    if raw is None:
+        raw = snapshot.get("fractional_supported")
+    if isinstance(raw, bool):
+        return raw
+    if raw is None:
+        return True if _bool_from_env("FRACTIONAL_SHARES_ENABLED", True) else "unknown"
+    return str(raw).strip().lower() in {"1", "true", "yes", "on"}
+
+
+def _fractional_feasibility(price: float | None, snapshot: dict[str, Any]) -> tuple[dict[str, Any], list[str], list[str]]:
+    account_equity = _setting_float("ACCOUNT_EQUITY_DEFAULT", 1000.0)
+    max_position_pct = _setting_float("MAX_POSITION_PCT", 0.05)
+    max_risk_per_trade_pct = _setting_float("MAX_RISK_PER_TRADE_PCT", 0.005)
+    broker_min_notional = _setting_float("BROKER_MIN_NOTIONAL", 1.0)
+    target_position_notional = account_equity * max_position_pct
+    max_risk_dollars = account_equity * max_risk_per_trade_pct
+    fractional_supported = _fractional_supported(snapshot)
+    feasibility: dict[str, Any] = {
+        "account_equity": account_equity,
+        "max_position_pct": max_position_pct,
+        "target_position_notional": target_position_notional,
+        "max_risk_per_trade_pct": max_risk_per_trade_pct,
+        "max_risk_dollars": max_risk_dollars,
+        "broker_min_notional": broker_min_notional,
+        "estimated_quantity": None,
+        "fractional_required": False,
+        "fractional_supported": fractional_supported,
+        "price_feasibility_status": "missing_price",
+    }
+    blockers: list[str] = []
+    warnings: list[str] = []
+    if price is None or price <= 0:
+        blockers.append("missing_price")
+        return feasibility, blockers, warnings
+    estimated_quantity = target_position_notional / price
+    fractional_required = estimated_quantity < 1.0
+    feasibility.update(
+        {
+            "estimated_quantity": estimated_quantity,
+            "fractional_required": fractional_required,
+            "price_feasibility_status": "fractional_feasible" if fractional_required else "whole_share_feasible",
+        }
+    )
+    if target_position_notional < broker_min_notional:
+        blockers.append("position_notional_below_broker_min")
+        feasibility["price_feasibility_status"] = "position_notional_below_broker_min"
+    if max_risk_dollars <= 0 or target_position_notional <= 0:
+        blockers.append("risk_sizing_failed")
+        feasibility["price_feasibility_status"] = "risk_sizing_failed"
+    if fractional_required:
+        warnings.append("high_price_fractional_required")
+        if fractional_supported is False:
+            blockers.append("not_fractionable")
+            feasibility["price_feasibility_status"] = "not_fractionable"
+        elif fractional_supported == "unknown":
+            warnings.append("fractional_support_unknown")
+    return feasibility, blockers, warnings
+
+
+def _candidate_score(
+    *,
+    hard_blockers: list[str],
+    soft_warnings: list[str],
+    enrichment_needed: list[str],
+    relative_volume: float | None,
+    dollar_volume: float | None,
+    spread_bps: float | None,
+) -> float:
+    if hard_blockers:
+        return 0.0
+    score = 0.55
+    if relative_volume is not None:
+        score += min(relative_volume, 3.0) * 0.08
+    if dollar_volume is not None and dollar_volume >= 25_000_000:
+        score += 0.12
+    elif dollar_volume is not None and dollar_volume >= 5_000_000:
+        score += 0.06
+    if spread_bps is not None:
+        if spread_bps <= 10:
+            score += 0.08
+        elif spread_bps <= 35:
+            score += 0.03
+    score -= min(len(soft_warnings), 5) * 0.035
+    score -= min(len(enrichment_needed), 5) * 0.04
+    return round(max(0.0, min(0.99, score)), 4)
+
+
 def _evaluate_symbol(symbol: str, snapshot: dict[str, Any]) -> tuple[list[str], dict[str, Any]]:
     price = _price(snapshot)
     volume = _volume(snapshot)
+    avg_volume = _float_or_none(snapshot.get("average_volume") or snapshot.get("avg_volume"))
     relative_volume = _float_or_none(_relative_volume(snapshot))
     spread_bps = _spread_bps(snapshot, price)
     session_state = _session_state(snapshot)
     data_quality = str(snapshot.get("data_quality") or "").lower()
-    reasons: list[str] = []
+    hard_blockers: list[str] = []
+    soft_warnings: list[str] = []
+    enrichment_needed: list[str] = []
 
     if not _has_provider_data(snapshot):
-        reasons.append("provider_unavailable")
+        hard_blockers.append("provider_unavailable")
     if data_quality == "stale" or snapshot.get("stale_data") or snapshot.get("is_stale"):
-        reasons.append("stale_data")
+        hard_blockers.append("stale_data")
     if price is None or price <= 0:
-        reasons.append("missing_price")
-    elif not (2.0 <= price <= 100.0):
-        reasons.append("price_out_of_range")
+        hard_blockers.append("missing_price")
     if volume is None or volume <= 0:
-        reasons.append("missing_volume")
+        hard_blockers.append("missing_volume")
+
+    feasibility, feasibility_blockers, feasibility_warnings = _fractional_feasibility(price, snapshot)
+    hard_blockers.extend(feasibility_blockers)
+    soft_warnings.extend(feasibility_warnings)
+
+    if avg_volume is None:
+        enrichment_needed.append("avg_volume")
+        soft_warnings.append("missing_avg_volume")
     if relative_volume is None:
-        reasons.append("missing_relative_volume")
+        enrichment_needed.append("relative_volume")
+        soft_warnings.append("missing_relative_volume")
     elif relative_volume < 1.5:
-        reasons.append("relative_volume_too_low")
+        soft_warnings.append("relative_volume_too_low")
     if spread_bps is None:
-        reasons.append("missing_spread")
+        soft_warnings.append("missing_spread")
     elif spread_bps > 35.0:
-        reasons.append("spread_too_wide")
-    if price is not None and volume is not None and price * volume < 1_000_000:
-        reasons.append("dollar_volume_too_low")
+        if session_state in _REGULAR_MARKET_SESSIONS:
+            hard_blockers.append("spread_too_wide")
+        else:
+            soft_warnings.append("wide_spread_after_hours")
+    dollar_volume = None if price is None or volume is None else price * volume
+    if dollar_volume is not None and dollar_volume < 1_000_000:
+        hard_blockers.append("dollar_volume_too_low")
     if session_state not in _ALLOWED_SCAN_SESSIONS:
-        reasons.append("market_closed")
+        hard_blockers.append("market_closed")
+
+    hard_blockers = list(dict.fromkeys(hard_blockers))
+    soft_warnings = list(dict.fromkeys(soft_warnings))
+    enrichment_needed = list(dict.fromkeys(enrichment_needed))
+    score = _candidate_score(
+        hard_blockers=hard_blockers,
+        soft_warnings=soft_warnings,
+        enrichment_needed=enrichment_needed,
+        relative_volume=relative_volume,
+        dollar_volume=dollar_volume,
+        spread_bps=spread_bps,
+    )
+    if hard_blockers:
+        candidate_status = "blocked"
+        decision = "blocked"
+        next_action = "do_not_send_to_alpha"
+        decision_reason = f"Hard blockers: {', '.join(hard_blockers)}"
+    elif enrichment_needed:
+        candidate_status = "needs_enrichment"
+        decision = "watchlist_only"
+        next_action = "send_to_feature_enrichment"
+        decision_reason = "Real data is available, but derived features need enrichment before Alpha scoring."
+    elif score < 0.55:
+        candidate_status = "watchlist_only"
+        decision = "watchlist_only"
+        next_action = "monitor_candidate"
+        decision_reason = "Candidate has no hard blockers but score is not strong enough for Alpha yet."
+    else:
+        candidate_status = "candidate_selected"
+        decision = "candidate_selected"
+        next_action = "send_to_alpha"
+        decision_reason = "Candidate has real data, feasible sizing, and enough features for scanner selection."
 
     metrics = {
         "symbol": symbol,
         "last_price": price,
         "volume": volume,
-        "avg_volume": _float_or_none(snapshot.get("average_volume") or snapshot.get("avg_volume")),
+        "avg_volume": avg_volume,
         "relative_volume": relative_volume,
+        "relative_volume_status": "available" if relative_volume is not None else "unavailable",
         "spread_bps": spread_bps,
+        "spread_status": "available" if spread_bps is not None else "unavailable",
         "session_state": session_state,
-        "dollar_volume": None if price is None or volume is None else price * volume,
+        "dollar_volume": dollar_volume,
         "provider_name": snapshot.get("provider"),
         "data_quality": snapshot.get("data_quality"),
-        "rejection_reasons": reasons,
+        "field_sources": {
+            "last_price": snapshot.get("provider") if price is not None else None,
+            "volume": snapshot.get("provider") if volume is not None else None,
+            "avg_volume": snapshot.get("provider") if avg_volume is not None else None,
+            "relative_volume": "computed" if relative_volume is not None else None,
+            "spread_bps": snapshot.get("provider") if spread_bps is not None else None,
+            "dollar_volume": "computed" if dollar_volume is not None else None,
+        },
+        "provider_chain": [snapshot.get("provider")] if snapshot.get("provider") else [],
+        "feature_quality": "complete" if not enrichment_needed else "partial",
+        "hard_blockers": hard_blockers,
+        "soft_warnings": soft_warnings,
+        "enrichment_needed": enrichment_needed,
+        "candidate_status": candidate_status,
+        "decision": decision,
+        "decision_reason": decision_reason,
+        "next_action": next_action,
+        "confidence": score,
+        "score": score,
+        "rejection_reasons": hard_blockers,
+        **feasibility,
     }
-    return reasons, metrics
+    return hard_blockers, metrics
 
 
 def build_scanner_diagnostics(
@@ -181,8 +362,11 @@ def build_scanner_diagnostics(
     clean_symbols = _clean_symbols(symbols, max_candidates)
     provider_priority = _priority_for_source(requested_source)
     selected: list[dict[str, Any]] = []
+    watchlist: list[dict[str, Any]] = []
     rejected: list[dict[str, Any]] = []
-    rejection_counts = {reason: 0 for reason in REJECTION_REASONS}
+    rejection_counts = {reason: 0 for reason in HARD_BLOCKER_REASONS}
+    warning_counts = {reason: 0 for reason in SOFT_WARNING_REASONS}
+    enrichment_counts: dict[str, int] = {}
     provider_data_count = 0
     provider_name: str | None = provider_priority[0] if provider_priority else None
     fallback_provider: str | None = None
@@ -196,16 +380,24 @@ def build_scanner_diagnostics(
         if _has_provider_data(snapshot):
             provider_data_count += 1
         fallback_provider, fallback_reason = _merge_fallback_details(fallback_provider, fallback_reason, snapshot, provider_priority)
-        reasons, metrics = _evaluate_symbol(symbol, snapshot)
+        hard_blockers, metrics = _evaluate_symbol(symbol, snapshot)
         metrics["provider_name"] = metrics.get("provider_name") or actual_provider
         metrics["source"] = candidate_source
-        if reasons:
-            for reason in reasons:
-                if reason in rejection_counts:
-                    rejection_counts[reason] += 1
+        metrics["candidate_source"] = candidate_source
+        for reason in hard_blockers:
+            if reason in rejection_counts:
+                rejection_counts[reason] += 1
+        for warning in metrics.get("soft_warnings") or []:
+            if warning in warning_counts:
+                warning_counts[warning] += 1
+        for feature in metrics.get("enrichment_needed") or []:
+            enrichment_counts[feature] = enrichment_counts.get(feature, 0) + 1
+        if metrics["candidate_status"] == "candidate_selected":
+            selected.append(metrics)
+        elif metrics["candidate_status"] in {"needs_enrichment", "watchlist_only"}:
+            watchlist.append(metrics)
+        else:
             rejected.append(metrics)
-            continue
-        selected.append({**metrics, "score": 0.8, "source": candidate_source, "candidate_source": candidate_source})
 
     status = "candidate_selected" if selected else ("data_unavailable" if clean_symbols and provider_data_count == 0 else "no_qualified_setup")
     diagnostics = {
@@ -226,8 +418,16 @@ def build_scanner_diagnostics(
         "total_symbols_with_provider_data": provider_data_count,
         "total_symbols_rejected": len(rejected),
         "total_symbols_passed": len(selected),
+        "selected_count": len(selected),
+        "watchlist_count": len(watchlist),
+        "blocked_count": len(rejected),
+        "needs_enrichment_count": len([row for row in watchlist if row.get("candidate_status") == "needs_enrichment"]),
+        "no_trade_count": len([row for row in rejected if row.get("decision") == "no_trade"]),
         "rejection_counts": rejection_counts,
+        "warning_counts": warning_counts,
+        "enrichment_counts": enrichment_counts,
         "selected_candidates": selected,
+        "watchlist_candidates": watchlist,
         "rejected_candidates": rejected,
         "status": status,
         "no_qualified_setup": not selected,
@@ -237,7 +437,7 @@ def build_scanner_diagnostics(
         "llm_used": False,
     }
     if clean_symbols and not selected and status == "no_qualified_setup":
-        diagnostics["reason"] = "no_symbols_passed_scanner_criteria"
+        diagnostics["reason"] = "no_symbols_ready_for_alpha"
     if clean_symbols and status == "data_unavailable":
         diagnostics["reason"] = "data_unavailable"
     return diagnostics
