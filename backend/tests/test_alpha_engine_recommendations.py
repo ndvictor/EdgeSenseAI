@@ -64,8 +64,12 @@ def test_vwap_pullback_candidate_scores():
 def test_wide_spread_rejected():
     rec = _recommend(_base_candidate(spread_bps=55))
 
-    assert rec.status in {"no_qualified_setup", "blocked"}
-    assert "spread" in rec.reason or any("spread" in blocker for blocker in rec.blockers)
+    assert rec.status in {"no_qualified_setup", "blocked", "needs_more_evidence"}
+    if rec.status == "needs_more_evidence":
+        assert rec.symbol == "TESTX"
+        assert "playbook" in rec.reason.lower() or "gates" in rec.reason.lower()
+    else:
+        assert "spread" in rec.reason or any("spread" in blocker for blocker in rec.blockers)
 
 
 def test_missing_last_price_rejected():

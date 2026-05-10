@@ -236,7 +236,45 @@ def _provider_warnings(symbol: str, statuses: list[dict[str, Any]]) -> list[str]
     return warnings
 
 
-def evaluate_data_readiness(*, symbols: list[str], asset_class: str, horizon: str, source: str = "auto") -> dict[str, Any]:
+def _scanner_candidate_index(scanner_candidates: list[dict[str, Any]] | None) -> dict[str, dict[str, Any]]:
+    if not scanner_candidates:
+        return {}
+    out: dict[str, dict[str, Any]] = {}
+    for row in scanner_candidates:
+        if not isinstance(row, dict):
+            continue
+        sym = str(row.get("symbol") or row.get("ticker") or "").strip().upper()
+        if sym and sym not in out:
+            out[sym] = row
+    return out
+
+
+def _feature_row_from_scanner_candidate(row: dict[str, Any], *, source_mode: str) -> dict[str, Any]:
+    sym = str(row.get("symbol") or row.get("ticker") or "").strip().upper()
+    price = _price_from_worker_row(row)
+    return {
+        "symbol": sym,
+        "timestamp": str(row.get("timestamp") or ""),
+        "last_price": price,
+        "volume": row.get("volume"),
+        "day_change_pct": row.get("day_change_pct") or row.get("change_percent"),
+        "relative_volume": row.get("relative_volume"),
+        "spread_bps": row.get("spread_bps"),
+        "source_mode": source_mode,
+        "provider_name": str(row.get("provider_name") or row.get("provider") or "scanner"),
+        "feature_row_id": row.get("feature_row_id") or row.get("id"),
+        "data_quality": row.get("data_quality") or "real",
+    }
+
+
+def evaluate_data_readiness(
+    *,
+    symbols: list[str],
+    asset_class: str,
+    horizon: str,
+    source: str = "auto",
+    scanner_candidates: list[dict[str, Any]] | None = None,
+) -> dict[str, Any]:
     """Best-effort deterministic data readiness check.
 
     Uses existing feature-store pipeline.
@@ -290,10 +328,50 @@ def evaluate_data_readiness(*, symbols: list[str], asset_class: str, horizon: st
     if source_mode != provider_source:
         warnings.append(f"source_mode_preserved:{source_mode}; provider_source={provider_source}")
 
+    scanner_by_symbol = _scanner_candidate_index(scanner_candidates)
+
     for sym in clean_symbols:
         try:
             resp = run_feature_store_pipeline(FeatureStoreRunRequest(symbol=sym, asset_class=asset_class, horizon=horizon, source=provider_source))
         except Exception as exc:
+            sc_row = scanner_by_symbol.get(sym.upper())
+            sc_price = _price_from_worker_row(sc_row) if sc_row else None
+            if (
+                sc_row is not None
+                and sc_price is not None
+                and not bool(sc_row.get("synthetic") or sc_row.get("synthetic_data_used"))
+                and not bool(sc_row.get("non_real") or sc_row.get("is_non_real"))
+                and str(sc_row.get("data_quality") or "").lower() != "fail"
+            ):
+                usable_symbols.append(sym)
+                fr = _feature_row_from_scanner_candidate(sc_row, source_mode=source_mode)
+                feature_rows.append(fr)
+                latest_snapshots.append(
+                    {
+                        "symbol": sym,
+                        "timestamp": fr.get("timestamp") or "",
+                        "price": sc_price,
+                        "last": sc_price,
+                        "close": sc_price,
+                        "volume": sc_row.get("volume"),
+                        "provider_name": fr.get("provider_name") or "scanner",
+                        "source_mode": source_mode,
+                        "using_non_real_data": False,
+                    }
+                )
+                persistence_statuses.append("scanner_runtime")
+                provider_status[sym.upper()] = {
+                    "provider": fr.get("provider_name") or "scanner",
+                    "status": "usable",
+                    "is_non_real": False,
+                    "quality_status": "pass",
+                    "freshness_status": "unknown",
+                    "blockers": [],
+                    "warnings": ["scanner_candidate_used_after_feature_pipeline_error"],
+                    "attempts": [{"provider": fr.get("provider_name"), "data_quality": "real", "error": str(exc)}],
+                }
+                warnings.append(f"{sym}: scanner_candidate_used_after_pipeline_error")
+                continue
             rejected_symbols.append(sym)
             warnings.append(f"{sym}: provider pipeline error: {exc}")
             provider_status[sym] = {"provider": "unknown", "status": "error", "error": str(exc), "attempts": []}
@@ -336,10 +414,48 @@ def evaluate_data_readiness(*, symbols: list[str], asset_class: str, horizon: st
             if q.quality_status == "warn":
                 warnings.extend(q.warnings or [])
         else:
-            rejected_symbols.append(sym)
-            warnings.extend(q.warnings or [])
-            provider_blockers = q.blockers or ["no_price_snapshot_data"]
-            warnings.append(f"{sym}: rejected by data readiness: {'; '.join(provider_blockers)}")
+            sc_row = scanner_by_symbol.get(sym.upper())
+            sc_price = _price_from_worker_row(sc_row) if sc_row else None
+            if (
+                sc_row is not None
+                and sc_price is not None
+                and not bool(sc_row.get("synthetic") or sc_row.get("synthetic_data_used"))
+                and not bool(sc_row.get("non_real") or sc_row.get("is_non_real"))
+                and str(sc_row.get("data_quality") or "").lower() != "fail"
+            ):
+                usable_symbols.append(sym)
+                fr = _feature_row_from_scanner_candidate(sc_row, source_mode=source_mode)
+                feature_rows.append(fr)
+                latest_snapshots.append(
+                    {
+                        "symbol": sym,
+                        "timestamp": fr.get("timestamp") or "",
+                        "price": sc_price,
+                        "last": sc_price,
+                        "close": sc_price,
+                        "volume": sc_row.get("volume"),
+                        "provider_name": fr.get("provider_name") or "scanner",
+                        "source_mode": source_mode,
+                        "using_non_real_data": False,
+                    }
+                )
+                persistence_statuses.append("scanner_runtime")
+                provider_status[sym.upper()] = {
+                    "provider": fr.get("provider_name") or "scanner",
+                    "status": "usable",
+                    "is_non_real": False,
+                    "quality_status": "pass",
+                    "freshness_status": "unknown",
+                    "blockers": [],
+                    "warnings": ["scanner_candidate_used_after_feature_pipeline_mismatch"],
+                    "attempts": [{"provider": fr.get("provider_name"), "data_quality": "real", "error": None}],
+                }
+                warnings.append(f"{sym}: scanner_candidate_used_for_readiness")
+            else:
+                rejected_symbols.append(sym)
+                warnings.extend(q.warnings or [])
+                provider_blockers = q.blockers or ["no_price_snapshot_data"]
+                warnings.append(f"{sym}: rejected by data readiness: {'; '.join(provider_blockers)}")
 
     if not usable_symbols:
         blockers.append("no_usable_symbols")
@@ -358,6 +474,13 @@ def evaluate_data_readiness(*, symbols: list[str], asset_class: str, horizon: st
     latest_snapshot_status = "available" if latest_snapshots else "missing"
     feature_store_status = "persisted" if persistence_statuses and all(x == "persisted" for x in persistence_statuses) else "memory_fallback" if feature_rows else "unavailable"
     persistence_status = "persisted" if "persisted" in persistence_statuses else "memory_fallback" if "memory_fallback" in persistence_statuses else "unavailable"
+    if persistence_statuses and all(x == "scanner_runtime" for x in persistence_statuses) and feature_rows:
+        feature_store_status = "scanner_enriched"
+        persistence_status = "scanner_runtime"
+    elif "scanner_runtime" in persistence_statuses and feature_rows and "persisted" not in persistence_statuses:
+        feature_store_status = "scanner_enriched"
+        if persistence_status == "unavailable":
+            persistence_status = "scanner_runtime"
     freshness_status = "fresh" if freshness_statuses and all(x == "fresh" for x in freshness_statuses) else "stale" if "stale" in freshness_statuses else "unknown"
     kafka_status = "configured_optional_not_active"
     if kafka_status not in warnings:
