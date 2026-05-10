@@ -1,5 +1,6 @@
 from __future__ import annotations
 
+import hashlib
 from collections import Counter
 from typing import Any
 
@@ -17,6 +18,129 @@ from app.services.alpha_engine.scoring import (
 )
 
 ALLOWED_SOURCES = {"provider", "scanner", "persisted_watchlist", "feature_store"}
+
+DEFAULT_PREDICTION_HORIZON_MINUTES = 60
+
+
+def _clamp_heuristic_win_probability(p: float) -> float:
+    return max(0.35, min(0.70, p))
+
+
+def _deterministic_recommendation_id(
+    symbol: str,
+    strategy_key: str,
+    final_score: float,
+    entry: float | None,
+    stop: float | None,
+) -> str:
+    raw = f"{symbol}|{strategy_key}|{final_score:.6f}|{entry}|{stop}"
+    return "alpha_" + hashlib.sha256(raw.encode()).hexdigest()[:24]
+
+
+def _trained_model_evidence_and_key(
+    request: AlphaEngineRequest,
+    symbol: str,
+    strategy_key: str,
+) -> tuple[bool, str | None]:
+    meta = request.metadata or {}
+    ev = meta.get("trained_model_evidence")
+    mk = meta.get("prediction_model_key")
+    has_evidence = False
+    if isinstance(ev, dict):
+        sym_u = symbol.upper()
+        has_evidence = bool(ev.get(sym_u) or ev.get(symbol) or ev.get(strategy_key) or ev.get("global"))
+    elif ev is True:
+        has_evidence = True
+    if has_evidence and isinstance(mk, str) and mk.strip():
+        return True, mk.strip()
+    return False, None
+
+
+def _heuristic_win_probability(component_scores: dict[str, float], final_score: float | None) -> float:
+    p = 0.50
+    fs = float(final_score or 0.0)
+    if fs >= 80:
+        p += 0.10
+    if component_scores.get("relative_volume_score", 0.0) >= 75:
+        p += 0.05
+    if component_scores.get("spread_score", 0.0) >= 80:
+        p += 0.05
+    if component_scores.get("evidence_score", 0.0) >= 60:
+        p += 0.05
+    return round(_clamp_heuristic_win_probability(p), 6)
+
+
+def _prediction_attachment(
+    *,
+    request: AlphaEngineRequest,
+    symbol: str,
+    strategy_key: str,
+    final_score: float | None,
+    component_scores: dict[str, float],
+    entry_plan: AlphaEntryPlan,
+) -> dict[str, Any]:
+    trained, trained_key = _trained_model_evidence_and_key(request, symbol, strategy_key)
+    extra_warnings: list[str] = []
+    if trained and trained_key:
+        model_key = trained_key
+        prediction_reason = (
+            f"prediction_model_key={model_key} from request metadata (trained_model_evidence present); "
+            "win probability and EV use the same deterministic Alpha score calibration as heuristic_alpha_v1 "
+            "until dedicated inference is wired."
+        )
+    else:
+        model_key = "heuristic_alpha_v1"
+        extra_warnings.append("heuristic_prediction_not_trained_model")
+        prediction_reason = (
+            "Deterministic heuristic_alpha_v1: base win probability 0.50 with +0.10 if final_score>=80, "
+            "+0.05 if relative_volume_score>=75, +0.05 if spread_score>=80, +0.05 if evidence_score>=60; "
+            "clamped to [0.35, 0.70]. predicted_expected_value_r = p*target_r - (1-p)*1R using "
+            "entry_plan.expected_r as target_r."
+        )
+
+    win_p = _heuristic_win_probability(component_scores, final_score)
+    target_r = entry_plan.expected_r
+    predicted_expected_value_r: float | None = None
+    predicted_return_r: float | None = None
+    predicted_return_pct: float | None = None
+
+    if target_r is not None:
+        tr = float(target_r)
+        predicted_expected_value_r = round(win_p * tr - (1.0 - win_p) * 1.0, 6)
+        predicted_return_r = predicted_expected_value_r
+
+    entry = entry_plan.entry
+    risk = entry_plan.risk_per_share
+    if (
+        predicted_return_r is not None
+        and entry is not None
+        and risk is not None
+        and float(entry) != 0
+        and float(risk) > 0
+    ):
+        predicted_return_pct = round(float(predicted_return_r) * float(risk) / float(entry) * 100.0, 6)
+    elif predicted_return_r is not None:
+        extra_warnings.append("prediction_pct_unavailable_missing_entry_or_risk")
+
+    recommendation_id = _deterministic_recommendation_id(
+        symbol,
+        strategy_key,
+        float(final_score or 0.0),
+        entry,
+        entry_plan.stop,
+    )
+
+    return {
+        "recommendation_id": recommendation_id,
+        "predicted_win_probability": win_p,
+        "predicted_expected_value_r": predicted_expected_value_r,
+        "predicted_return_r": predicted_return_r,
+        "predicted_return_pct": predicted_return_pct,
+        "prediction_horizon_minutes": DEFAULT_PREDICTION_HORIZON_MINUTES,
+        "prediction_model_key": model_key,
+        "prediction_reason": prediction_reason,
+        "extra_warnings": extra_warnings,
+    }
 
 
 def _reject_reasons(row: CandidateFeatureRow) -> list[str]:
@@ -210,6 +334,16 @@ def generate_alpha_recommendation(request: AlphaEngineRequest) -> AlphaRecommend
         f"Selected {best.strategy_key} because {best.symbol} has qualifying real candidate features, "
         "controlled spread, acceptable liquidity, and small-account fit."
     )
+    pred = _prediction_attachment(
+        request=request,
+        symbol=best.symbol,
+        strategy_key=best.strategy_key,
+        final_score=best.final_score,
+        component_scores=best.component_scores,
+        entry_plan=best.entry_plan,
+    )
+    pred_warnings = pred.pop("extra_warnings")
+    warnings = sorted(set(warnings + pred_warnings))
     return AlphaRecommendation(
         status=status,
         symbol=best.symbol,
@@ -241,4 +375,12 @@ def generate_alpha_recommendation(request: AlphaEngineRequest) -> AlphaRecommend
         submitted_order=False,
         broker_called=False,
         llm_used_for_trade_decision=False,
+        recommendation_id=pred["recommendation_id"],
+        predicted_return_pct=pred["predicted_return_pct"],
+        predicted_return_r=pred["predicted_return_r"],
+        predicted_win_probability=pred["predicted_win_probability"],
+        predicted_expected_value_r=pred["predicted_expected_value_r"],
+        prediction_horizon_minutes=pred["prediction_horizon_minutes"],
+        prediction_model_key=pred["prediction_model_key"],
+        prediction_reason=pred["prediction_reason"],
     )

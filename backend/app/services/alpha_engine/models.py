@@ -71,6 +71,39 @@ class AlphaRecommendation(BaseModel):
     submitted_order: bool = False
     broker_called: bool = False
     llm_used_for_trade_decision: bool = False
+    recommendation_id: str | None = None
+    predicted_return_pct: float | None = None
+    predicted_return_r: float | None = None
+    predicted_win_probability: float | None = None
+    predicted_expected_value_r: float | None = None
+    prediction_horizon_minutes: int | None = None
+    prediction_model_key: str | None = None
+    prediction_reason: str | None = None
+
+
+class AlphaPredictionOutcome(BaseModel):
+    model_config = ConfigDict(protected_namespaces=())
+
+    recommendation_id: str | None = None
+    symbol: str | None = None
+    strategy_key: str | None = None
+    prediction_model_key: str | None = None
+    predicted_return_pct: float | None = None
+    predicted_return_r: float | None = None
+    predicted_win_probability: float | None = None
+    predicted_expected_value_r: float | None = None
+    prediction_horizon_minutes: int | None = None
+    entry_price: float | None = None
+    stop_price: float | None = None
+    target_price: float | None = None
+    actual_return_pct: float | None = None
+    actual_return_r: float | None = None
+    max_favorable_excursion_r: float | None = None
+    max_adverse_excursion_r: float | None = None
+    hit_target: bool = False
+    hit_stop: bool = False
+    prediction_error_r: float | None = None
+    evaluated_at: str = ""
 
 
 class AlphaEngineRequest(BaseModel):
