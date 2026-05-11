@@ -4,22 +4,18 @@ import { Suspense } from "react";
 import Link from "next/link";
 import { signIn } from "next-auth/react";
 import { useSearchParams } from "next/navigation";
-import { Activity, ArrowLeft, Crown, Gauge, LogIn, Monitor, ShieldCheck } from "lucide-react";
+import { Activity, ArrowLeft, Crown, Gauge, LogIn, ShieldCheck } from "lucide-react";
 
 function getSafeNext(next: string | null) {
-  if (!next) return "/owner";
+  if (!next) return "/EdgeSenseAI";
   // Allow same-origin paths only; ignore absolute URLs to prevent open redirects.
-  if (!next.startsWith("/") || next.startsWith("//")) return "/owner";
+  if (!next.startsWith("/") || next.startsWith("//")) return "/EdgeSenseAI";
   return next;
 }
 
 function getDestinationLabel(next: string | null) {
-  if (next === "/command-center") return "Command Center";
-  if (next === "/ops") return "Ops Command Center";
-  if (next && next.startsWith("/daytrading-workflow")) return "Day Trading Workflow";
-  if (next && next.startsWith("/daytrading-control-center")) return "Day Trading Control Center";
-  if (next && next.startsWith("/lab")) return "Lab";
-  return "Owner Command Center";
+  if (next && next.startsWith("/EdgeSenseAI")) return "DeepAgents Control Tower";
+  return "DeepAgents Control Tower";
 }
 
 function LoginContent() {
@@ -59,12 +55,12 @@ function LoginContent() {
                 Sign in to your trading decision OS.
               </h1>
               <p className="mt-6 max-w-2xl text-lg leading-8 text-slate-300">
-                Continue to {destinationLabel}. The platform keeps your public landing page separate from your owner and operations workspaces.
+                Continue to {destinationLabel}. Legacy workspaces have been moved out so the app opens directly into the DeepAgents paper autonomy view.
               </p>
               <div className="mt-10 grid max-w-2xl grid-cols-1 gap-4 md:grid-cols-3">
                 {[
                   [ShieldCheck, "Risk-gated", "Human approval remains required."],
-                  [Gauge, "Mode-aware", "Owner and operations routes stay separate."],
+                  [Gauge, "Focused", "Only the DeepAgents workflow remains in this app."],
                   [Crown, "Personal", "Built around your account growth."],
                 ].map(([Icon, title, description]) => {
                   const TypedIcon = Icon as typeof ShieldCheck;
@@ -107,19 +103,11 @@ function LoginContent() {
               </div>
 
               <div className="mt-6 border-t border-white/10 pt-6">
-                <div className="mb-3 text-xs font-semibold uppercase tracking-wider text-slate-500">Other Access Points</div>
+                <div className="mb-3 text-xs font-semibold uppercase tracking-wider text-slate-500">Access Point</div>
                 <div className="grid grid-cols-1 gap-2 text-sm">
-                  <Link href="/login?next=/owner" className="flex items-center gap-2 rounded-xl border border-white/10 px-3 py-2 text-slate-300 transition hover:border-emerald-400/30 hover:text-emerald-300">
+                  <Link href="/login?next=/EdgeSenseAI" className="flex items-center gap-2 rounded-xl border border-white/10 px-3 py-2 text-slate-300 transition hover:border-emerald-400/30 hover:text-emerald-300">
                     <Crown className="h-4 w-4" />
-                    <span>Owner Command Center</span>
-                  </Link>
-                  <Link href="/login?next=/command-center" className="flex items-center gap-2 rounded-xl border border-white/10 px-3 py-2 text-slate-300 transition hover:border-emerald-400/30 hover:text-emerald-300">
-                    <Gauge className="h-4 w-4" />
-                    <span>Engineering Console</span>
-                  </Link>
-                  <Link href="/login?next=/ops" className="flex items-center gap-2 rounded-xl border border-white/10 px-3 py-2 text-slate-300 transition hover:border-amber-400/30 hover:text-amber-300">
-                    <Monitor className="h-4 w-4" />
-                    <span>Ops Command Center</span>
+                    <span>DeepAgents Control Tower</span>
                   </Link>
                 </div>
               </div>
