@@ -3,17 +3,30 @@
 from __future__ import annotations
 
 import logging
-from typing import Any
+from typing import Any, Literal
 
-from fastapi import APIRouter
+from fastapi import APIRouter, Depends, Header, HTTPException, status
 from pydantic import BaseModel, ConfigDict, Field
 
+from app.api.dependencies.ops_token import (
+    ops_admin_token_configured,
+    require_ops_admin_token,
+)
 from app.api.route_contracts.daytrading import contracts_routes_payload
 from app.api.routes.platform_readiness import get_platform_readiness_status
 from app.services.health_service import get_health_snapshot
 from app.services.platform_readiness.final_report import build_final_readiness_status
 from app.services.promotion_center.service import get_promotion_models_status, get_promotion_strategies_status
 from app.services.real_scanner_diagnostics_service import build_scanner_diagnostics
+from app.services.runtime_gate_config import (
+    GateValidationError,
+    TradingGatesSnapshot,
+    TradingGatesUpdate,
+    can_run_live_workflow,
+    can_run_paper_workflow,
+    get_trading_gates,
+    update_trading_gates,
+)
 from app.services.worker_output_store import get_latest_worker_output_summary, save_scanner_candidates
 from app.services.workflow_orchestrator.models import OrchestratorRunRequest
 from app.services.workflow_orchestrator.service import get_latest_orchestrator_run, run_workflow
@@ -38,10 +51,22 @@ class DayTradingScannerRunBody(BaseModel):
 class DayTradingWorkflowRunBody(BaseModel):
     model_config = ConfigDict(extra="ignore")
 
+    # Modes:
+    #   plan_only - run reasoning + planning, do not place any orders.
+    #   paper     - allow paper simulator submission per paper gate config.
+    #   live      - allow live broker submission. Requires live gates ON,
+    #               owner_authority_level=live_submit, and confirm_live=true
+    #               *and* confirm_live_phrase=='LIVE' on this request.
+    run_mode: Literal["plan_only", "paper", "live"] = "plan_only"
+    # Legacy fields preserved for back-compat with existing tooling.
     dry_run: bool = True
     allow_submit: bool = False
     symbols: list[str] = Field(default_factory=list)
     source: str = "runtime"
+    requested_by_email: str | None = None
+    # Live-only confirmation. Both must be present for run_mode='live'.
+    confirm_live: bool = False
+    confirm_live_phrase: str | None = None
 
 
 def _normalize_symbols(raw: list[str]) -> list[str]:
@@ -131,13 +156,73 @@ def get_daytrading_workers_latest() -> dict[str, Any]:
     return {"status": "ok", **get_latest_worker_output_summary()}
 
 
-@router.post("/workflow/run")
+def _validate_workflow_run_mode(body: DayTradingWorkflowRunBody) -> tuple[bool, bool]:
+    """Validate gate config + per-request confirmation. Returns (dry_run, allow_submit).
+
+    Raises HTTPException 400/403 on policy failure.
+    """
+    mode = body.run_mode
+    if mode == "plan_only":
+        return True, False
+
+    if mode == "paper":
+        allowed, reasons = can_run_paper_workflow()
+        if not allowed:
+            raise HTTPException(
+                status_code=status.HTTP_400_BAD_REQUEST,
+                detail={"error": "paper_run_blocked_by_gates", "reasons": reasons},
+            )
+        return False, True
+
+    if mode == "live":
+        allowed, reasons = can_run_live_workflow()
+        if not allowed:
+            raise HTTPException(
+                status_code=status.HTTP_400_BAD_REQUEST,
+                detail={"error": "live_run_blocked_by_gates", "reasons": reasons},
+            )
+        if not bool(body.confirm_live):
+            raise HTTPException(
+                status_code=status.HTTP_400_BAD_REQUEST,
+                detail={"error": "live_run_requires_confirm_live", "reasons": ["confirm_live=true required for live run"]},
+            )
+        phrase = (body.confirm_live_phrase or "").strip()
+        if phrase != "LIVE":
+            raise HTTPException(
+                status_code=status.HTTP_400_BAD_REQUEST,
+                detail={
+                    "error": "live_run_requires_confirm_phrase",
+                    "reasons": ["confirm_live_phrase must equal the literal string 'LIVE'"],
+                },
+            )
+        return False, True
+
+    raise HTTPException(
+        status_code=status.HTTP_400_BAD_REQUEST,
+        detail={"error": "unknown_run_mode", "reasons": [f"unknown run_mode={mode!r}"]},
+    )
+
+
+@router.post("/workflow/run", dependencies=[Depends(require_ops_admin_token)])
 def post_daytrading_workflow_run(body: DayTradingWorkflowRunBody) -> dict[str, Any]:
+    """Start a workflow run.
+
+    Protected by ``OPS_ADMIN_TOKEN``. ``run_mode`` controls execution:
+    ``plan_only`` (dry run), ``paper`` (paper simulator), or ``live`` (broker).
+    Live mode also requires ``confirm_live=true`` and
+    ``confirm_live_phrase='LIVE'`` plus live gates already enabled.
+    """
+    dry_run, allow_submit = _validate_workflow_run_mode(body)
     req = OrchestratorRunRequest(
-        dry_run=body.dry_run,
-        allow_submit=body.allow_submit,
+        dry_run=dry_run if body.run_mode != "plan_only" or body.dry_run else True,
+        allow_submit=allow_submit if body.run_mode != "plan_only" else False,
         symbols=_normalize_symbols(body.symbols),
         source=body.source,
+        mode={
+            "plan_only": "paper_first",
+            "paper": "paper_first",
+            "live": "live",
+        }[body.run_mode],
     )
     try:
         run = run_workflow(req)
@@ -147,6 +232,8 @@ def post_daytrading_workflow_run(body: DayTradingWorkflowRunBody) -> dict[str, A
     data = run.model_dump()
     return {
         "status": run.status,
+        "run_mode": body.run_mode,
+        "requested_by_email": (body.requested_by_email or "").strip() or None,
         "recommendation": run.recommendation,
         "submitted_order": run.submitted_order,
         "broker_called": run.broker_called,
@@ -155,6 +242,82 @@ def post_daytrading_workflow_run(body: DayTradingWorkflowRunBody) -> dict[str, A
         "warnings": run.warnings,
         "run": data,
     }
+
+
+# ---------------------------------------------------------------------------
+# Trading gates: settings UI + audit
+# ---------------------------------------------------------------------------
+
+
+class GateMutationContext(BaseModel):
+    """Read-only metadata returned alongside the gate snapshot."""
+
+    model_config = ConfigDict(extra="forbid")
+
+    ops_admin_token_configured: bool
+    paper_run_allowed: bool
+    paper_run_block_reasons: list[str]
+    live_run_allowed: bool
+    live_run_block_reasons: list[str]
+
+
+class TradingGatesResponse(BaseModel):
+    model_config = ConfigDict(extra="forbid")
+
+    status: Literal["ok"] = "ok"
+    gates: TradingGatesSnapshot
+    context: GateMutationContext
+
+
+def _build_gates_response() -> TradingGatesResponse:
+    snapshot = get_trading_gates()
+    paper_ok, paper_reasons = can_run_paper_workflow()
+    live_ok, live_reasons = can_run_live_workflow()
+    return TradingGatesResponse(
+        gates=snapshot,
+        context=GateMutationContext(
+            ops_admin_token_configured=ops_admin_token_configured(),
+            paper_run_allowed=paper_ok,
+            paper_run_block_reasons=paper_reasons,
+            live_run_allowed=live_ok,
+            live_run_block_reasons=live_reasons,
+        ),
+    )
+
+
+@router.get("/settings/gates", response_model=TradingGatesResponse)
+def get_daytrading_settings_gates() -> TradingGatesResponse:
+    """Read-only view of effective trading gates + run permissions."""
+    return _build_gates_response()
+
+
+@router.put(
+    "/settings/gates",
+    response_model=TradingGatesResponse,
+    dependencies=[Depends(require_ops_admin_token)],
+)
+def put_daytrading_settings_gates(
+    body: TradingGatesUpdate,
+    x_ops_admin_email: str | None = Header(default=None, alias="X-Ops-Admin-Email"),
+) -> TradingGatesResponse:
+    """Update trading gates.
+
+    Protected by ``OPS_ADMIN_TOKEN``. Enabling ``live_trading_enabled``
+    additionally requires ``confirm_live=true`` in the request body. All
+    safety invariants are enforced server-side. The audit trail captures
+    ``updated_at``, ``updated_by_email``, and ``change_reason``. The Next.js
+    proxy passes the NextAuth email via ``X-Ops-Admin-Email`` so the audit
+    trail records the actual signed-in operator.
+    """
+    email = (x_ops_admin_email or "").strip() or None
+    try:
+        update_trading_gates(body, updated_by_email=email)
+    except GateValidationError as exc:
+        raise HTTPException(
+            status_code=status.HTTP_400_BAD_REQUEST,
+            detail={"error": "gate_validation_failed", "reasons": [str(exc)]},
+        ) from exc
+    return _build_gates_response()
 
 
 @router.get("/workflow/latest")

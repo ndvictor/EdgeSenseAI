@@ -35,6 +35,35 @@ DEFAULT_RUNTIME_SETTINGS: dict[str, Any] = {
     "PAPER_STARTING_CASH": 100000.0,
     "BROKER_PROVIDER": "alpaca",
     "ALPACA_PAPER_TRADE": True,
+    # DeepAgents capability gates (mirror Settings.agent_capability_flags;
+    # final agent_can_submit_live_orders is force-gated by LIVE_TRADING_ENABLED
+    # and BROKER_EXECUTION_ENABLED in app/core/settings.py).
+    "AGENT_REASONING_ENABLED": False,
+    "AGENT_CAN_RECOMMEND_TRADES": False,
+    "AGENT_CAN_CREATE_PAPER_PLANS": False,
+    "AGENT_CAN_CREATE_APPROVAL_REQUESTS": False,
+    "AGENT_CAN_SUBMIT_PAPER_ORDERS": False,
+    "AGENT_CAN_AUTO_SUBMIT_PAPER_ORDERS": False,
+    "AGENT_CAN_SUBMIT_LIVE_ORDERS": False,
+    # Owner authority level used by execution_planner_agent / paper_simulator.
+    # Allowed values: "view_only" | "paper_manual" | "paper_auto" | "live_submit".
+    "OWNER_AUTHORITY_LEVEL": "paper_manual",
+    # Risk / account gates. LOCKED CONVENTION: stored as human-readable percent
+    # (e.g. 0.5 means 0.5%). Backend services convert to a fraction exactly once
+    # via _percent_to_fraction. UI MUST present and edit these as percent.
+    "MAX_RISK_PER_TRADE_PCT": 0.5,
+    "MAX_DAILY_LOSS_PCT": 1.5,
+    "MAX_POSITION_NOTIONAL_PCT": 20.0,
+    "MAX_OPEN_POSITIONS": 1,
+    "MAX_TRADES_PER_DAY": 3,
+    "MIN_EXPECTED_R_AFTER_COSTS": 1.5,
+    "MAX_LIQUIDITY_PARTICIPATION_PCT": 1.0,
+    # Legacy aliases retained for backward compat with the existing
+    # /settings endpoint risk fields. Treated as advisory only.
+    "MAX_RISK_PER_TRADE_PERCENT": 0.5,
+    "MAX_DAILY_LOSS_PERCENT": 1.5,
+    "MAX_POSITION_SIZE_PERCENT": 20.0,
+    "MIN_REWARD_RISK_RATIO": 1.5,
     # Platform Features
     "LANGSMITH_TRACING": True,
     "VECTOR_MEMORY_ENABLED": True,

@@ -44,18 +44,37 @@ _BOOL_ENV_TO_SETTINGS: dict[str, str] = {
     "ALPACA_MARKET_DATA_ENABLED": "alpaca_market_data_enabled",
     "ALLOW_SYNTHETIC_MARKET_DATA": "allow_synthetic_market_data",
     "NEWS_PROVIDER_ENABLED": "news_provider_enabled",
+    # DeepAgents capability gates. These mirror Settings.* attributes;
+    # final live submission is force-gated by LIVE_TRADING_ENABLED and
+    # BROKER_EXECUTION_ENABLED via Settings.agent_capability_flags.
+    "AGENT_REASONING_ENABLED": "agent_reasoning_enabled",
+    "AGENT_CAN_RECOMMEND_TRADES": "agent_can_recommend_trades",
+    "AGENT_CAN_CREATE_PAPER_PLANS": "agent_can_create_paper_plans",
+    "AGENT_CAN_CREATE_APPROVAL_REQUESTS": "agent_can_create_approval_requests",
+    "AGENT_CAN_SUBMIT_PAPER_ORDERS": "agent_can_submit_paper_orders",
+    "AGENT_CAN_AUTO_SUBMIT_PAPER_ORDERS": "agent_can_auto_submit_paper_orders",
+    "AGENT_CAN_SUBMIT_LIVE_ORDERS": "agent_can_submit_live_orders",
 }
 
 _FLOAT_ENV_TO_SETTINGS: dict[str, str] = {
     "LLM_GATEWAY_DAILY_BUDGET": "llm_gateway_daily_budget",
     "PAPER_STARTING_CASH": "paper_starting_cash",
     "MAX_DAILY_LLM_COST": "max_daily_llm_cost",
+    # Risk / account gates use LOCKED PERCENT CONVENTION (e.g. 0.5 = 0.5%).
+    # No corresponding Settings attribute; falls back to 0.0 if env unset.
+    "MAX_RISK_PER_TRADE_PCT": "",
+    "MAX_DAILY_LOSS_PCT": "",
+    "MAX_POSITION_NOTIONAL_PCT": "",
+    "MIN_EXPECTED_R_AFTER_COSTS": "",
+    "MAX_LIQUIDITY_PARTICIPATION_PCT": "",
 }
 
 _INT_ENV_TO_SETTINGS: dict[str, str] = {
     "MARKET_DATA_PROVIDER_TIMEOUT_SECONDS": "market_data_provider_timeout_seconds",
     "NEWS_PROVIDER_TIMEOUT_SECONDS": "news_provider_timeout_seconds",
     "MAX_DAILY_AGENT_RUNS": "max_daily_agent_runs",
+    "MAX_OPEN_POSITIONS": "",
+    "MAX_TRADES_PER_DAY": "",
 }
 
 _STR_ENV_TO_SETTINGS: dict[str, str] = {
@@ -69,6 +88,8 @@ _STR_ENV_TO_SETTINGS: dict[str, str] = {
     "LLM_GATEWAY_DEFAULT_CHEAP_MODEL": "llm_gateway_default_cheap_model",
     "LLM_GATEWAY_DEFAULT_REASONING_MODEL": "llm_gateway_default_reasoning_model",
     "LLM_GATEWAY_DEFAULT_FALLBACK_MODEL": "llm_gateway_default_fallback_model",
+    # No Settings attribute; falls back to "" if env unset.
+    "OWNER_AUTHORITY_LEVEL": "",
 }
 
 

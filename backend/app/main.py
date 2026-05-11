@@ -159,6 +159,8 @@ _PRODUCTION_ALLOWED_RUNTIME_ROUTES: frozenset[tuple[str, str]] = frozenset(
         ("GET", "/api/v1/daytrading/paper-autonomy/positions/closed"),
         ("GET", "/api/v1/daytrading/paper-autonomy/learning/outcomes"),
         ("GET", "/api/v1/daytrading/paper-autonomy/control-tower"),
+        ("GET", "/api/v1/daytrading/settings/gates"),
+        ("PUT", "/api/v1/daytrading/settings/gates"),
     }
 )
 

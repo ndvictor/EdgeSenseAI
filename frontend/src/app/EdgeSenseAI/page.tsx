@@ -3,12 +3,20 @@
 /**
  * EdgeSenseAI — DeepAgents Control Tower (clean route).
  *
- * Single-page read-only view. Calls only the audited paper-autonomy control
- * tower endpoint and renders REAL OUTPUTS from it. No raw API paths in any
- * label. No broker buttons. No live submit. No edits to other routes.
+ * Single-page DeepAgents control tower. Renders REAL OUTPUTS from the audited
+ * paper-autonomy control tower and includes protected owner-only gate/RUN
+ * controls. No raw API paths in any label. Live submit is hidden/disabled until
+ * runtime gates and explicit owner confirmation allow it.
  */
 
 import { useCallback, useEffect, useMemo, useState } from "react";
+
+import { DeepAgentsCommandSidebar } from "@/components/deepagents/DeepAgentsCommandSidebar";
+import {
+  GateSettingsPanel,
+  type TradingGatesResponse,
+} from "@/components/edgesense/GateSettingsPanel";
+import { WorkflowRunPanel } from "@/components/edgesense/WorkflowRunPanel";
 
 // ---------------------------------------------------------------------------
 // Types matching backend/app/api/routes/paper_autonomy.py:get_control_tower
@@ -108,6 +116,9 @@ type ControlTowerResponse = {
     learning_outcomes: number;
   };
   agent_chain: AgentChainEntry[];
+  evidence_truth?: {
+    allowed_symbols?: string[] | null;
+  } | null;
   orders: PaperOrder[];
   open_positions: PaperPosition[];
   closed_positions: PaperPosition[];
@@ -119,6 +130,13 @@ type ControlTowerResponse = {
     learning_loop: LatestReviewBlock;
   };
   alerts: ControlTowerAlert[];
+};
+
+const EMPTY_LATEST_REVIEWS: ControlTowerResponse["latest_reviews"] = {
+  position_monitoring: null,
+  close_review: null,
+  post_trade_evaluation: null,
+  learning_loop: null,
 };
 
 // ---------------------------------------------------------------------------
@@ -148,6 +166,23 @@ const AGENT_DESCRIPTIONS: Record<string, string> = {
   post_trade_evaluator_agent: "Scores each closed trade",
   learning_loop_agent: "Updates strategy learning",
 };
+
+const WORKFLOW_STUB_ORDER: string[] = [
+  "watchlist_builder_agent",
+  "alpha_engine_agent",
+  "small_account_feasibility_agent",
+  "execution_planner_agent",
+  "execution_approval_agent",
+  "position_monitor_agent",
+  "close_review_agent",
+  "post_trade_evaluator_agent",
+  "learning_loop_agent",
+];
+
+const WORKFLOW_PLACEHOLDER_CHAIN: AgentChainEntry[] = WORKFLOW_STUB_ORDER.map((agent) => ({
+  agent,
+  status: "—",
+}));
 
 function agentLabel(key: string): string {
   return AGENT_LABELS[key] ?? key.replaceAll("_", " ");
@@ -200,6 +235,14 @@ function alertTone(severity: string): string {
   return "border-cyan-400/25 bg-cyan-500/10 text-cyan-100";
 }
 
+function tableDashCells(count: number) {
+  return Array.from({ length: count }, (_, i) => (
+    <td key={i} className="px-3 py-2 text-center font-mono text-slate-500">
+      —
+    </td>
+  ));
+}
+
 // ---------------------------------------------------------------------------
 // Data fetcher (single endpoint, plain-English error message)
 // ---------------------------------------------------------------------------
@@ -241,6 +284,7 @@ async function loadControlTower(): Promise<ControlTowerResponse> {
 
 export default function EdgeSenseAIControlTowerPage() {
   const [state, setState] = useState<FetchState>({ kind: "idle" });
+  const [gateData, setGateData] = useState<TradingGatesResponse | null>(null);
 
   const refresh = useCallback(async () => {
     setState({ kind: "loading" });
@@ -264,15 +308,19 @@ export default function EdgeSenseAIControlTowerPage() {
     void refresh();
   }, [refresh]);
 
-  const data = state.kind === "ready" ? state.data : null;
+  const payloadReady = state.kind === "ready";
+  const data = payloadReady ? state.data : null;
 
   return (
-    <main className="min-h-screen bg-[#02080d] text-slate-100">
-      <div className="pointer-events-none fixed inset-0 bg-[radial-gradient(circle_at_30%_15%,rgba(34,211,238,0.10),transparent_30%),radial-gradient(circle_at_85%_25%,rgba(16,185,129,0.08),transparent_28%)]" />
+    <div className="flex min-h-screen bg-[#02080d] text-slate-100">
+      <DeepAgentsCommandSidebar data={data} loading={state.kind === "loading"} />
+      <main className="relative min-h-screen min-w-0 flex-1 overflow-y-auto">
+        <div className="pointer-events-none absolute inset-0 bg-[radial-gradient(circle_at_30%_15%,rgba(34,211,238,0.10),transparent_30%),radial-gradient(circle_at_85%_25%,rgba(16,185,129,0.08),transparent_28%)]" />
 
-      <div className="relative mx-auto max-w-[1280px] px-5 py-7">
+        <div className="relative mx-auto max-w-[1280px] px-5 py-7">
         <PageHeader
           data={data}
+          payloadReady={payloadReady}
           loading={state.kind === "loading"}
           loadedAt={state.kind === "ready" ? state.loadedAt : null}
           onRefresh={refresh}
@@ -280,34 +328,41 @@ export default function EdgeSenseAIControlTowerPage() {
 
         {state.kind === "error" ? <ErrorBanner state={state} onRetry={refresh} /> : null}
 
-        {data ? (
-          <>
-            <SummaryTiles data={data} />
-            <WorkflowChainCard chain={data.agent_chain} />
-            <PositionsCard
-              title="Open Paper Positions"
-              caption="Positions opened by the paper simulator and currently being monitored. Mark price comes from the real quote service; broker is never called."
-              empty="No open paper positions yet."
-              positions={data.open_positions}
-              variant="open"
-            />
-            <PositionsCard
-              title="Closed Paper Positions"
-              caption="Positions closed by the close-review agent. Outcomes (return, R, MFE, MAE) drive the learning loop."
-              empty="No closed paper positions yet."
-              positions={data.closed_positions}
-              variant="closed"
-            />
-            <OrdersCard orders={data.orders} />
-            <LearningCard outcomes={data.learning_outcomes} latest={data.latest_reviews.learning_loop} />
-            <ReviewsCard reviews={data.latest_reviews} />
-            <AlertsCard alerts={data.alerts} />
-          </>
-        ) : null}
+        <SummaryTiles data={data} payloadReady={payloadReady} />
+        <GateSettingsPanel onGatesChanged={setGateData} />
+        <WorkflowRunPanel gates={gateData} />
+        <WorkflowChainCard chain={data?.agent_chain ?? []} payloadReady={payloadReady} />
+        <PositionsCard
+          title="Open Paper Positions"
+          caption="Positions opened by the paper simulator and currently being monitored. Mark price comes from the real quote service; broker is never called."
+          empty="No open paper positions yet."
+          positions={data?.open_positions ?? []}
+          variant="open"
+          sectionId="open-positions"
+          payloadReady={payloadReady}
+        />
+        <PositionsCard
+          title="Closed Paper Positions"
+          caption="Positions closed by the close-review agent. Outcomes (return, R, MFE, MAE) drive the learning loop."
+          empty="No closed paper positions yet."
+          positions={data?.closed_positions ?? []}
+          variant="closed"
+          payloadReady={payloadReady}
+        />
+        <OrdersCard orders={data?.orders ?? []} payloadReady={payloadReady} />
+        <LearningCard
+          outcomes={data?.learning_outcomes ?? []}
+          latest={data?.latest_reviews?.learning_loop ?? null}
+          payloadReady={payloadReady}
+        />
+        <div id="agent-reasoning" className="scroll-mt-8" aria-hidden />
+        <ReviewsCard reviews={data?.latest_reviews ?? EMPTY_LATEST_REVIEWS} payloadReady={payloadReady} />
+        <AlertsCard alerts={data?.alerts ?? []} payloadReady={payloadReady} />
 
         <FooterNote />
-      </div>
-    </main>
+        </div>
+      </main>
+    </div>
   );
 }
 
@@ -317,32 +372,36 @@ export default function EdgeSenseAIControlTowerPage() {
 
 function PageHeader({
   data,
+  payloadReady,
   loading,
   loadedAt,
   onRefresh,
 }: {
   data: ControlTowerResponse | null;
+  payloadReady: boolean;
   loading: boolean;
   loadedAt: string | null;
   onRefresh: () => void;
 }) {
-  const paperAuto = data?.paper_auto_enabled ?? false;
+  const paperAutoOn = data?.paper_auto_enabled === true;
   return (
     <header className="mb-6 flex flex-col gap-4 rounded-3xl border border-cyan-400/15 bg-[#04111a]/85 p-6 shadow-[0_30px_120px_rgba(0,0,0,0.45)] backdrop-blur xl:flex-row xl:items-center xl:justify-between">
       <div>
         <p className="text-[11px] font-bold uppercase tracking-[0.28em] text-cyan-300/70">EdgeSenseAI</p>
         <h1 className="mt-2 text-3xl font-black tracking-tight text-white">DeepAgents Control Tower</h1>
         <p className="mt-2 max-w-3xl text-sm leading-6 text-slate-400">
-          Read-only view of the autonomous paper trading loop. Every value below comes from the audited
-          DeepAgents stores. The broker is never called from this page.
+          Reasoning-first view of the autonomous trading loop. Outputs below come from audited
+          DeepAgents stores. Gate/RUN controls are protected by owner authentication and backend admin token checks.
         </p>
       </div>
       <div className="flex flex-col items-stretch gap-3 xl:items-end">
         <div className="flex flex-wrap gap-2">
           <Pill tone="cyan">Real data only</Pill>
-          <Pill tone={paperAuto ? "emerald" : "amber"}>{paperAuto ? "Paper auto: on" : "Paper auto: off"}</Pill>
+          <Pill tone={payloadReady ? (paperAutoOn ? "emerald" : "amber") : "amber"}>
+            {payloadReady ? (paperAutoOn ? "Paper auto: on" : "Paper auto: off") : "Paper auto: —"}
+          </Pill>
           <Pill tone="rose">Live submit blocked</Pill>
-          <Pill tone="violet">DeepAgents: {data ? "connected" : loading ? "loading" : "offline"}</Pill>
+          <Pill tone="violet">DeepAgents: {payloadReady ? "connected" : loading ? "loading" : "offline"}</Pill>
         </div>
         <div className="flex items-center gap-3 text-xs text-slate-500">
           <span>{loadedAt ? `Last loaded: ${new Date(loadedAt).toLocaleTimeString()}` : loading ? "Loading…" : "Not loaded"}</span>
@@ -373,11 +432,13 @@ function ErrorBanner({
     rejected: "The backend responded, but with an error.",
   };
   const messages: Record<typeof state.reason, string> = {
-    not_configured: "Set NEXT_PUBLIC_API_URL on the frontend deployment so this page knows which backend to call. Nothing on the page is real until that's set.",
-    unreachable: "The backend is offline, asleep, or refusing this origin. No data was fetched — we did not fall back to anything synthetic.",
+    not_configured:
+      "Set NEXT_PUBLIC_API_URL so this page can reach your backend. The layout below stays visible; metric cells stay empty until a connection succeeds.",
+    unreachable:
+      "The backend did not respond. Cards and tables below remain so you can navigate the layout; values stay empty until the API answers.",
     rejected: state.detail
-      ? `The backend rejected the request (${state.detail}). No values are shown.`
-      : "The backend rejected the request. No values are shown.",
+      ? `The backend rejected the request (${state.detail}). Values below stay empty until you get a successful response.`
+      : "The backend rejected the request. Values below stay empty until you get a successful response.",
   };
   return (
     <section className="mb-6 rounded-3xl border border-amber-400/30 bg-amber-500/10 p-5 text-amber-100 shadow-[0_18px_60px_rgba(0,0,0,0.35)]">
@@ -398,16 +459,24 @@ function ErrorBanner({
   );
 }
 
-function SummaryTiles({ data }: { data: ControlTowerResponse }) {
+function SummaryTiles({ data, payloadReady }: { data: ControlTowerResponse | null; payloadReady: boolean }) {
+  const vac = (n: number | undefined) => {
+    if (!payloadReady || data == null) return "—";
+    if (n === undefined || Number.isNaN(n)) return "—";
+    return String(n);
+  };
   const tiles = [
-    { label: "Open positions", value: data.summary.open_positions, hint: "active paper trades" },
-    { label: "Closed positions", value: data.summary.closed_positions, hint: "evaluated outcomes" },
-    { label: "Paper orders", value: data.summary.paper_orders, hint: "simulator ledger" },
-    { label: "Approvals waiting", value: data.summary.approval_items, hint: "pending review" },
-    { label: "Learning outcomes", value: data.summary.learning_outcomes, hint: "feeding the loop" },
+    { label: "Open positions", value: vac(data?.summary.open_positions), hint: "active paper trades" },
+    { label: "Closed positions", value: vac(data?.summary.closed_positions), hint: "evaluated outcomes" },
+    { label: "Paper orders", value: vac(data?.summary.paper_orders), hint: "simulator ledger" },
+    { label: "Approvals waiting", value: vac(data?.summary.approval_items), hint: "pending review" },
+    { label: "Learning outcomes", value: vac(data?.summary.learning_outcomes), hint: "feeding the loop" },
   ];
   return (
-    <section className="mb-6 grid grid-cols-2 gap-3 md:grid-cols-3 xl:grid-cols-5">
+    <section
+      id="evidence"
+      className="mb-6 scroll-mt-6 grid grid-cols-2 gap-3 md:grid-cols-3 xl:grid-cols-5"
+    >
       {tiles.map((tile) => (
         <div
           key={tile.label}
@@ -422,14 +491,20 @@ function SummaryTiles({ data }: { data: ControlTowerResponse }) {
   );
 }
 
-function WorkflowChainCard({ chain }: { chain: AgentChainEntry[] }) {
+function WorkflowChainCard({ chain, payloadReady }: { chain: AgentChainEntry[]; payloadReady: boolean }) {
+  const rows = !payloadReady ? WORKFLOW_PLACEHOLDER_CHAIN : chain.length > 0 ? chain : null;
+
   return (
-    <Card title="Workflow Chain" subtitle="Each DeepAgent is shown with its current status. 'active' means the agent has fresh output for this run.">
-      {chain.length ? (
+    <Card
+      id="workflow-chain"
+      title="Workflow Chain"
+      subtitle="Each DeepAgent is shown with its current status. 'active' means the agent has fresh output for this run."
+    >
+      {rows ? (
         <div className="grid gap-3 md:grid-cols-3 xl:grid-cols-9">
-          {chain.map((entry, index) => (
+          {rows.map((entry, index) => (
             <div
-              key={entry.agent}
+              key={`${entry.agent}-${index}`}
               className={`relative rounded-2xl border p-3 ${statusTone(entry.status)}`}
             >
               <div className="flex items-center gap-2">
@@ -440,7 +515,7 @@ function WorkflowChainCard({ chain }: { chain: AgentChainEntry[] }) {
               </div>
               <div className="mt-3 text-sm font-bold text-white">{agentLabel(entry.agent)}</div>
               <div className="mt-1 text-[11px] leading-4 text-slate-400">{agentDescription(entry.agent)}</div>
-              {entry.latest_id ? (
+              {payloadReady && entry.latest_id ? (
                 <div className="mt-2 truncate font-mono text-[10px] text-slate-500" title={entry.latest_id}>
                   id · {entry.latest_id}
                 </div>
@@ -461,15 +536,61 @@ function PositionsCard({
   empty,
   positions,
   variant,
+  sectionId,
+  payloadReady,
 }: {
   title: string;
   caption: string;
   empty: string;
   positions: PaperPosition[];
   variant: "open" | "closed";
+  sectionId?: string;
+  payloadReady: boolean;
 }) {
+  const colCount = variant === "open" ? 10 : 12;
+
+  if (!payloadReady) {
+    return (
+      <Card id={sectionId} title={title} subtitle={caption}>
+        <div className="overflow-x-auto">
+          <table className="min-w-full text-sm">
+            <thead>
+              <tr className="text-left text-[10px] uppercase tracking-[0.16em] text-slate-500">
+                <th className="px-3 py-2">Symbol</th>
+                <th className="px-3 py-2">Strategy</th>
+                <th className="px-3 py-2 text-right">Shares</th>
+                <th className="px-3 py-2 text-right">Entry</th>
+                <th className="px-3 py-2 text-right">Stop</th>
+                <th className="px-3 py-2 text-right">Target</th>
+                {variant === "open" ? (
+                  <>
+                    <th className="px-3 py-2 text-right">Mark</th>
+                    <th className="px-3 py-2 text-right">MFE / MAE</th>
+                    <th className="px-3 py-2">Marked</th>
+                  </>
+                ) : (
+                  <>
+                    <th className="px-3 py-2 text-right">Exit</th>
+                    <th className="px-3 py-2 text-right">Return %</th>
+                    <th className="px-3 py-2 text-right">Return R</th>
+                    <th className="px-3 py-2">Hit</th>
+                    <th className="px-3 py-2">Closed</th>
+                  </>
+                )}
+                <th className="px-3 py-2">Broker</th>
+              </tr>
+            </thead>
+            <tbody>
+              <tr className="border-t border-white/[0.05]">{tableDashCells(colCount)}</tr>
+            </tbody>
+          </table>
+        </div>
+      </Card>
+    );
+  }
+
   return (
-    <Card title={title} subtitle={caption}>
+    <Card id={sectionId} title={title} subtitle={caption}>
       {positions.length === 0 ? (
         <EmptyState text={empty} />
       ) : (
@@ -540,9 +661,46 @@ function PositionsCard({
   );
 }
 
-function OrdersCard({ orders }: { orders: PaperOrder[] }) {
+function OrdersCard({ orders, payloadReady }: { orders: PaperOrder[]; payloadReady: boolean }) {
+  const orderCols = 12;
+
+  if (!payloadReady) {
+    return (
+      <Card
+        id="paper-orders"
+        title="Paper Order Ledger"
+        subtitle="Simulated orders created by the audited execution-approval path. Real broker is never called."
+      >
+        <div className="overflow-x-auto">
+          <table className="min-w-full text-sm">
+            <thead>
+              <tr className="text-left text-[10px] uppercase tracking-[0.16em] text-slate-500">
+                <th className="px-3 py-2">Symbol</th>
+                <th className="px-3 py-2">Strategy</th>
+                <th className="px-3 py-2">Route</th>
+                <th className="px-3 py-2">Type</th>
+                <th className="px-3 py-2">Status</th>
+                <th className="px-3 py-2 text-right">Shares</th>
+                <th className="px-3 py-2 text-right">Notional</th>
+                <th className="px-3 py-2 text-right">Risk $</th>
+                <th className="px-3 py-2 text-right">Expected R</th>
+                <th className="px-3 py-2">Submitted</th>
+                <th className="px-3 py-2">Broker</th>
+                <th className="px-3 py-2">Created</th>
+              </tr>
+            </thead>
+            <tbody>
+              <tr className="border-t border-white/[0.05]">{tableDashCells(orderCols)}</tr>
+            </tbody>
+          </table>
+        </div>
+      </Card>
+    );
+  }
+
   return (
     <Card
+      id="paper-orders"
       title="Paper Order Ledger"
       subtitle="Simulated orders created by the audited execution-approval path. Real broker is never called."
     >
@@ -595,14 +753,19 @@ function OrdersCard({ orders }: { orders: PaperOrder[] }) {
 function LearningCard({
   outcomes,
   latest,
+  payloadReady,
 }: {
   outcomes: LearningOutcome[];
   latest: LatestReviewBlock;
+  payloadReady: boolean;
 }) {
-  const action = pickString(latest, "learning_action");
-  const reason = pickString(latest, "reason");
+  const action = payloadReady ? pickString(latest, "learning_action") : null;
+  const reason = payloadReady ? pickString(latest, "reason") : null;
+  const learningCols = 9;
+
   return (
     <Card
+      id="learning"
       title="Learning Loop"
       subtitle="Closed paper trades feed strategy/model learning. The latest decision and recent outcomes are shown below."
     >
@@ -610,7 +773,28 @@ function LearningCard({
         <FactRow label="Latest learning action" value={action ?? "—"} />
         <FactRow label="Reason" value={reason ?? "—"} />
       </div>
-      {outcomes.length === 0 ? (
+      {!payloadReady ? (
+        <div className="overflow-x-auto">
+          <table className="min-w-full text-sm">
+            <thead>
+              <tr className="text-left text-[10px] uppercase tracking-[0.16em] text-slate-500">
+                <th className="px-3 py-2">Symbol</th>
+                <th className="px-3 py-2">Strategy</th>
+                <th className="px-3 py-2">Outcome</th>
+                <th className="px-3 py-2">Status</th>
+                <th className="px-3 py-2 text-right">Realized PnL</th>
+                <th className="px-3 py-2 text-right">Return R</th>
+                <th className="px-3 py-2">Slippage</th>
+                <th className="px-3 py-2">Rule compliant</th>
+                <th className="px-3 py-2">When</th>
+              </tr>
+            </thead>
+            <tbody>
+              <tr className="border-t border-white/[0.05]">{tableDashCells(learningCols)}</tr>
+            </tbody>
+          </table>
+        </div>
+      ) : outcomes.length === 0 ? (
         <EmptyState text="No learning outcomes yet." />
       ) : (
         <div className="overflow-x-auto">
@@ -650,7 +834,13 @@ function LearningCard({
   );
 }
 
-function ReviewsCard({ reviews }: { reviews: ControlTowerResponse["latest_reviews"] }) {
+function ReviewsCard({
+  reviews,
+  payloadReady,
+}: {
+  reviews: ControlTowerResponse["latest_reviews"];
+  payloadReady: boolean;
+}) {
   const blocks = [
     { key: "position_monitoring", label: "Position monitor", source: reviews.position_monitoring },
     { key: "close_review", label: "Close review", source: reviews.close_review },
@@ -659,6 +849,7 @@ function ReviewsCard({ reviews }: { reviews: ControlTowerResponse["latest_review
   ] as const;
   return (
     <Card
+      id="reviews"
       title="Latest Agent Reviews"
       subtitle="The most recent decision returned by each downstream review agent."
     >
@@ -666,7 +857,9 @@ function ReviewsCard({ reviews }: { reviews: ControlTowerResponse["latest_review
         {blocks.map(({ key, label, source }) => (
           <div key={key} className="rounded-2xl border border-white/8 bg-white/[0.025] p-4">
             <div className="text-[10px] font-bold uppercase tracking-[0.16em] text-slate-500">{label}</div>
-            {source ? (
+            {!payloadReady ? (
+              <div className="mt-3 font-mono text-sm text-slate-500">—</div>
+            ) : source ? (
               <ReviewSummary block={source} />
             ) : (
               <div className="mt-3 text-sm text-slate-500">No review yet.</div>
@@ -709,10 +902,14 @@ function ReviewSummary({ block }: { block: Record<string, unknown> }) {
   );
 }
 
-function AlertsCard({ alerts }: { alerts: ControlTowerAlert[] }) {
+function AlertsCard({ alerts, payloadReady }: { alerts: ControlTowerAlert[]; payloadReady: boolean }) {
   return (
-    <Card title="Alerts" subtitle="Issued by the read model. None of these can place a real trade.">
-      {alerts.length === 0 ? (
+    <Card id="alerts" title="Alerts" subtitle="Issued by the read model. None of these can place a real trade.">
+      {!payloadReady ? (
+        <div className="rounded-2xl border border-white/8 bg-white/[0.02] p-6 text-center font-mono text-sm text-slate-500">
+          —
+        </div>
+      ) : alerts.length === 0 ? (
         <EmptyState text="No alerts." />
       ) : (
         <div className="space-y-2">
@@ -741,7 +938,7 @@ function AlertsCard({ alerts }: { alerts: ControlTowerAlert[] }) {
 function FooterNote() {
   return (
     <footer className="mt-10 flex flex-wrap items-center justify-between gap-3 border-t border-white/5 pt-4 text-xs text-slate-500">
-      <span>Read-only. No broker calls. No live submit. Real data only.</span>
+      <span>Real data only. Broker execution requires live gates, owner confirmation, and backend token protection.</span>
       <span>EdgeSenseAI · DeepAgents Control Tower</span>
     </footer>
   );
@@ -752,16 +949,21 @@ function FooterNote() {
 // ---------------------------------------------------------------------------
 
 function Card({
+  id,
   title,
   subtitle,
   children,
 }: {
+  id?: string;
   title: string;
   subtitle?: string;
   children: React.ReactNode;
 }) {
   return (
-    <section className="mb-6 rounded-3xl border border-white/8 bg-[#04111a]/85 p-5 shadow-[0_18px_70px_rgba(0,0,0,0.42)] backdrop-blur">
+    <section
+      id={id}
+      className="mb-6 scroll-mt-6 rounded-3xl border border-white/8 bg-[#04111a]/85 p-5 shadow-[0_18px_70px_rgba(0,0,0,0.42)] backdrop-blur"
+    >
       <header className="mb-4">
         <h2 className="text-base font-black uppercase tracking-[0.12em] text-cyan-50">{title}</h2>
         {subtitle ? <p className="mt-1 text-xs leading-5 text-slate-500">{subtitle}</p> : null}
