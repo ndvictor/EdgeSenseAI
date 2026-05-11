@@ -318,6 +318,146 @@ def test_empty_stores_do_not_500() -> None:
 
 
 # ---------------------------------------------------------------------------
+# 10. control tower exposes the new reasoning surfaces
+# ---------------------------------------------------------------------------
+
+
+def test_control_tower_includes_reasoning_monitor_for_full_chain() -> None:
+    response = client.get("/api/v1/daytrading/paper-autonomy/control-tower")
+    assert response.status_code == 200
+    payload = response.json()
+
+    monitor = payload.get("reasoning_monitor")
+    assert isinstance(monitor, list)
+    assert len(monitor) == 9
+    keys = [row["agent_key"] for row in monitor]
+    assert keys == [
+        "watchlist_builder_agent",
+        "alpha_engine_agent",
+        "small_account_feasibility_agent",
+        "execution_planner_agent",
+        "execution_approval_agent",
+        "position_monitor_agent",
+        "close_review_agent",
+        "post_trade_evaluator_agent",
+        "learning_loop_agent",
+    ]
+    for row in monitor:
+        assert row["broker_called"] is False
+        assert row["llm_used_for_trade_decision"] is False
+        assert isinstance(row.get("blockers"), list)
+        assert isinstance(row.get("warnings"), list)
+        assert "has_decision" in row
+
+
+def test_control_tower_includes_evidence_truth_block() -> None:
+    response = client.get("/api/v1/daytrading/paper-autonomy/control-tower")
+    assert response.status_code == 200
+    evidence = response.json().get("evidence_truth")
+    assert isinstance(evidence, dict)
+    assert evidence["broker_called"] is False
+    assert evidence["synthetic_data_used"] is False
+    assert isinstance(evidence.get("allowed_symbols"), list)
+    assert isinstance(evidence.get("provider_chain"), list)
+
+
+def test_control_tower_alpha_hero_is_none_when_no_alpha_decision_yet() -> None:
+    response = client.get("/api/v1/daytrading/paper-autonomy/control-tower")
+    assert response.status_code == 200
+    payload = response.json()
+    assert "alpha_hero" in payload
+
+
+def test_control_tower_feasibility_flags_banner_is_unknown_without_decision() -> None:
+    response = client.get("/api/v1/daytrading/paper-autonomy/control-tower")
+    assert response.status_code == 200
+    flags_block = response.json().get("feasibility_flags")
+    assert isinstance(flags_block, dict)
+    assert flags_block["broker_called"] is False
+    if not flags_block.get("has_decision"):
+        assert flags_block["banner"] == "unknown"
+        assert flags_block["decision"] is None
+
+
+def test_control_tower_execution_flags_block_is_safe_by_default() -> None:
+    response = client.get("/api/v1/daytrading/paper-autonomy/control-tower")
+    assert response.status_code == 200
+    flags_block = response.json().get("execution_flags")
+    assert isinstance(flags_block, dict)
+    assert flags_block["broker_called"] is False
+    assert flags_block["live_submit_enabled"] is False
+    assert flags_block["submitted_order"] is False
+    assert "paper_trading_enabled" in flags_block
+    assert "live_trading_enabled" in flags_block
+    assert "broker_execution_enabled" in flags_block
+
+
+def test_control_tower_feedback_loop_aggregates_outcomes() -> None:
+    from app.services.paper_autonomy.models import PaperLearningOutcome
+
+    learning_outcomes_store.append(
+        PaperLearningOutcome(
+            trade_id="fbl1",
+            paper_position_id="pp_fbl1",
+            workflow_run_id=WORKFLOW_RUN_ID,
+            strategy_key="regime_aware_momentum_catalyst",
+            symbol="AAPL",
+            outcome_label="target_hit",
+            outcome_status="positive",
+            realized_pnl=42.0,
+            actual_return_r=1.6,
+            slippage_status="pass",
+            rule_compliant=True,
+        )
+    )
+    learning_outcomes_store.append(
+        PaperLearningOutcome(
+            trade_id="fbl2",
+            paper_position_id="pp_fbl2",
+            workflow_run_id=WORKFLOW_RUN_ID,
+            strategy_key="regime_aware_momentum_catalyst",
+            symbol="MSFT",
+            outcome_label="stop_hit",
+            outcome_status="negative",
+            realized_pnl=-15.0,
+            actual_return_r=-1.0,
+            slippage_status="pass",
+            rule_compliant=True,
+        )
+    )
+
+    response = client.get("/api/v1/daytrading/paper-autonomy/control-tower")
+    assert response.status_code == 200
+    loop = response.json().get("feedback_loop")
+    assert isinstance(loop, dict)
+    assert loop["total_outcomes"] == 2
+    assert loop["wins"] == 1
+    assert loop["losses"] == 1
+    assert loop["win_rate"] == pytest.approx(0.5)
+    assert loop["avg_return_r"] == pytest.approx(0.3)
+    assert loop["total_realized_pnl"] == pytest.approx(27.0)
+    assert loop["rule_compliant_count"] == 2
+    assert loop["by_status"].get("positive") == 1
+    assert loop["by_status"].get("negative") == 1
+    assert loop["by_label"].get("target_hit") == 1
+    assert loop["by_label"].get("stop_hit") == 1
+    assert loop["broker_called"] is False
+
+
+def test_control_tower_alerts_all_have_created_at_timestamp() -> None:
+    response = client.get("/api/v1/daytrading/paper-autonomy/control-tower")
+    assert response.status_code == 200
+    alerts = response.json().get("alerts")
+    assert isinstance(alerts, list)
+    assert len(alerts) >= 1
+    for alert in alerts:
+        assert "created_at" in alert and isinstance(alert["created_at"], str) and alert["created_at"]
+        assert alert["severity"] in {"info", "warn", "error"}
+        assert isinstance(alert.get("code"), str) and alert["code"]
+        assert isinstance(alert.get("message"), str) and alert["message"]
+
+
+# ---------------------------------------------------------------------------
 # 9. learning outcomes endpoint returns recent outcomes across strategies
 # ---------------------------------------------------------------------------
 
