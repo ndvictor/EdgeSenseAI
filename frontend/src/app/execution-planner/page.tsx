@@ -28,23 +28,23 @@ const defaultSample: ExecutionPlannerPlanRequest = {
     symbol: "",
     asset_class: "stock",
     horizon: "day_trading",
-    trigger_key: "rvol_vwap_breakout_confirm",
+    trigger_key: "",
   },
   market_snapshot: {
-    current_price: 151.1,
-    vwap: 149.8,
-    atr: 2.25,
-    bid: 151.05,
-    ask: 151.15,
-    spread_percent: 0.07,
-    volume_confirms: true,
+    current_price: 0,
+    vwap: 0,
+    atr: 0,
+    bid: 0,
+    ask: 0,
+    spread_percent: 0,
+    volume_confirms: false,
   },
   account_state: {
-    account_equity: 10000,
-    cash: 10000,
-    risk_budget_available: true,
-    max_risk_per_trade_percent: 1.0,
-    max_position_size_percent: 20.0,
+    account_equity: 0,
+    cash: 0,
+    risk_budget_available: false,
+    max_risk_per_trade_percent: 0,
+    max_position_size_percent: 0,
     paper_trading_enabled: true,
     live_trading_enabled: false,
     human_approval_required: true,
@@ -53,9 +53,9 @@ const defaultSample: ExecutionPlannerPlanRequest = {
   planning_preferences: {
     order_style: "limit",
     stop_method: "atr",
-    target_reward_risk: 2.0,
-    atr_stop_multiplier: 1.0,
-    max_spread_percent: 0.15,
+    target_reward_risk: 0,
+    atr_stop_multiplier: 0,
+    max_spread_percent: 0,
   },
 };
 
@@ -88,7 +88,7 @@ function CheckerLine({ title, result }: { title: string; result?: ExecutionPlann
     <div className="flex items-start justify-between gap-3 rounded-xl border border-white/[0.06] bg-[#0a1018]/80 px-3 py-2.5">
       <div>
         <div className="text-sm font-medium text-slate-200">{title}</div>
-        <div className="mt-0.5 text-xs text-slate-500">{result?.message ?? "No details yet (create a sample plan)."}</div>
+        <div className="mt-0.5 text-xs text-slate-500">{result?.message ?? "No details yet (create a plan)."}</div>
       </div>
       <span className={`mt-0.5 inline-flex h-fit rounded-lg border px-2 py-0.5 text-[11px] font-medium ${chip(String(status))}`}>
         {String(status)}
@@ -386,7 +386,7 @@ export default function ExecutionPlannerPage() {
             <div className="flex flex-wrap items-center justify-between gap-2">
               <div>
                 <div className="text-xs font-semibold uppercase tracking-[0.2em] text-slate-500">Plan simulation</div>
-                <div className="mt-1 text-sm text-slate-400">Create a sample execution plan (visibility only).</div>
+                <div className="mt-1 text-sm text-slate-400">Create an execution plan (visibility only).</div>
               </div>
               <div className="flex flex-wrap gap-2">
                 <button

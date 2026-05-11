@@ -33,101 +33,10 @@ type StrategyCard = {
   icon: "momentum" | "star" | "vwap" | "breakout" | "inverse" | "options" | "xgboost";
 };
 
-// NOTE: this component intentionally reuses the same demo data + rendering
-// as `/strategies` so Strategy Lab can embed it without re-routing.
-// Keep this in sync with `src/app/strategies/page.tsx`.
-const readyStrategies: StrategyCard[] = [
-  {
-    name: "15 Min Liquid Momentum",
-    readiness: "ready",
-    stage: "promoted_to_prod",
-    assetClass: "Equities",
-    timeframe: "15 Min",
-    requiredModels: ["weighted_ranker_v1", "regime_classifier_v1", "liquidity_filter_v1", "risk_veto_v1"],
-    lastTestReport: "Walk-forward pass | Precision 64% | Capture 58% | False Positives 18%",
-    retestFrequency: "Every 7 days",
-    nextRetest: "May 21, 2025",
-    status: "Ready",
-    icon: "momentum",
-  },
-  {
-    name: "Tech Quintet Momentum",
-    readiness: "ready",
-    stage: "paper_trading",
-    assetClass: "Equities",
-    timeframe: "30 Min",
-    requiredModels: ["weighted_ranker_v1", "sector_strength_v1", "historical_similarity_v1", "risk_veto_v1"],
-    lastTestReport: "Paper test stable | Win Rate 61% | Avg Hold 42 min",
-    retestFrequency: "Every 7 days",
-    nextRetest: "May 21, 2025",
-    status: "Ready",
-    icon: "star",
-  },
-  {
-    name: "VWAP Reclaim",
-    readiness: "ready",
-    stage: "paper_ready",
-    assetClass: "Equities",
-    timeframe: "5 Min",
-    requiredModels: ["weighted_ranker_v1", "vwap_trigger_v1", "volume_confirmation_v1", "capital_allocator_v1"],
-    lastTestReport: "Intraday validation pass | Precision 67% | Max DD controlled",
-    retestFrequency: "Every 3 days",
-    nextRetest: "May 19, 2025",
-    status: "Ready",
-    icon: "vwap",
-  },
-];
+// Stage lanes are empty until wired to registry / evidence APIs — no static demo strategies.
+const readyStrategies: StrategyCard[] = [];
 
-const notReadyStrategies: StrategyCard[] = [
-  {
-    name: "Opening Range Breakout",
-    readiness: "not_ready",
-    stage: "backtest_ready",
-    assetClass: "Equities",
-    timeframe: "15 Min",
-    requiredModels: ["opening_range_detector_v1", "weighted_ranker_v1", "spread_guard_v1", "news_catalyst_v1"],
-    why: "Captures high-volume institutional imbalance after the open.",
-    blockers: ["Needs more paper-test days", "Open-session false breakout rate too high", "News catalyst feed still partial"],
-    status: "Testing",
-    icon: "breakout",
-  },
-  {
-    name: "Double Agent Inverse ETF",
-    readiness: "not_ready",
-    stage: "research",
-    assetClass: "ETFs",
-    timeframe: "30 Min",
-    requiredModels: ["regime_classifier_v1", "trend_flip_v1", "hedge_router_v1", "drawdown_guard_v1"],
-    why: "Switches between long and inverse ETF exposure when regime flips.",
-    blockers: ["Whipsaw risk not fully bounded", "Needs stronger trend confirmation", "Needs more drawdown testing"],
-    status: "Candidate",
-    icon: "inverse",
-  },
-  {
-    name: "Options Flow Momentum",
-    readiness: "not_ready",
-    stage: "research",
-    assetClass: "Options",
-    timeframe: "15 Min",
-    requiredModels: ["options_flow_parser_v1", "iv_oi_validator_v1", "underlying_confirmation_v1", "contract_quality_filter_v1"],
-    why: "Uses unusual options activity to identify directional momentum setups.",
-    blockers: ["Options provider not fully live", "Contract quality model incomplete", "Spread risk too high for small accounts"],
-    status: "Testing",
-    icon: "options",
-  },
-  {
-    name: "XGBoost Meta Ranker Strategy",
-    readiness: "not_ready",
-    stage: "disabled",
-    assetClass: "Equities",
-    timeframe: "Daily",
-    requiredModels: ["xgboost_ranker", "calibration_service_v1", "outcome_labeler_v1", "walk_forward_evaluator_v1"],
-    why: "Supervised meta-model intended to improve candidate ranking.",
-    blockers: ["XGBoost model not trained", "Needs labeled outcomes", "Calibration not complete"],
-    status: "Blocked",
-    icon: "xgboost",
-  },
-];
+const notReadyStrategies: StrategyCard[] = [];
 
 function StatusBadge({ readiness }: { readiness: StrategyReadiness }) {
   const ready = readiness === "ready";
@@ -255,7 +164,7 @@ export function StrategiesPanel({ showHeader = false }: { showHeader?: boolean }
           <div className="grid grid-cols-2 gap-4 xl:grid-cols-4">
             <MetricCard label="Ready for Prod" value={readyStrategies.length} accent />
             <MetricCard label="Not Ready" value={notReadyStrategies.length} />
-            <MetricCard label="Avg Retest Cycle" value="7 days" />
+            <MetricCard label="Avg Retest Cycle" value="—" />
             <MetricCard label="Needs Attention" value={needsAttention} />
           </div>
         </>

@@ -36,49 +36,49 @@ const CHECKERS = [
 
 const defaultSample: PostTradeEvaluationRequest = {
   trade: {
-    trade_id: "trade_sample",
+    trade_id: "",
     symbol: "",
     asset_class: "stock",
     horizon: "day_trading",
     side: "long",
-    quantity: 13,
-    planned_entry_price: 151.15,
-    actual_entry_price: 151.2,
-    planned_exit_price: 155.6,
-    actual_exit_price: 155.5,
-    stop_loss: 148.85,
-    target_price: 155.6,
-    opened_at: "2026-05-07T09:40:00-05:00",
-    closed_at: "2026-05-07T10:25:00-05:00",
-    exit_reason: "target_hit",
+    quantity: 0,
+    planned_entry_price: 0,
+    actual_entry_price: 0,
+    planned_exit_price: 0,
+    actual_exit_price: 0,
+    stop_loss: 0,
+    target_price: 0,
+    opened_at: "",
+    closed_at: "",
+    exit_reason: "",
   },
   workflow_context: {
-    selected_workflow: "baseline_fast_path",
-    strategy_key: "regime_aware_momentum_catalyst",
-    trigger_key: "rvol_vwap_breakout_confirm",
-    session: "market_open",
+    selected_workflow: "",
+    strategy_key: "",
+    trigger_key: "",
+    session: "",
   },
   thesis_outcome: {
-    thesis_valid_at_exit: true,
+    thesis_valid_at_exit: false,
     invalidation_hit: false,
-    price_above_vwap_at_exit: true,
-    volume_confirmed_at_exit: true,
-    relative_strength_positive_at_exit: true,
+    price_above_vwap_at_exit: false,
+    volume_confirmed_at_exit: false,
+    relative_strength_positive_at_exit: false,
   },
   execution_quality: {
-    planned_entry_price: 151.15,
-    actual_entry_price: 151.2,
-    planned_exit_price: 155.6,
-    actual_exit_price: 155.5,
-    max_allowed_slippage_percent: 0.15,
+    planned_entry_price: 0,
+    actual_entry_price: 0,
+    planned_exit_price: 0,
+    actual_exit_price: 0,
+    max_allowed_slippage_percent: 0,
   },
   rule_compliance: {
-    entered_after_trigger: true,
-    used_approved_strategy: true,
-    respected_position_size: true,
-    respected_stop_loss: true,
-    respected_master_admin_gates: true,
-    human_approval_obtained: true,
+    entered_after_trigger: false,
+    used_approved_strategy: false,
+    respected_position_size: false,
+    respected_stop_loss: false,
+    respected_master_admin_gates: false,
+    human_approval_obtained: false,
   },
 };
 
@@ -116,7 +116,7 @@ function CheckerLine({ title, result }: { title: string; result?: PostTradeCheck
     <div className="flex items-start justify-between gap-3 rounded-xl border border-white/[0.06] bg-[#0a1018]/80 px-3 py-2.5">
       <div>
         <div className="text-sm font-medium text-slate-200">{title}</div>
-        <div className="mt-0.5 text-xs text-slate-500">{result?.message ?? "No details yet (evaluate a sample trade)."}</div>
+        <div className="mt-0.5 text-xs text-slate-500">{result?.message ?? "No details yet (evaluate a trade)."}</div>
       </div>
       <span className={`mt-0.5 inline-flex h-fit rounded-lg border px-2 py-0.5 text-[11px] font-medium ${chip(String(status))}`}>
         {String(status)}
@@ -389,7 +389,7 @@ export default function PostTradeEvaluationPage() {
             <div className="flex flex-wrap items-center justify-between gap-2">
               <div>
                 <div className="text-xs font-semibold uppercase tracking-[0.2em] text-slate-500">Outcome evaluation</div>
-                <div className="mt-1 text-sm text-slate-400">Evaluate a sample closed (or simulated-closed) trade.</div>
+                <div className="mt-1 text-sm text-slate-400">Evaluate a closed (or simulated-closed) trade.</div>
               </div>
               <div className="flex flex-wrap gap-2">
                 <button

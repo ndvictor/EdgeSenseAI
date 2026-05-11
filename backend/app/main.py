@@ -50,6 +50,7 @@ from app.api.routes.meta_model_ensemble import router as meta_model_router
 from app.api.routes.model_runs import router as model_runs_router
 from app.api.routes.model_selection import router as model_selection_router
 from app.api.routes.no_trade import router as no_trade_router
+from app.api.routes.paper_autonomy import router as paper_autonomy_router
 from app.api.routes.paper_trading_lifecycle import router as paper_trading_lifecycle_router
 from app.api.routes.recommendation_lifecycle import router as recommendation_lifecycle_router
 from app.api.routes.recommendation_pipeline import router as recommendation_pipeline_router
@@ -152,6 +153,12 @@ _PRODUCTION_ALLOWED_RUNTIME_ROUTES: frozenset[tuple[str, str]] = frozenset(
         ("GET", "/api/v1/daytrading/risk/status"),
         ("GET", "/api/v1/daytrading/execution-boundary"),
         ("GET", "/api/v1/daytrading/contracts/routes"),
+        ("GET", "/api/v1/daytrading/paper-autonomy/status"),
+        ("GET", "/api/v1/daytrading/paper-autonomy/orders"),
+        ("GET", "/api/v1/daytrading/paper-autonomy/positions/open"),
+        ("GET", "/api/v1/daytrading/paper-autonomy/positions/closed"),
+        ("GET", "/api/v1/daytrading/paper-autonomy/learning/outcomes"),
+        ("GET", "/api/v1/daytrading/paper-autonomy/control-tower"),
     }
 )
 
@@ -291,6 +298,7 @@ app.include_router(position_monitoring_router, prefix="/api")
 app.include_router(close_position_router, prefix="/api")
 app.include_router(post_trade_evaluation_router, prefix="/api")
 app.include_router(learning_loop_router, prefix="/api")
+app.include_router(paper_autonomy_router, prefix="/api/v1")
 app.include_router(workflow_runbook_router, prefix="/api")
 app.include_router(agent_runtime_router, prefix="/api")
 app.include_router(proof_registry_router, prefix="/api")

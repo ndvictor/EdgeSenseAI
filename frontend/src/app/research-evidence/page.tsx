@@ -104,24 +104,24 @@ function ResearchEvidenceContent() {
   const [artifacts, setArtifacts] = useState<Record<string, unknown>[]>([]);
   const [latestSig, setLatestSig] = useState<Record<string, unknown> | null>(null);
 
-  const [scoreJson, setScoreJson] = useState('{"symbol":"","horizon":"day_trading","scores":{}}');
-  const [btJson, setBtJson] = useState('{"symbol":"","backtest_run_id":"bt_ui_1","strategy_key":"stock_day_trading"}');
-  const [modelArtJson, setModelArtJson] = useState('{"model_name":"ui_model","artifact_path":"/tmp/qlib_stub","artifact_type":"checkpoint"}');
+  const [scoreJson, setScoreJson] = useState('{"symbol":"","horizon":"","scores":{}}');
+  const [btJson, setBtJson] = useState('{"symbol":"","backtest_run_id":"","strategy_key":""}');
+  const [modelArtJson, setModelArtJson] = useState('{"model_name":"","artifact_path":"","artifact_type":"checkpoint"}');
 
   const [proofSt, setProofSt] = useState<Record<string, unknown> | null>(null);
   const [proofRecs, setProofRecs] = useState<Record<string, unknown>[]>([]);
-  const [proofForm, setProofForm] = useState('{"symbol":"","strategy_key":"stock_day_trading","proof_status":"proof_required","source":"ui"}');
+  const [proofForm, setProofForm] = useState('{"symbol":"","strategy_key":"","proof_status":"proof_required","source":"ui"}');
 
   const [modelSt, setModelSt] = useState<Record<string, unknown> | null>(null);
   const [modelRecs, setModelRecs] = useState<Record<string, unknown>[]>([]);
   const [modelForm, setModelForm] = useState(
-    '{"model_key":"ui_ranker","model_name":"ui_ranker","model_family":"deterministic_baseline","asset_class":"stock","horizon":"day_trading","status":"recorded","score":0.5}',
+    '{"model_key":"","model_name":"","model_family":"","asset_class":"","horizon":"","status":"not_configured","score":null}',
   );
 
   const [stratSt, setStratSt] = useState<Record<string, unknown> | null>(null);
   const [stratRecs, setStratRecs] = useState<Record<string, unknown>[]>([]);
   const [stratForm, setStratForm] = useState(
-    '{"strategy_key":"stock_day_trading","strategy_group":"stock","asset_class":"stock","horizon":"day_trading","status":"recorded","strategy_score":0.5}',
+    '{"strategy_key":"","strategy_group":"","asset_class":"","horizon":"","status":"not_configured","strategy_score":null}',
   );
 
   const [busy, setBusy] = useState<string | null>(null);

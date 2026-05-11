@@ -18,40 +18,40 @@ const CHECKERS = ["Exit Rule Evaluator", "Close Position Agent", "Close Order Pr
 
 const defaultSample: ClosePositionReviewRequest = {
   position_evaluation: {
-    evaluation_id: "pm_sample",
-    position_id: "pos_sample",
+    evaluation_id: "",
+    position_id: "",
     symbol: "",
     asset_class: "stock",
     horizon: "day_trading",
     position_status: "exit_review",
     recommended_action: "exit_review",
     pnl: {
-      unrealized_pnl: -29.9,
-      unrealized_pnl_percent: -1.52,
-      r_multiple: -1.0,
+      unrealized_pnl: 0,
+      unrealized_pnl_percent: 0,
+      r_multiple: 0,
     },
     risk: {
-      risk_per_share: 2.3,
+      risk_per_share: 0,
       current_distance_to_stop: 0.0,
-      distance_to_target: 6.75,
-      position_notional: 1935.7,
-      position_size_percent: 19.36,
-      daily_loss_percent: 0.7,
+      distance_to_target: 0,
+      position_notional: 0,
+      position_size_percent: 0,
+      daily_loss_percent: 0,
     },
     thesis_validity: {
       valid: false,
-      score: 0.25,
-      failed_reasons: ["invalidation_hit"],
+      score: 0,
+      failed_reasons: [],
       passed_reasons: [],
     },
     blockers: [],
-    warnings: ["thesis_invalidated"],
+    warnings: [],
   },
   position: {
-    quantity: 13,
+    quantity: 0,
     side: "long",
-    current_price: 148.9,
-    entry_price: 151.15,
+    current_price: 0,
+    entry_price: 0,
   },
   master_admin: {
     workflow_enabled: true,
@@ -64,8 +64,8 @@ const defaultSample: ClosePositionReviewRequest = {
     force_close_requested: false,
   },
   review_preferences: {
-    reduce_percent: 50,
-    close_reason: "stage_11_exit_review",
+    reduce_percent: 0,
+    close_reason: "",
     order_style: "market",
     allow_submit: false,
   },
@@ -105,7 +105,7 @@ function CheckerLine({ title, result }: { title: string; result?: ClosePositionC
     <div className="flex items-start justify-between gap-3 rounded-xl border border-white/[0.06] bg-[#0a1018]/80 px-3 py-2.5">
       <div>
         <div className="text-sm font-medium text-slate-200">{title}</div>
-        <div className="mt-0.5 text-xs text-slate-500">{result?.message ?? "No details yet (run a sample review)."}</div>
+        <div className="mt-0.5 text-xs text-slate-500">{result?.message ?? "No details yet (run a review)."}</div>
       </div>
       <span className={`mt-0.5 inline-flex h-fit rounded-lg border px-2 py-0.5 text-[11px] font-medium ${chip(String(status))}`}>
         {String(status)}
@@ -358,7 +358,7 @@ export default function ClosePositionPage() {
             <div className="flex flex-wrap items-center justify-between gap-2">
               <div>
                 <div className="text-xs font-semibold uppercase tracking-[0.2em] text-slate-500">Close/reduce review</div>
-                <div className="mt-1 text-sm text-slate-400">Review a sample close decision (visibility only).</div>
+                <div className="mt-1 text-sm text-slate-400">Review a close decision (visibility only).</div>
               </div>
               <div className="flex flex-wrap gap-2">
                 <button

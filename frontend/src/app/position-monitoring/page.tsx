@@ -17,41 +17,41 @@ const CHECKERS = ["PnL Calculator", "Thesis Validity Checker", "Position Risk Mo
 
 const defaultSample: PositionMonitoringEvaluateRequest = {
   position: {
-    position_id: "pos_sample",
+    position_id: "",
     symbol: "",
     asset_class: "stock",
     horizon: "day_trading",
     side: "long",
-    quantity: 13,
-    entry_price: 151.15,
-    current_price: 152.2,
-    stop_loss: 148.85,
-    target_price: 155.6,
-    opened_at: "2026-05-07T09:40:00-05:00",
+    quantity: 0,
+    entry_price: 0,
+    current_price: 0,
+    stop_loss: 0,
+    target_price: 0,
+    opened_at: "",
   },
   thesis: {
-    strategy_key: "regime_aware_momentum_catalyst",
-    trigger_key: "rvol_vwap_breakout_confirm",
-    vwap: 149.8,
-    price_above_vwap: true,
-    volume_confirms: true,
-    relative_strength_positive: true,
+    strategy_key: "",
+    trigger_key: "",
+    vwap: 0,
+    price_above_vwap: false,
+    volume_confirms: false,
+    relative_strength_positive: false,
     invalidation_hit: false,
   },
   risk_state: {
-    account_equity: 10000,
-    max_daily_loss_percent: 3.0,
-    current_daily_loss_percent: 0.4,
-    max_position_size_percent: 20.0,
+    account_equity: 0,
+    max_daily_loss_percent: 0,
+    current_daily_loss_percent: 0,
+    max_position_size_percent: 0,
     force_close_requested: false,
     emergency_stop: false,
   },
   monitoring_preferences: {
-    time_stop_minutes: 45,
-    reduce_at_r_multiple: 1.5,
-    exit_at_thesis_invalid: true,
+    time_stop_minutes: 0,
+    reduce_at_r_multiple: 0,
+    exit_at_thesis_invalid: false,
   },
-  evaluated_at: "2026-05-07T10:00:00-05:00",
+  evaluated_at: "",
 };
 
 function chip(status: string): string {
@@ -88,7 +88,7 @@ function CheckerLine({ title, result }: { title: string; result?: PositionMonito
     <div className="flex items-start justify-between gap-3 rounded-xl border border-white/[0.06] bg-[#0a1018]/80 px-3 py-2.5">
       <div>
         <div className="text-sm font-medium text-slate-200">{title}</div>
-        <div className="mt-0.5 text-xs text-slate-500">{result?.message ?? "No details yet (evaluate a sample position)."}</div>
+        <div className="mt-0.5 text-xs text-slate-500">{result?.message ?? "No details yet (evaluate a position)."}</div>
       </div>
       <span className={`mt-0.5 inline-flex h-fit rounded-lg border px-2 py-0.5 text-[11px] font-medium ${chip(String(status))}`}>
         {String(status)}
@@ -334,7 +334,7 @@ export default function PositionMonitoringPage() {
             <div className="flex flex-wrap items-center justify-between gap-2">
               <div>
                 <div className="text-xs font-semibold uppercase tracking-[0.2em] text-slate-500">Position evaluation</div>
-                <div className="mt-1 text-sm text-slate-400">Evaluate a sample position (visibility only).</div>
+                <div className="mt-1 text-sm text-slate-400">Evaluate a position (visibility only).</div>
               </div>
               <div className="flex flex-wrap gap-2">
                 <button

@@ -55,7 +55,8 @@ type TabId =
   | "governance"
   | "scheduler"
   | "platformReadiness"
-  | "researchEvidence";
+  | "researchEvidence"
+  | "paperAutonomy";
 
 type FetchState<T> = {
   data: T | null;
@@ -111,6 +112,7 @@ const PLATFORM_PAGES: Array<{ id: TabId; label: string; href: string; group: str
   { id: "promotion", label: "Promotion Center", href: "/daytrading-workflow/promotion", group: "Intelligence", eyebrow: "Promotion" },
   { id: "evidence", label: "Qlib & Evidence", href: "/daytrading-workflow/qlib-evidence", group: "Intelligence", eyebrow: "Proof" },
   { id: "execution", label: "Execution & Approval", href: "/daytrading-workflow/execution-approval", group: "Risk & Approval", eyebrow: "Gates" },
+  { id: "paperAutonomy", label: "DeepAgents Control Tower", href: "/daytrading-workflow/paper-autonomy", group: "Risk & Approval", eyebrow: "Paper Loop" },
   { id: "debug", label: "Issues / Debug", href: "/daytrading-workflow/issues-debug", group: "Risk & Approval", eyebrow: "Diagnostics" },
 ];
 
@@ -233,6 +235,7 @@ function sectionFromPath(pathname: string): TabId {
   if (pathname.endsWith("/promotion")) return "promotion";
   if (pathname.endsWith("/qlib-evidence")) return "evidence";
   if (pathname.endsWith("/execution-approval")) return "execution";
+  if (pathname.endsWith("/paper-autonomy")) return "paperAutonomy";
   if (pathname.endsWith("/issues-debug")) return "debug";
   return "home";
 }

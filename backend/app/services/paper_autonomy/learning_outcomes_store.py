@@ -35,6 +35,19 @@ def list_for_strategy(strategy_key: str, *, limit: int = 50) -> list[PaperLearni
     return bucket[:limit]
 
 
+def list_recent(*, limit: int = 50) -> list[PaperLearningOutcome]:
+    """Return the most-recent outcomes across all strategies, newest first."""
+    flat: list[PaperLearningOutcome] = []
+    for bucket in _MEMORY.values():
+        flat.extend(bucket)
+    flat.sort(key=lambda o: o.created_at, reverse=True)
+    return flat[:limit]
+
+
+def list_strategy_keys() -> list[str]:
+    return sorted(_MEMORY.keys())
+
+
 def to_recent_outcomes_payload(strategy_key: str, *, limit: int = 50) -> list[dict[str, Any]]:
     """Format outcomes for ``LearningLoopEvaluateRequest.recent_outcomes``."""
     out: list[dict[str, Any]] = []
