@@ -57,16 +57,7 @@ export async function POST(req: NextRequest) {
       { status: "error", reason: "backend_url_not_configured" },
       { status: 503 },
     );
-  }
-  const adminToken = opsToken();
-  if (!adminToken) {
-    return NextResponse.json(
-      { status: "error", reason: "ops_admin_token_not_configured_on_frontend" },
-      { status: 503 },
-    );
-  }
-
-  let payload: Record<string, unknown>;
+  }  let payload: Record<string, unknown>;
   try {
     payload = (await req.json()) as Record<string, unknown>;
   } catch {
@@ -84,7 +75,7 @@ export async function POST(req: NextRequest) {
       headers: {
         "Content-Type": "application/json",
         Accept: "application/json",
-        "X-Ops-Admin-Token": adminToken,
+        ...(opsToken() ? { "X-Ops-Admin-Token": opsToken() as string } : {}),
         "X-Ops-Admin-Email": email ?? "",
       },
       body: JSON.stringify(body),
