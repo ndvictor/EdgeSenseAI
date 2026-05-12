@@ -2,8 +2,7 @@
  * NextAuth-gated proxy for the DeepAgents workflow RUN endpoint.
  *
  * Browser -> this Next.js route (NextAuth session required) -> Azure backend
- * `/api/v1/daytrading/workflow/run` with `X-Ops-Admin-Token` injected
- * server-side. The signed-in NextAuth email is forwarded as
+ * `/api/v1/daytrading/workflow/run`. The signed-in NextAuth email is forwarded as
  * `requested_by_email` so the workflow run record carries the operator.
  *
  * The browser sends `{ run_mode, symbols?, confirm_live?, confirm_live_phrase? }`.
@@ -28,11 +27,6 @@ function backendBaseUrl(): string | null {
     "";
   const cleaned = raw.trim().replace(/\/+$/, "");
   return cleaned || null;
-}
-
-function opsToken(): string | null {
-  const raw = process.env.OPS_ADMIN_TOKEN || "";
-  return raw.trim() || null;
 }
 
 const IS_DEV = process.env.NODE_ENV !== "production";
@@ -75,7 +69,6 @@ export async function POST(req: NextRequest) {
       headers: {
         "Content-Type": "application/json",
         Accept: "application/json",
-        ...(opsToken() ? { "X-Ops-Admin-Token": opsToken() as string } : {}),
         "X-Ops-Admin-Email": email ?? "",
       },
       body: JSON.stringify(body),
