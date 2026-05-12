@@ -24,16 +24,15 @@ export function WorkflowRunPanel({ gates }: { gates: TradingGatesResponse | null
   const [error, setError] = useState<string | null>(null);
   const [result, setResult] = useState<RunResult | null>(null);
 
-  const opsConfigured = gates?.context.ops_admin_token_configured ?? false;
   const paperAllowed = gates?.context.paper_run_allowed ?? false;
   const liveAllowed = gates?.context.live_run_allowed ?? false;
   const livePhraseOk = phrase.trim() === "LIVE";
   const canSubmit = useMemo(() => {
-    if (busy || !opsConfigured) return false;
+    if (busy) return false;
     if (mode === "plan_only") return true;
     if (mode === "paper") return paperAllowed;
     return liveAllowed && confirmLive && livePhraseOk;
-  }, [busy, opsConfigured, mode, paperAllowed, liveAllowed, confirmLive, livePhraseOk]);
+  }, [busy, mode, paperAllowed, liveAllowed, confirmLive, livePhraseOk]);
 
   async function runWorkflow() {
     setBusy(true);
@@ -78,13 +77,6 @@ export function WorkflowRunPanel({ gates }: { gates: TradingGatesResponse | null
           Start DeepAgents now. Plan-only never submits orders. Paper uses the simulator. Live is real broker execution and requires explicit confirmation.
         </p>
       </header>
-
-      {!opsConfigured ? (
-        <div className="mb-4 rounded-2xl border border-amber-400/30 bg-amber-500/10 p-3 text-xs text-amber-100">
-          Protected RUN is disabled because OPS_ADMIN_TOKEN is not configured for the frontend/backend proxy.
-        </div>
-      ) : null}
-
       <div className="grid gap-4 lg:grid-cols-2">
         <div className="rounded-2xl border border-white/8 bg-white/[0.02] p-4">
           <div className="mb-3 text-[11px] font-black uppercase tracking-[0.16em] text-cyan-50">Mode</div>
