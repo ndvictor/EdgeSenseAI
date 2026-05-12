@@ -1,4 +1,4 @@
-# EdgeSenseAI
+# EdgeSenseAI - cleanStart
 
 AI-native small-account edge signal and trading recommendation platform for stocks, options, and Bitcoin/crypto.
 
