@@ -18,9 +18,12 @@ def enforce_orchestrator_safety(req: dict[str, Any]) -> OrchestratorSafetyResult
     blockers: list[str] = []
     warnings: list[str] = []
     s = dict(req or {})
+    mode = str(s.get("mode", "") or "").lower().strip()
 
-    # Always enforce: v1 paper-first; never submit.
-    if bool(s.get("allow_submit")):
+    # v1 allows submit-capable runs only for the paper simulator path.
+    # Live/broker execution remains controlled by live/broker gates and must not
+    # be unlocked by this safety layer.
+    if bool(s.get("allow_submit")) and mode != "paper_first":
         blockers.append("allow_submit_blocked_v1")
         s["allow_submit"] = False
     if bool(s.get("live_trading_enabled")):
