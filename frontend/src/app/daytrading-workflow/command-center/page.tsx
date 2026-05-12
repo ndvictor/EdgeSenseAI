@@ -175,7 +175,7 @@ export default function CommandCenterPage() {
         </section>
 
         <GateSettingsPanel onGatesChanged={setGates} />
-        <OperatorCard title="Raw Backend Control State"><JsonViewer value={{ status, tower }} /></OperatorCard>
+        <OperatorCard title="Raw Backend Control State"><JsonViewer value={{ status: status as JsonValue | null, tower: tower as JsonValue | null }} /></OperatorCard>
       </div>
     </main>
   );
