@@ -335,11 +335,6 @@ def get_daytrading_recommendation_latest() -> dict[str, Any]:
             "run": None,
         }
     data = run.model_dump()
-    if body.run_mode == "paper":
-        data["broker_called"] = False
-        data["live_submit_enabled"] = False
-        if data.get("submit_route") not in {"paper", "none", None}:
-            data["submit_route"] = "paper"
     rec = data.get("recommendation") if isinstance(data.get("recommendation"), dict) else {}
     alpha = data.get("alpha_recommendation") if isinstance(data.get("alpha_recommendation"), dict) else {}
     return {
@@ -388,11 +383,6 @@ def get_daytrading_risk_status() -> dict[str, Any]:
             "rejected_symbols": [],
         }
     data = run.model_dump()
-    if body.run_mode == "paper":
-        data["broker_called"] = False
-        data["live_submit_enabled"] = False
-        if data.get("submit_route") not in {"paper", "none", None}:
-            data["submit_route"] = "paper"
     rec = data.get("recommendation") if isinstance(data.get("recommendation"), dict) else {}
     return {
         "status": "ok",
