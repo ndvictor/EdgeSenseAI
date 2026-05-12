@@ -21,12 +21,20 @@ export default function Home() {
               learning outcomes, and alerts. Legacy workspaces have been moved out of this app surface.
             </p>
 
-            <Link
-              href="/EdgeSenseAI"
-              className="mt-8 inline-flex w-fit rounded-xl border border-cyan-400/30 bg-cyan-400/10 px-5 py-3 text-sm font-bold text-cyan-100 transition hover:border-cyan-300/50 hover:bg-cyan-400/20"
-            >
-              Open Control Tower →
-            </Link>
+            <div className="mt-8 flex flex-wrap gap-3">
+              <Link
+                href="/EdgeSenseAI"
+                className="inline-flex w-fit rounded-xl border border-cyan-400/30 bg-cyan-400/10 px-5 py-3 text-sm font-bold text-cyan-100 transition hover:border-cyan-300/50 hover:bg-cyan-400/20"
+              >
+                Open Control Tower →
+              </Link>
+              <Link
+                href="/gates"
+                className="inline-flex w-fit rounded-xl border border-white/15 bg-white/[0.04] px-5 py-3 text-sm font-bold text-slate-200 transition hover:border-emerald-400/35 hover:bg-emerald-400/10 hover:text-emerald-100"
+              >
+                Trading gates →
+              </Link>
+            </div>
 
             <div className="mt-8 flex flex-wrap gap-2 text-[10px] font-bold uppercase tracking-[0.16em] text-slate-500">
               <span className="rounded-full border border-emerald-400/20 bg-emerald-400/10 px-3 py-1 text-emerald-200">Paper only</span>

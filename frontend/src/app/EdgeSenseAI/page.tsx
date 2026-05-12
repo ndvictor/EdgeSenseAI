@@ -9,6 +9,7 @@
  * runtime gates and explicit owner confirmation allow it.
  */
 
+import Link from "next/link";
 import { useCallback, useEffect, useMemo, useState } from "react";
 
 import { DeepAgentsCommandSidebar } from "@/components/deepagents/DeepAgentsCommandSidebar";
@@ -403,8 +404,14 @@ function PageHeader({
           <Pill tone="rose">Live submit blocked</Pill>
           <Pill tone="violet">DeepAgents: {payloadReady ? "connected" : loading ? "loading" : "offline"}</Pill>
         </div>
-        <div className="flex items-center gap-3 text-xs text-slate-500">
+        <div className="flex flex-wrap items-center gap-3 text-xs text-slate-500">
           <span>{loadedAt ? `Last loaded: ${new Date(loadedAt).toLocaleTimeString()}` : loading ? "Loading…" : "Not loaded"}</span>
+          <Link
+            href="/gates"
+            className="rounded-lg border border-white/10 bg-white/[0.04] px-3 py-1.5 font-bold text-slate-200 transition hover:border-emerald-400/30 hover:text-emerald-100"
+          >
+            Gates page
+          </Link>
           <button
             type="button"
             onClick={onRefresh}
