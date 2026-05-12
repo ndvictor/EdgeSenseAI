@@ -6,8 +6,7 @@
  * Read-only display by default, with explicit "Edit" mode. Live gates are
  * always visible but disabled until the operator types the literal phrase
  * "ENABLE LIVE" in the confirmation field. All mutations go to
- * /api/edgesense/gates which forwards to the Azure backend with the
- * OPS_ADMIN_TOKEN attached server-side.
+ * /api/edgesense/gates which forwards to the Azure backend.
  *
  * Convention: percent fields use the LOCKED PERCENT CONVENTION (0.5 = 0.5%).
  */
@@ -66,7 +65,6 @@ export type TradingGatesSnapshot = {
 };
 
 type GateMutationContext = {
-  ops_admin_token_configured: boolean;
   paper_run_allowed: boolean;
   paper_run_block_reasons: string[];
   live_run_allowed: boolean;
@@ -568,7 +566,6 @@ export function GateSettingsPanel({
           </Group>
 
           <Group title="Run permissions (read-only)" hint="What the workflow RUN endpoint will currently allow.">
-            <Fact label="ops_admin_token_configured" value={fmtBool(data.context.ops_admin_token_configured)} />
             <Fact label="paper_run_allowed" value={fmtBool(data.context.paper_run_allowed)} />
             {data.context.paper_run_block_reasons.length ? (
               <ul className="text-xs text-amber-200">

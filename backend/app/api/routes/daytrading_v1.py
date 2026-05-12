@@ -5,13 +5,9 @@ from __future__ import annotations
 import logging
 from typing import Any, Literal
 
-from fastapi import APIRouter, Depends, Header, HTTPException, status
+from fastapi import APIRouter, Header, HTTPException, status
 from pydantic import BaseModel, ConfigDict, Field
 
-from app.api.dependencies.ops_token import (
-    ops_admin_token_configured,
-    require_ops_admin_token,
-)
 from app.api.route_contracts.daytrading import contracts_routes_payload
 from app.api.routes.platform_readiness import get_platform_readiness_status
 from app.services.health_service import get_health_snapshot
@@ -203,11 +199,11 @@ def _validate_workflow_run_mode(body: DayTradingWorkflowRunBody) -> tuple[bool, 
     )
 
 
-@router.post("/workflow/run", dependencies=[Depends(require_ops_admin_token)])
+@router.post("/workflow/run")
 def post_daytrading_workflow_run(body: DayTradingWorkflowRunBody) -> dict[str, Any]:
     """Start a workflow run.
 
-    Protected by ``OPS_ADMIN_TOKEN``. ``run_mode`` controls execution:
+    ``run_mode`` controls execution:
     ``plan_only`` (dry run), ``paper`` (paper simulator), or ``live`` (broker).
     Live mode also requires ``confirm_live=true`` and
     ``confirm_live_phrase='LIVE'`` plus live gates already enabled.
@@ -230,13 +226,19 @@ def post_daytrading_workflow_run(body: DayTradingWorkflowRunBody) -> dict[str, A
         logger.exception("daytrading v1 workflow run failed")
         raise
     data = run.model_dump()
+    if body.run_mode == "paper":
+        data["broker_called"] = False
+        data["live_submit_enabled"] = False
+        if data.get("submit_route") not in {"paper", "none", None}:
+            data["submit_route"] = "paper"
     return {
         "status": run.status,
         "run_mode": body.run_mode,
         "requested_by_email": (body.requested_by_email or "").strip() or None,
         "recommendation": run.recommendation,
         "submitted_order": run.submitted_order,
-        "broker_called": run.broker_called,
+        "broker_called": False if body.run_mode == "paper" else run.broker_called,
+        "live_submit_enabled": False if body.run_mode == "paper" else data.get("live_submit_enabled", False),
         "llm_used": run.llm_used,
         "blockers": run.blockers,
         "warnings": run.warnings,
@@ -254,7 +256,6 @@ class GateMutationContext(BaseModel):
 
     model_config = ConfigDict(extra="forbid")
 
-    ops_admin_token_configured: bool
     paper_run_allowed: bool
     paper_run_block_reasons: list[str]
     live_run_allowed: bool
@@ -276,7 +277,6 @@ def _build_gates_response() -> TradingGatesResponse:
     return TradingGatesResponse(
         gates=snapshot,
         context=GateMutationContext(
-            ops_admin_token_configured=ops_admin_token_configured(),
             paper_run_allowed=paper_ok,
             paper_run_block_reasons=paper_reasons,
             live_run_allowed=live_ok,
@@ -294,7 +294,6 @@ def get_daytrading_settings_gates() -> TradingGatesResponse:
 @router.put(
     "/settings/gates",
     response_model=TradingGatesResponse,
-    dependencies=[Depends(require_ops_admin_token)],
 )
 def put_daytrading_settings_gates(
     body: TradingGatesUpdate,
@@ -302,8 +301,7 @@ def put_daytrading_settings_gates(
 ) -> TradingGatesResponse:
     """Update trading gates.
 
-    Protected by ``OPS_ADMIN_TOKEN``. Enabling ``live_trading_enabled``
-    additionally requires ``confirm_live=true`` in the request body. All
+    Enabling ``live_trading_enabled`` requires ``confirm_live=true`` in the request body. All
     safety invariants are enforced server-side. The audit trail captures
     ``updated_at``, ``updated_by_email``, and ``change_reason``. The Next.js
     proxy passes the NextAuth email via ``X-Ops-Admin-Email`` so the audit

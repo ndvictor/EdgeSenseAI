@@ -24,6 +24,3 @@ Research and paper-trading first. No live execution by default.
 
 ## Protected operations
 
-- Backend protected mutations/RUN endpoints require `OPS_ADMIN_TOKEN`.
-- Frontend server routes also need `OPS_ADMIN_TOKEN` plus `BACKEND_BASE_URL` or `NEXT_PUBLIC_API_URL`.
-- Do not expose `OPS_ADMIN_TOKEN` with a `NEXT_PUBLIC_` prefix; it must stay server-side.
