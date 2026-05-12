@@ -97,7 +97,7 @@ export function WorkflowRunPanel({ gates }: { gates: TradingGatesResponse | null
             <input
               value={symbols}
               onChange={(event) => setSymbols(event.target.value)}
-              placeholder="AAPL, MSFT, NVDA"
+              placeholder="Enter symbols separated by commas"
               className="w-full rounded-lg border border-white/10 bg-black/30 px-3 py-2 font-mono text-xs text-slate-100 placeholder:text-slate-600 focus:border-cyan-300/40 focus:outline-none"
             />
           </label>
