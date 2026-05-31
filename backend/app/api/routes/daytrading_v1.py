@@ -216,6 +216,7 @@ def post_daytrading_workflow_run(body: DayTradingWorkflowRunBody) -> dict[str, A
     req = OrchestratorRunRequest(
         dry_run=dry_run if body.run_mode != "plan_only" or body.dry_run else True,
         allow_submit=allow_submit if body.run_mode != "plan_only" else False,
+        require_human_approval=body.run_mode not in {"paper", "plan_only"},
         symbols=_normalize_symbols(body.symbols),
         source=body.source,
         mode={

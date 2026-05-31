@@ -78,8 +78,13 @@ def test_legacy_routes_still_blocked_in_production():
 
 def test_new_daytrading_dashboard_calls_only_v1_api_paths():
     repo_root = Path(__file__).resolve().parents[2]
-    page = repo_root / "frontend" / "src" / "app" / "daytrading-workflow" / "new" / "[[...section]]" / "page.tsx"
-    text = page.read_text(encoding="utf-8")
+    frontend_src = repo_root / "frontend" / "src"
+    paths = [
+        frontend_src / "app" / "EdgeSenseAI" / "page.tsx",
+        frontend_src / "app" / "api" / "edgesense" / "gates" / "route.ts",
+        frontend_src / "app" / "api" / "edgesense" / "workflow-run" / "route.ts",
+    ]
+    text = "\n".join(p.read_text(encoding="utf-8") for p in paths if p.is_file())
     assert "/api/v1/daytrading/" in text
     legacy_substrings = (
         "/api/workflow-orchestrator",

@@ -9,6 +9,7 @@ on:
       - "backend/**"
       - ".github/workflows/build-backend-image.yml"
       - "scripts/smoke_test_platform.sh"
+      - "scripts/sync_container_app_production_env.sh"
 
 permissions:
   contents: read
@@ -57,6 +58,14 @@ jobs:
           if [ -z "${{ secrets.DATABASE_URL }}" ]; then
             echo "Missing GitHub secret: DATABASE_URL"
             missing=1
+          fi
+
+          if [ -z "${{ secrets.OPS_ADMIN_TOKEN }}" ]; then
+            echo "WARN: OPS_ADMIN_TOKEN not set — workflow RUN from UI will fail until set on Container App"
+          fi
+
+          if [ -z "${{ secrets.ALPACA_API_KEY }}" ] || [ -z "${{ secrets.ALPACA_SECRET_KEY }}" ]; then
+            echo "WARN: ALPACA_API_KEY/ALPACA_SECRET_KEY not set — paper account hydration may be limited"
           fi
 
           if [ "$missing" -ne 0 ]; then
@@ -210,8 +219,17 @@ jobs:
         shell: bash
         env:
           DATABASE_URL: ${{ secrets.DATABASE_URL }}
+          OPS_ADMIN_TOKEN: ${{ secrets.OPS_ADMIN_TOKEN }}
+          ALPACA_API_KEY: ${{ secrets.ALPACA_API_KEY }}
+          ALPACA_SECRET_KEY: ${{ secrets.ALPACA_SECRET_KEY }}
+          CORS_ORIGINS: ${{ secrets.CORS_ORIGINS }}
         run: |
           IMAGE="$ACR_LOGIN_SERVER/$IMAGE_NAME:${{ github.sha }}"
+          ENV_FILE="$(mktemp)"
+          export DATABASE_URL OPS_ADMIN_TOKEN ALPACA_API_KEY ALPACA_SECRET_KEY CORS_ORIGINS
+          bash scripts/sync_container_app_production_env.sh > "$ENV_FILE"
+          mapfile -t ENV_ARGS < "$ENV_FILE"
+          rm -f "$ENV_FILE"
 
           if az containerapp show \
             --name "$CONTAINER_APP_NAME" \
@@ -221,20 +239,7 @@ jobs:
               --name "$CONTAINER_APP_NAME" \
               --resource-group "$RESOURCE_GROUP" \
               --image "$IMAGE" \
-              --set-env-vars \
-                ENVIRONMENT=production \
-                APP_ENV=production \
-                PAPER_TRADING_ENABLED=true \
-                LIVE_TRADING_ENABLED=false \
-                BROKER_EXECUTION_ENABLED=false \
-                REQUIRE_HUMAN_APPROVAL=true \
-                MARKET_DATA_MODE=provider \
-                MARKET_DATA_PROVIDER=yfinance \
-                MARKET_DATA_PROVIDER_PRIORITY=polygon,alpaca,yfinance \
-                ALLOW_NON_REAL_MARKET_DATA=false \
-                ALLOW_SYNTHETIC_MARKET_DATA=false \
-                QLIB_REQUIRED=false \
-                DATABASE_URL="$DATABASE_URL"
+              --set-env-vars "${ENV_ARGS[@]}"
           else
             echo "Creating Container App: $CONTAINER_APP_NAME"
             az containerapp create \
@@ -249,20 +254,7 @@ jobs:
               --registry-password "${{ secrets.ACR_PASSWORD }}" \
               --min-replicas 0 \
               --max-replicas 1 \
-              --env-vars \
-                ENVIRONMENT=production \
-                APP_ENV=production \
-                PAPER_TRADING_ENABLED=true \
-                LIVE_TRADING_ENABLED=false \
-                BROKER_EXECUTION_ENABLED=false \
-                REQUIRE_HUMAN_APPROVAL=true \
-                MARKET_DATA_MODE=provider \
-                MARKET_DATA_PROVIDER=yfinance \
-                MARKET_DATA_PROVIDER_PRIORITY=polygon,alpaca,yfinance \
-                ALLOW_NON_REAL_MARKET_DATA=false \
-                ALLOW_SYNTHETIC_MARKET_DATA=false \
-                QLIB_REQUIRED=false \
-                DATABASE_URL="$DATABASE_URL"
+              --env-vars "${ENV_ARGS[@]}"
           fi
 
       - name: Sync scheduled worker jobs to same image as API
@@ -309,3 +301,16 @@ jobs:
           fi
 
           curl -fsS "$BACKEND_PUBLIC_URL/health"
+
+      - name: Post-deploy paper loop smoke test
+        shell: bash
+        env:
+          BACKEND_PUBLIC_URL: ${{ secrets.BACKEND_PUBLIC_URL }}
+          OPS_ADMIN_TOKEN: ${{ secrets.OPS_ADMIN_TOKEN }}
+        run: |
+          if [ -z "$BACKEND_PUBLIC_URL" ] || [ -z "$OPS_ADMIN_TOKEN" ]; then
+            echo "Skipping paper smoke (set BACKEND_PUBLIC_URL and OPS_ADMIN_TOKEN in GitHub Actions secrets)."
+            exit 0
+          fi
+          python -m pip install --quiet --disable-pip-version-check -r backend/requirements.prod.txt
+          python backend/scripts/post_deploy_paper_smoke.py
