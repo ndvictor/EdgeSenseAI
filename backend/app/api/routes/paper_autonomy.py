@@ -635,11 +635,23 @@ def get_control_tower(
             )
         )
     if not orders and not open_positions and not closed_positions:
+        if flags.get("agent_can_auto_submit_paper_orders", False):
+            loop_msg = (
+                "No simulated paper orders yet. From Control Tower or Workflow Run, start a paper workflow "
+                "(run_mode=paper) with at least one symbol and a valid OPS_ADMIN_TOKEN. "
+                "If a run completed with blockers (missing price, feasibility, or execution plan), "
+                "check the latest workflow run blockers — the loop only fills after execution_approval simulates an order."
+            )
+        else:
+            loop_msg = (
+                "No paper autonomy records yet. Enable paper_auto (OWNER_AUTHORITY_LEVEL=paper_auto and "
+                "AGENT_CAN_AUTO_SUBMIT_PAPER_ORDERS=true), then run the paper workflow."
+            )
         alerts.append(
             _alert(
                 severity="info",
                 code="loop_empty",
-                message="No paper autonomy records yet. Run the autonomous workflow with paper_auto authority to populate this loop.",
+                message=loop_msg,
             )
         )
     if feasibility_flags.get("banner") == "INFEASIBLE":

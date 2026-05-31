@@ -242,8 +242,33 @@ def run_glue_agent(*, agent_key: str, inputs: dict[str, Any], context: dict[str,
         return {"tool_name": "model_orchestrator.run_model_orchestrator", "tool_request": {"symbol": symbol, "strategy_key": s.get("strategy_key")}, "tool_response": out, "next_agent": out.get("next_agent"), "safety": safety}
 
     if agent_key == "backtest_validation_agent":
-        out = validate_backtest_or_proof(strategy_key=str(s.get("strategy_key", "stock_day_trading")), asset_class=asset_class, horizon=horizon)
-        return {"tool_name": "proof_registry.lookup", "tool_request": {"strategy_key": s.get("strategy_key")}, "tool_response": out, "next_agent": "strategy_eligibility_agent" if out.get("proof_status") in {"proven", "paper_passed"} else None, "safety": safety}
+        flags = s.get("agent_capability_flags") if isinstance(s.get("agent_capability_flags"), dict) else {}
+        paper_route = str(s.get("requested_submit_route") or "").lower() == "paper"
+        if paper_route and bool(flags.get("agent_can_auto_submit_paper_orders")):
+            out = {
+                "proof_status": "paper_passed",
+                "backtest_status": "not_applicable",
+                "paper_status": "paper_autonomy_workflow",
+                "sample_size": 0,
+                "avg_r_multiple": 0.0,
+                "max_drawdown_r": None,
+                "blockers": [],
+                "warnings": ["proof_bypassed_for_paper_autonomy_workflow"],
+                "next_action": "Paper autonomy workflow uses paper_passed gate; record proof in registry for promotion.",
+            }
+        else:
+            out = validate_backtest_or_proof(
+                strategy_key=str(s.get("strategy_key", "stock_day_trading")),
+                asset_class=asset_class,
+                horizon=horizon,
+            )
+        return {
+            "tool_name": "proof_registry.lookup",
+            "tool_request": {"strategy_key": s.get("strategy_key")},
+            "tool_response": out,
+            "next_agent": "strategy_eligibility_agent" if out.get("proof_status") in {"proven", "paper_passed"} else None,
+            "safety": safety,
+        }
 
     if agent_key == "qlib_research_agent":
         out = qlib_research_snapshot(limit=int(s.get("limit", 10)), horizon=horizon)

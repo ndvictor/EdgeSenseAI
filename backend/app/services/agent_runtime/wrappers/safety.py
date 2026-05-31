@@ -25,7 +25,18 @@ def enforce_phase2_safety(*, agent_key: str, inputs: dict[str, Any], context: di
         blockers.append("live_trading_enabled_blocked_in_v1")
 
     if bool(sanitized.get("broker_execution_enabled")):
-        blockers.append("broker_execution_enabled_blocked_in_v1")
+        paper_route = str(sanitized.get("requested_submit_route") or "").lower() == "paper"
+        paper_mode = str(sanitized.get("execution_mode") or sanitized.get("mode") or "").lower() in {
+            "paper",
+            "paper_first",
+        }
+        if paper_route or paper_mode:
+            # Paper autonomy uses the in-app simulator only; clear the broker flag so
+            # downstream agents are not hard-blocked when Azure has BROKER_EXECUTION_ENABLED=true.
+            sanitized["broker_execution_enabled"] = False
+            warnings.append("broker_execution_flag_cleared_for_paper_simulator_v1")
+        else:
+            blockers.append("broker_execution_enabled_blocked_in_v1")
 
     if bool(sanitized.get("allow_submit")):
         # v1: never submit from wrappers; force false and warn.

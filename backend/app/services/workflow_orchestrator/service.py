@@ -19,6 +19,7 @@ from app.services.workflow_governance.service import check_governance
 from app.services.workflow_orchestrator.models import OrchestratorRunRequest, OrchestratorRunResponse, OrchestratorStatusResponse, iso_utc_now, new_orchestrator_id
 from app.services.workflow_orchestrator.pipeline_carryforward import advisory_glue_next_agent_mismatch, apply_stage_carryforward
 from app.services.workflow_orchestrator.safety import enforce_orchestrator_safety
+from app.services.workflow_orchestrator.paper_run_bootstrap import bootstrap_paper_trade_context
 from app.services.workflow_orchestrator.scanner_carryforward import seed_workflow_state_from_scanner_diagnostics
 from app.services.workflow_orchestrator.stage_plan import default_stage_plan, orchestrator_pipeline_agent_count
 from app.core.effective_runtime import effective_bool
@@ -40,9 +41,28 @@ def _seed_workflow_runtime_context(body: OrchestratorRunRequest, state: Workflow
 
         flags = get_settings().agent_capability_flags
         state.agent_capability_flags = dict(flags)
-        state.paper_trading_enabled = bool(flags.get("agent_can_submit_paper_orders")) or effective_bool(
-            "PAPER_TRADING_ENABLED"
-        )
+        can_paper_auto = bool(flags.get("agent_can_auto_submit_paper_orders"))
+        can_paper_submit = bool(flags.get("agent_can_submit_paper_orders"))
+        can_live = bool(flags.get("agent_can_submit_live_orders"))
+        if can_live:
+            level = "live_submit"
+        elif can_paper_auto:
+            level = "paper_auto"
+        elif can_paper_submit:
+            level = "paper_submit"
+        else:
+            level = "read_only"
+        state.owner_authority = {
+            "level": level,
+            "can_recommend_trades": bool(flags.get("agent_can_recommend_trades")),
+            "can_create_paper_plans": bool(flags.get("agent_can_create_paper_plans")),
+            "can_create_approval_requests": bool(flags.get("agent_can_create_approval_requests")),
+            "can_submit_paper_orders": can_paper_submit,
+            "can_paper_auto_submit": can_paper_auto,
+            "can_submit_live_orders": can_live,
+            "require_human_approval": not can_paper_auto,
+        }
+        state.paper_trading_enabled = can_paper_submit or effective_bool("PAPER_TRADING_ENABLED")
         state.live_trading_enabled = effective_bool("LIVE_TRADING_ENABLED")
         state.broker_execution_enabled = effective_bool("BROKER_EXECUTION_ENABLED")
     except Exception:
@@ -375,6 +395,9 @@ def run_workflow(body: OrchestratorRunRequest) -> OrchestratorRunResponse:
     scanner_diagnostics, latest_scanner_status = _workflow_scanner_context(body)
     seed_workflow_state_from_scanner_diagnostics(state, scanner_diagnostics, latest_scanner_status)
     _seed_workflow_runtime_context(body, state)
+    bootstrap_warnings = bootstrap_paper_trade_context(state)
+    if bootstrap_warnings:
+        warnings.extend(bootstrap_warnings)
 
     approval_required = bool(body.require_human_approval)
     approval_id: str | None = None
@@ -649,9 +672,9 @@ def run_workflow(body: OrchestratorRunRequest) -> OrchestratorRunResponse:
         alpha_score=state.alpha_score,
         alpha_reason=state.alpha_reason,
         allow_submit=False,
-        submitted_order=False,
-        broker_called=False,
-        llm_used=False,
+        submitted_order=bool(state.submitted_order),
+        broker_called=bool(state.broker_called),
+        llm_used=bool(state.llm_used),
         created_at=iso_utc_now(),
         updated_at=iso_utc_now(),
     )

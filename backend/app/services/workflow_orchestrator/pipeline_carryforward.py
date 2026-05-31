@@ -163,6 +163,7 @@ def _enrich_alpha_recommendation_with_row(state: WorkflowCarryForwardState) -> N
 def apply_stage_carryforward(*, agent_key: str, agent_result: AgentRunResult, state: WorkflowCarryForwardState) -> list[str]:
     """Carry typed workflow state forward for downstream agents. Returns advisory warnings."""
     warnings: list[str] = []
+    prior_submitted_order = bool(state.submitted_order)
     state.submitted_order = False
     state.broker_called = False
     state.llm_used = False
@@ -177,9 +178,17 @@ def apply_stage_carryforward(*, agent_key: str, agent_result: AgentRunResult, st
         if "broker_execution_enabled" in tr["gates"]:
             state.broker_execution_enabled = bool(tr["gates"]["broker_execution_enabled"])
 
-    if agent_key not in GLUE_AGENT_KEYS:
+    phase2_carryforward_keys = {
+        "execution_planner_agent",
+        "execution_approval_agent",
+    }
+    if agent_key not in GLUE_AGENT_KEYS and agent_key not in phase2_carryforward_keys:
+        if prior_submitted_order:
+            state.submitted_order = True
         return warnings
-    if not tr:
+    if not tr and agent_key not in phase2_carryforward_keys:
+        if prior_submitted_order:
+            state.submitted_order = True
         return warnings
 
     if agent_key == "data_readiness_agent":
@@ -292,8 +301,17 @@ def apply_stage_carryforward(*, agent_key: str, agent_result: AgentRunResult, st
             if (state.feature_row_count or 0) == 0 and (prior_watchlist.get("feature_row_count") or 0) > 0:
                 state.feature_row_count = int(prior_watchlist["feature_row_count"])
     elif agent_key == "alpha_engine_agent":
+        prior_alpha = dict(state.alpha_recommendation) if isinstance(state.alpha_recommendation, dict) else {}
         if isinstance(tr.get("alpha_recommendation"), dict):
             state.alpha_recommendation = dict(tr["alpha_recommendation"])
+        if state.paper_autonomy_bootstrapped and (
+            not state.alpha_recommendation
+            or str(tr.get("alpha_status") or state.alpha_status or "").lower() in {"data_unavailable", "blocked"}
+        ):
+            state.alpha_recommendation = prior_alpha or state.alpha_recommendation
+            if prior_alpha.get("symbol"):
+                state.alpha_selected_symbol = str(prior_alpha["symbol"]).strip().upper()
+                state.alpha_status = str(prior_alpha.get("status") or "candidate_selected")
         if tr.get("alpha_status") is not None:
             state.alpha_status = str(tr["alpha_status"])
         if tr.get("alpha_selected_symbol"):
@@ -390,10 +408,34 @@ def apply_stage_carryforward(*, agent_key: str, agent_result: AgentRunResult, st
         state.account_feasibility_warnings = [str(x) for x in (tr.get("account_feasibility_warnings") or tr.get("warnings") or []) if x]
         _append_strings(state.blockers, tr.get("blockers"))
         _append_strings(state.warnings, tr.get("warnings"))
+    elif agent_key == "execution_planner_agent":
+        if isinstance(tr.get("execution_plan"), dict):
+            state.execution_plan = dict(tr["execution_plan"])
+        if isinstance(tr.get("owner_authority"), dict):
+            state.owner_authority = dict(tr["owner_authority"])
+        if tr.get("account_feasibility_decision") is not None:
+            state.account_feasibility_decision = str(tr["account_feasibility_decision"])
+        for attr in ("entry", "stop", "target", "position_size_shares", "position_size_notional", "risk_dollars"):
+            if tr.get(attr) is not None:
+                setattr(state, attr, _float_or_none(tr.get(attr)))
+        _append_strings(state.blockers, tr.get("blockers"))
+        _append_strings(state.warnings, tr.get("warnings"))
+    elif agent_key == "execution_approval_agent":
+        if bool(tr.get("submitted_order")) or tr.get("execution_approval_decision") == "paper_simulated":
+            state.submitted_order = True
+        if isinstance(tr.get("execution_plan"), dict) and tr["execution_plan"]:
+            state.execution_plan = dict(tr["execution_plan"])
+        if isinstance(tr.get("paper_order"), dict) and tr["paper_order"]:
+            state.market_context = {**state.market_context, "paper_order_id": tr["paper_order"].get("paper_order_id")}
+        _append_strings(state.blockers, tr.get("blockers"))
+        _append_strings(state.warnings, tr.get("warnings"))
 
     if state.strategy_key and not state.symbol and state.symbols:
         state.symbol = str(state.symbols[0]).strip().upper()
         state.selected_symbol = state.symbol
+
+    if prior_submitted_order and agent_key != "execution_approval_agent":
+        state.submitted_order = True
 
     return warnings
 

@@ -51,6 +51,14 @@ class WorkflowCarryForwardState(BaseModel):
     freshness_status: str | None = None
     kafka_status: str = "configured_optional_not_active"
     latest_price: float | None = None
+    entry: float | None = None
+    stop: float | None = None
+    target: float | None = None
+    position_size_shares: float | None = None
+    position_size_notional: float | None = None
+    risk_dollars: float | None = None
+    execution_plan: dict[str, Any] = Field(default_factory=dict)
+    paper_autonomy_bootstrapped: bool = False
     spread_bps: float | None = None
     avg_dollar_volume: float | None = None
     planned_risk_dollars: float | None = None
@@ -76,6 +84,7 @@ class WorkflowCarryForwardState(BaseModel):
     execution_mode: str = "plan_only"
     requested_submit_route: str | None = None
     agent_capability_flags: dict[str, Any] = Field(default_factory=dict)
+    owner_authority: dict[str, Any] = Field(default_factory=dict)
     paper_trading_enabled: bool | None = None
     live_trading_enabled: bool | None = None
     broker_execution_enabled: bool | None = None
