@@ -4,7 +4,9 @@ Single source of truth for the **trading gates** exposed to the UI / API.
 
 Conceptually it is a thin, audited facade over ``runtime_settings.json`` (already
 managed by ``app/core/runtime_settings_store.py``) plus the effective-runtime
-resolver. It exists so:
+resolver. **Reads** use explicit process env first (Azure Portal / Container App
+env), then ``runtime_settings.json``, then pydantic defaults. **Writes** persist
+to ``runtime_settings.json``. It exists so:
 
 1. The UI / API can read a *strictly-typed* gate snapshot without scanning
    the full legacy settings dict.
@@ -27,6 +29,7 @@ This module **never** calls a broker. It is config only.
 
 from __future__ import annotations
 
+import os
 from dataclasses import dataclass, field
 from datetime import datetime, timezone
 from typing import Any, Literal
@@ -224,8 +227,23 @@ class _Merged:
     safety_warnings: list[str] = field(default_factory=list)
 
 
+def _parse_env_bool(raw: str) -> bool:
+    return raw.strip().lower() in {"1", "true", "yes", "on"}
+
+
+def _env_bool(key: str) -> bool | None:
+    """Return bool when the process env explicitly sets ``key``, else None."""
+    raw = os.getenv(key)
+    if raw is None:
+        return None
+    return _parse_env_bool(raw)
+
+
 def _coalesce_bool(runtime: dict[str, Any], key: str, settings_attr: str | None = None) -> bool:
-    """Effective gate boolean: runtime override > env > Settings default."""
+    """Effective gate boolean: explicit env > runtime_settings.json > Settings default."""
+    env_val = _env_bool(key)
+    if env_val is not None:
+        return env_val
     if key in runtime:
         return bool(runtime[key])
     return effective_bool(key)
@@ -254,6 +272,9 @@ def _coalesce_int(runtime: dict[str, Any], key: str, default: int) -> int:
 
 
 def _coalesce_str(runtime: dict[str, Any], key: str, default: str) -> str:
+    env_val = os.getenv(key)
+    if env_val is not None and str(env_val).strip():
+        return str(env_val).strip()
     if key in runtime:
         raw = runtime[key]
         if raw is not None and str(raw).strip():

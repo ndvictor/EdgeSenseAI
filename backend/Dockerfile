@@ -18,6 +18,7 @@ RUN python -m pip install --upgrade pip setuptools wheel \
 
 COPY app ./app
 COPY scripts ./scripts
+COPY runtime_settings.json ./runtime_settings.json
 RUN chmod +x /app/scripts/run_market_scanner_worker.sh \
     /app/scripts/run_data_ingestion_worker.sh \
     /app/scripts/run_feature_pipeline_worker.sh

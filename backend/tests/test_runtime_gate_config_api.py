@@ -48,6 +48,27 @@ def test_gate_defaults_disable_live_and_broker_execution() -> None:
     assert payload["context"]["live_run_allowed"] is False
 
 
+def test_process_env_overrides_stale_runtime_file_on_gate_read(
+    tmp_path,
+    monkeypatch: pytest.MonkeyPatch,
+) -> None:
+    """Azure Portal env must win over baked runtime_settings.json defaults."""
+    path = tmp_path / "runtime_settings.json"
+    path.write_text(
+        '{"OWNER_AUTHORITY_LEVEL":"paper_manual","AGENT_CAN_AUTO_SUBMIT_PAPER_ORDERS":false}',
+        encoding="utf-8",
+    )
+    monkeypatch.setenv("OWNER_AUTHORITY_LEVEL", "paper_auto")
+    monkeypatch.setenv("AGENT_CAN_AUTO_SUBMIT_PAPER_ORDERS", "true")
+
+    response = client.get("/api/v1/daytrading/settings/gates")
+
+    assert response.status_code == 200
+    gates = response.json()["gates"]
+    assert gates["live"]["owner_authority_level"] == "paper_auto"
+    assert gates["paper"]["agent_can_auto_submit_paper_orders"] is True
+
+
 def test_gate_mutation_requires_ops_admin_token() -> None:
     response = client.put(
         "/api/v1/daytrading/settings/gates",
