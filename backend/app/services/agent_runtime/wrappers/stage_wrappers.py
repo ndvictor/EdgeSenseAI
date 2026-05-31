@@ -2,8 +2,23 @@ from __future__ import annotations
 
 from typing import Any
 
+from app.core.effective_runtime import effective_bool
 from app.services.agent_runtime.wrappers.safety import SafetyResult, enforce_phase2_safety
 from app.services.agent_runtime.wrappers.glue_agents import GLUE_AGENT_KEYS, run_glue_agent
+
+
+def _effective_master_admin_snapshot() -> dict[str, bool]:
+    """Master-admin fields for stage wrappers; mirrors effective runtime gates."""
+    return {
+        "workflow_enabled": effective_bool("WORKFLOW_ENABLED"),
+        "execution_enabled": effective_bool("EXECUTION_ENABLED"),
+        "paper_trading_enabled": effective_bool("PAPER_TRADING_ENABLED"),
+        "live_trading_enabled": effective_bool("LIVE_TRADING_ENABLED"),
+        "broker_execution_enabled": effective_bool("BROKER_EXECUTION_ENABLED"),
+        "human_approval_required": effective_bool("REQUIRE_HUMAN_APPROVAL"),
+        "emergency_stop": effective_bool("EMERGENCY_STOP"),
+        "force_close_requested": effective_bool("FORCE_CLOSE_REQUESTED"),
+    }
 
 
 WRAPPED_AGENT_KEYS = frozenset(
@@ -185,16 +200,7 @@ def _build_close_review_request_from_paper_position(
             "current_price": float(current_price),
             "entry_price": entry,
         },
-        "master_admin": {
-            "workflow_enabled": True,
-            "execution_enabled": False,
-            "paper_trading_enabled": True,
-            "live_trading_enabled": False,
-            "broker_execution_enabled": False,
-            "human_approval_required": True,
-            "emergency_stop": False,
-            "force_close_requested": bool(inputs.get("force_close_requested", False)),
-        },
+        "master_admin": _effective_master_admin_snapshot(),
         "review_preferences": {
             "reduce_percent": 50,
             "close_reason": "stage_12_close_review",
@@ -835,16 +841,7 @@ def run_wrapped_agent(*, agent_key: str, inputs: dict[str, Any], context: dict[s
                 "warnings": ["thesis_invalidated"],
             },
             "position": {"quantity": 13, "side": "long", "current_price": 148.90, "entry_price": 151.15},
-            "master_admin": {
-                "workflow_enabled": True,
-                "execution_enabled": False,
-                "paper_trading_enabled": True,
-                "live_trading_enabled": False,
-                "broker_execution_enabled": False,
-                "human_approval_required": True,
-                "emergency_stop": False,
-                "force_close_requested": False,
-            },
+            "master_admin": _effective_master_admin_snapshot(),
             "review_preferences": {"reduce_percent": 50, "close_reason": "stage_11_exit_review", "order_style": "market", "allow_submit": False},
         }
         req = ClosePositionReviewRequest.model_validate(s.get("request", default_req) if isinstance(s.get("request"), dict) else default_req)
