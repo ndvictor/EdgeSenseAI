@@ -262,7 +262,7 @@ def test_dry_run_governance_blockers_continue_with_trace():
     run = _run_orchestrator({"dry_run": True, "source": "runtime", "stop_at_stage": 3})
 
     assert run["stage_timeline"]
-    assert "broker_execution_blocked_v1" in run["governance_blockers"]
+    assert "broker_execution_enabled_v1_autonomous_path_uses_paper_simulator_only" in run.get("warnings", [])
     assert "live_trading_blocked_v1" in run["governance_blockers"]
     assert run["preview_continued_despite_governance_blockers"] is True
     assert run["source_mode"] == "runtime"
@@ -273,12 +273,12 @@ def test_dry_run_governance_blockers_continue_with_trace():
     assert run["llm_used"] is False
 
 
-def test_non_dry_run_governance_blockers_stop_before_stages():
+def test_non_dry_run_governance_blockers_stop_before_stages(monkeypatch):
+    monkeypatch.setenv("LIVE_TRADING_ENABLED", "true")
     run = _run_orchestrator({"dry_run": False, "source": "runtime", "stop_at_stage": 3})
 
     assert run["status"] == "blocked"
     assert run["stage_timeline"] == []
-    assert "broker_execution_blocked_v1" in run["governance_blockers"]
     assert "live_trading_blocked_v1" in run["governance_blockers"]
     assert run["preview_continued_despite_governance_blockers"] is False
     assert run["submitted_order"] is False

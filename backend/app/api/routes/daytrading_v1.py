@@ -223,6 +223,10 @@ def post_daytrading_workflow_run(body: DayTradingWorkflowRunBody) -> dict[str, A
             "paper": "paper_first",
             "live": "live",
         }[body.run_mode],
+        metadata={
+            "run_mode": body.run_mode,
+            "requested_by_email": (body.requested_by_email or "").strip() or None,
+        },
     )
     try:
         run = run_workflow(req)

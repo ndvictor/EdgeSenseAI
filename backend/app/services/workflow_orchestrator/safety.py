@@ -19,9 +19,9 @@ def enforce_orchestrator_safety(req: dict[str, Any]) -> OrchestratorSafetyResult
     warnings: list[str] = []
     s = dict(req or {})
 
-    # Always enforce: v1 paper-first; never submit.
+    # v1 paper-first: strip broker submit flags but still run the agent pipeline (paper simulator is separate).
     if bool(s.get("allow_submit")):
-        blockers.append("allow_submit_blocked_v1")
+        warnings.append("allow_submit_stripped_v1_use_paper_simulator")
         s["allow_submit"] = False
     if bool(s.get("live_trading_enabled")):
         blockers.append("live_trading_enabled_blocked_v1")

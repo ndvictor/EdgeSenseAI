@@ -189,11 +189,11 @@ def test_governance_blocks_non_stock_asset_class():
     assert "asset_class_not_supported_v1" in out.blockers
 
 
-def test_governance_blocks_allow_submit():
+def test_governance_strips_allow_submit_without_blocking_preview():
     req = WorkflowGovernanceCheckRequest(allow_submit=True, dry_run=True, symbols=["TEST_STOCK_A"])
     out = check_governance(req)
-    assert out.decision == "blocked"
-    assert "allow_submit_blocked_v1" in out.blockers
+    assert out.decision != "blocked"
+    assert "allow_submit_stripped_v1_use_paper_simulator" in out.warnings
 
 
 def test_governance_blocks_when_live_trading_enabled():

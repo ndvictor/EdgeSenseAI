@@ -21,10 +21,45 @@ from app.services.workflow_orchestrator.pipeline_carryforward import advisory_gl
 from app.services.workflow_orchestrator.safety import enforce_orchestrator_safety
 from app.services.workflow_orchestrator.scanner_carryforward import seed_workflow_state_from_scanner_diagnostics
 from app.services.workflow_orchestrator.stage_plan import default_stage_plan, orchestrator_pipeline_agent_count
+from app.core.effective_runtime import effective_bool
 from app.services.workflow_orchestrator.state_contract import WorkflowCarryForwardState
 
 _MEMORY: dict[str, OrchestratorRunResponse] = {}
 logger = logging.getLogger(__name__)
+
+
+def _seed_workflow_runtime_context(body: OrchestratorRunRequest, state: WorkflowCarryForwardState) -> None:
+    """Hydrate carry-forward state from run metadata, gates, and Alpaca paper account."""
+    meta = body.metadata if isinstance(body.metadata, dict) else {}
+    run_mode = str(meta.get("run_mode") or "plan_only").strip().lower()
+    state.execution_mode = run_mode
+    state.requested_submit_route = "paper" if run_mode == "paper" else None
+
+    try:
+        from app.core.settings import get_settings
+
+        flags = get_settings().agent_capability_flags
+        state.agent_capability_flags = dict(flags)
+        state.paper_trading_enabled = bool(flags.get("agent_can_submit_paper_orders")) or effective_bool(
+            "PAPER_TRADING_ENABLED"
+        )
+        state.live_trading_enabled = effective_bool("LIVE_TRADING_ENABLED")
+        state.broker_execution_enabled = effective_bool("BROKER_EXECUTION_ENABLED")
+    except Exception:
+        state.paper_trading_enabled = effective_bool("PAPER_TRADING_ENABLED")
+
+    try:
+        from app.services.alpaca_paper_account_service import get_alpaca_paper_snapshot
+
+        snap = get_alpaca_paper_snapshot()
+        acct = snap.account
+        if acct is not None:
+            if acct.equity is not None and float(acct.equity) > 0:
+                state.account_equity = float(acct.equity)
+            if acct.buying_power is not None and float(acct.buying_power) >= 0:
+                state.buying_power = float(acct.buying_power)
+    except Exception as exc:
+        logger.warning("alpaca_account_hydration_failed", exc_info=exc)
 
 
 def _recommendation_payload(
@@ -339,6 +374,7 @@ def run_workflow(body: OrchestratorRunRequest) -> OrchestratorRunResponse:
         state.selected_strategy_key = body.strategy_key
     scanner_diagnostics, latest_scanner_status = _workflow_scanner_context(body)
     seed_workflow_state_from_scanner_diagnostics(state, scanner_diagnostics, latest_scanner_status)
+    _seed_workflow_runtime_context(body, state)
 
     approval_required = bool(body.require_human_approval)
     approval_id: str | None = None

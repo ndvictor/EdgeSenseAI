@@ -93,7 +93,7 @@ def check_governance(req: WorkflowGovernanceCheckRequest) -> WorkflowGovernanceC
     if live_enabled:
         blockers.append("live_trading_blocked_v1")
     if broker_exec_enabled:
-        blockers.append("broker_execution_blocked_v1")
+        warnings.append("broker_execution_enabled_v1_autonomous_path_uses_paper_simulator_only")
 
     # Scope enforcement
     if str(req.asset_class).strip().lower() != "stock":
@@ -101,9 +101,9 @@ def check_governance(req: WorkflowGovernanceCheckRequest) -> WorkflowGovernanceC
     if str(req.horizon).strip().lower() != "day_trading":
         blockers.append("horizon_not_supported_for_autonomous_workflow")
 
-    # Approval + submit enforcement
+    # v1: broker submit is always off; paper simulator handles paper route separately.
     if bool(req.allow_submit):
-        blockers.append("allow_submit_blocked_v1")
+        warnings.append("allow_submit_stripped_v1_use_paper_simulator")
     if bool(req.require_human_approval) and not require_human:
         warnings.append("request_requires_human_approval_but_runtime_is_false")
 
